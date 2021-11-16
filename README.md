@@ -31,8 +31,7 @@ OpenSSL engine for Azure Key Vault and Managed HSM
 ## Windows
 
 1. Install Visual Studio 2019
-2. Install `vcpk`
-3. Open "Developer Command Prompt for VS 2019"
+2. Install `vcpk` in command window "Developer Command Prompt for VS 2019"
     ```
     c:
     cd \
@@ -44,14 +43,14 @@ OpenSSL engine for Azure Key Vault and Managed HSM
     vcpkg.exe install openssl:x64-windows
     mkdir C:\vcpkg\packages\openssl_x64-windows\lib\engines-1_1
     ```
-4. Clone Repo
-5. Build 
+3. Clone Repo
+4. Build 
    ```
    cd src
    msbuild e_akv.vcxproj /p:PkgCurl="C:\vcpkg\packages\curl_x64-windows-static" /p:PkgJson="C:\vcpkg\packages\json-c_x64-windows-static" /p:PkgZ="C:\vcpkg\packages\zlib_x64-windows-static" /p:PkgOpenssl="C:\vcpkg\packages\openssl_x64-windows" /p:Configuration=Release;Platform=x64
    copy /Y x64\Release\e_akv.dll C:\vcpkg\packages\openssl_x64-windows\lib\engines-1_1\e_akv.dll
    ```
-6. Test 
+5. Test 
    ```
    C:\vcpkg\packages\openssl_x64-windows\tools\openssl\openssl.exe engine -vvv -t e_akv
    ```
