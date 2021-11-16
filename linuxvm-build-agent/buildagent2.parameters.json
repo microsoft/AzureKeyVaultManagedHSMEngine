@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "adminSshPubKey": {
+      "value": "<ssh-public-key>"
+    },
+    "buildScriptPath": {
+      "value": "https://raw.githubusercontent.com/microsoft/AkvHsmOpensslEngine/main/src/startbuild.sh"
+    },
+    "deployKeyVault": {
+      "value": false
+    }
+  }
+}
