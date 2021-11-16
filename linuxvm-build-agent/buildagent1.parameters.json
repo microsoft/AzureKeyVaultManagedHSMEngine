@@ -6,7 +6,7 @@
       "value": "<ssh-public-key>"
     },
     "buildScriptPath": {
-      "value": "https://raw.githubusercontent.com/microsoft/AkvHsmOpensslEngine/main/src/startbuild.sh"
+      "value": "https://raw.githubusercontent.com/microsoft/AkvHsmOpensslEngine/main/linuxvm-build-agent/startbuild.sh"
     },
     "deployKeyVault": {
       "value": true
