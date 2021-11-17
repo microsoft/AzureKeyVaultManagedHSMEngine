@@ -5,7 +5,7 @@ This template creates Linux VM as the build agent. It will provision all the res
 - An VNET with the private link to the Azure Key Vault
 
 # How to build and deploy
-Prepare your local SSH key by running `ssh-keygen`, then copy the content of id_rsa.pub to the place holder `<ssh-public-key>` in files buildagent1.parameters.json and buildagent2.parameters.json
+Prepare your local SSH key by running `ssh-keygen`, then copy the content of id_rsa.pub to the place holder `<ssh-public-key>` in files buildagent.parameters.json
 - `az bicep build -f buildagent.main.bicep`
 - `az deployment sub create --location westus3 --template-file buildagent.main.bicep --parameters @buildagent.parameters.json`
 
