@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.4.1008.15138",
-      "templateHash": "5855510808105817718"
+      "templateHash": "7023036089058170174"
     }
   },
   "parameters": {
@@ -108,7 +108,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.4.1008.15138",
-              "templateHash": "6771219942764085041"
+              "templateHash": "8078113303079474600"
             }
           },
           "parameters": {
@@ -134,7 +134,8 @@
                     "input": {
                       "name": "[parameters('vNetBuildAgentDefinitions').subnets[copyIndex('subnets')].name]",
                       "properties": {
-                        "addressPrefix": "[parameters('vNetBuildAgentDefinitions').subnets[copyIndex('subnets')].subnetPrefix]"
+                        "addressPrefix": "[parameters('vNetBuildAgentDefinitions').subnets[copyIndex('subnets')].subnetPrefix]",
+                        "privateEndpointNetworkPolicies": "Disabled"
                       }
                     }
                   }
