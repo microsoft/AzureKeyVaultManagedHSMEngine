@@ -1,6 +1,8 @@
 # Azure DevOps, Build Agent VM
-This template creates Linux VM as the build agent for Azure DevOps, see the [referenced tutorial](https://github.com/matt-FFFFFF/terraform-azuredevops-vmss-agent)
-The Microsoft doc is available [here](https://docs.microsoft.com/en-us/azure/devops/pipelines/agents/scale-set-agents?view=azure-devops)
+This template creates Linux VM as the build agent. It will provision all the resources for testing the Azure Key Vault and Managed HSM engine.
+- An Azure Key Vault and RBAC assignment
+- A Linux VM with the Managed Identity to access the Azure Key Vault
+- An VNET with the private link to the Azure Key Vault
 
 # How to build and deploy
 Prepare your local SSH key by running `ssh-keygen`, then copy the content of id_rsa.pub to the place holder `<ssh-public-key>` in files buildagent1.parameters.json and buildagent2.parameters.json
@@ -9,5 +11,5 @@ Prepare your local SSH key by running `ssh-keygen`, then copy the content of id_
 - `az deployment sub create --location westus3 --template-file buildagent.main.bicep --parameters @buildagent2.parameters.json`
 
 # Full transcript of testing
-- Login into the Linux VM
+- Login into the Linux VM with the SSH key
 - Go to /var/lib/waagent/custom-script/download and locate the logs
