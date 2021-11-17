@@ -1,5 +1,5 @@
 /*
- Summary: Provisions an Ubuntu VM Scale Set for usew with Azure DevOps
+ Summary: Provisions an Ubuntu VM for testing the Engine
 */
 
 // ============================================================================
@@ -7,6 +7,9 @@
 
 @description('Admin username for VMs')
 param adminUserName string
+
+@description('VM name')
+param vmName string
 
 @description('VM SKU to use for VM')
 param vmSku string
@@ -17,20 +20,11 @@ param subnetResourceId string
 @description('Administrative SSH key for the VM')
 param adminSshPubKey string
 
-@description('Run build script')
-param buildScriptPath string
-
-@description('Azure Key Vault name')
-param  akvName string
-
-@description('run customer script')
-param deployCustomerScript bool
-
 // ============================================================================
 // Resources
 
 resource pip 'Microsoft.Network/publicIPAddresses@2020-05-01' = {
-  name: 'linuxbuildagent-pip'
+  name: '${vmName}-pip'
   location: resourceGroup().location
   properties: {
     publicIPAllocationMethod: 'Dynamic'
@@ -41,7 +35,7 @@ resource pip 'Microsoft.Network/publicIPAddresses@2020-05-01' = {
 }
 
 resource nic 'Microsoft.Network/networkInterfaces@2020-05-01' = {
-  name: 'linuxbuildagent-nic'
+  name: '${vmName}-nic'
   location: resourceGroup().location
   properties: {
     ipConfigurations: [
@@ -62,7 +56,7 @@ resource nic 'Microsoft.Network/networkInterfaces@2020-05-01' = {
 }
 
 resource vm 'Microsoft.Compute/virtualMachines@2019-07-01' = {
-  name: 'linuxbuildagent'
+  name: vmName
   location: resourceGroup().location
   identity: {
     type: 'SystemAssigned'
@@ -72,7 +66,7 @@ resource vm 'Microsoft.Compute/virtualMachines@2019-07-01' = {
       vmSize: vmSku
     }
     osProfile: {
-      computerName: 'linuxbuildagent'
+      computerName: vmName
       adminUsername: adminUserName
       linuxConfiguration: {
         disablePasswordAuthentication: true
@@ -95,7 +89,7 @@ resource vm 'Microsoft.Compute/virtualMachines@2019-07-01' = {
         version: 'latest'
       }
       osDisk: {
-        name: 'osdisk'
+        name: '${vmName}-osdisk'
         caching: 'ReadWrite'
         createOption: 'FromImage'
         diskSizeGB: 30
@@ -111,27 +105,6 @@ resource vm 'Microsoft.Compute/virtualMachines@2019-07-01' = {
   }
 }
 
-resource vm_build 'Microsoft.Compute/virtualMachines/extensions@2020-06-01' = if (deployCustomerScript) {
-  parent: vm
-  name: 'build_opensslengine'
-  location: resourceGroup().location
-  properties: {
-    publisher: 'Microsoft.Azure.Extensions'
-    type: 'CustomScript'
-    typeHandlerVersion: '2.1'
-    autoUpgradeMinorVersion: true
-    settings: {
-      skipDos2Unix: false
-      timestamp : 123458
-      fileUris: [
-        buildScriptPath
-      ]
-    }
-    protectedSettings: {
-      commandToExecute: 'sh startbuild.sh ${akvName}'
-    }
-  }
-}
 // ============================================================================
 // Outputs
 

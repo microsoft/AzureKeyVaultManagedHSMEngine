@@ -1,6 +1,3 @@
-/*
- Summary: Provisions a virtual network with one subnet, then assigns an NSG preventing inbound connections
-*/
 
 // ============================================================================
 // Parameters
@@ -17,35 +14,15 @@ resource vnet 'Microsoft.Network/virtualNetworks@2021-02-01' = {
   properties: {
     addressSpace: {
       addressPrefixes: [
-        '192.168.128.0/24' // 192.168.128.0 - 192.168.128.255
+        vNetBuildAgentDefinitions.addressSpacePrefix
       ]
     }
-    subnets: [
-      {
-        name: 'worker'
-        properties: {
-          addressPrefix: '192.168.128.0/25' // // 192.168.128.0 - 192.168.128.127
-          networkSecurityGroup: {
-            id: nsg.id
-          }
-          privateEndpointNetworkPolicies: 'Disabled'
-        }
+    subnets: [ for s in vNetBuildAgentDefinitions.subnets: {
+      name: s.name
+      properties: {
+        addressPrefix: s.subnetPrefix
       }
-      {
-        name: 'AzureBastionSubnet'
-        properties: {
-          addressPrefix: '192.168.128.128/27' // 192.168.128.128 - 192.168.128.159
-        }
-      }
-    ]
-  }
-}
-
-resource nsg 'Microsoft.Network/networkSecurityGroups@2021-02-01' = {
-  name: 'buildagent-nsg'
-  location: resourceGroup().location
-  properties: {
-    securityRules: []
+    }]
   }
 }
 

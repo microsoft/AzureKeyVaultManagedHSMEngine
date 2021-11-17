@@ -119,3 +119,4 @@ resource pdnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@
 // Outputs
 
 output vault object = kv
+output akvName string = keyVaultName

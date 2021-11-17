@@ -3,13 +3,13 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "adminSshPubKey": {
-      "value": "<ssh-public-key>"
+      "value": ""
     },
     "buildScriptPath": {
-      "value": "https://raw.githubusercontent.com/microsoft/AkvHsmOpensslEngine/main/linuxvm-build-agent/startbuild.sh"
+      "value": "https://raw.githubusercontent.com/microsoft/AzureKeyVaultManagedHSMEngine/main/linuxvm-build-agent/startbuild.sh"
     },
-    "deployKeyVault": {
-      "value": false
+    "vmName": {
+      "value": ""
     }
   }
 }

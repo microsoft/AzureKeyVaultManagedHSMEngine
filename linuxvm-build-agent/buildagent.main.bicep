@@ -1,13 +1,15 @@
 /*
- Summary: Provisions a Azure DevOps build agent using a Linux VM.
+ Summary: Deploy a Linux VM to test Azure Key Vault Engine
 */
 
-// Subscription deployemnt of RG, then contained resources as modules
 targetScope = 'subscription'
 
 
 // ============================================================================
 // Parameters
+
+@description('VM Name')
+param vmName string
 
 @description('Admin username for VMs')
 param adminUserName string = 'azureuser'
@@ -15,23 +17,20 @@ param adminUserName string = 'azureuser'
 @description('Administrative SSH key for the VM')
 param adminSshPubKey string
 
-@description('build script')
-param buildScriptPath string
-
 @description('Name of Key Vault')
-param keyVaultName string = 'LinuxBuildTestKeyVault'
+param keyVaultName string = take('${vmName}KeyVault', 24)
 
 @description('Location to deploy resources, defaults to deployment location')
 param location string = deployment().location
 
 @description('Resource group name')
-param resourceGroupName string = 'LinuxBuildAgentRg'
+param resourceGroupName string = '${vmName}Rg'
 
 @description('VM SKU to use for VM')
 param vmSku string = 'Standard_B2ms'
 
-@description('Deploy KeyVault')
-param deployKeyVault bool
+@description('Script path')
+param buildScriptPath string = 'https://raw.githubusercontent.com/microsoft/AzureKeyVaultManagedHSMEngine/main/linuxvm-build-agent/startbuild.sh'
 
 // ============================================================================
 // Resources
@@ -67,20 +66,18 @@ module vm './buildagent.vm.bicep' = {
   params: {
     adminSshPubKey: adminSshPubKey
     adminUserName: adminUserName
-    buildScriptPath: buildScriptPath
-    akvName: keyVaultName
     vmSku: vmSku
-    deployCustomerScript: !deployKeyVault // we need to deploy keyvault first
+    vmName : vmName
     subnetResourceId: vnet.outputs.subnetResourceId[0].id // subnet 'worker' with index 0 is for vm
   }
 }
-
 
 // Built-in roleDefinition GUID for kay vault admin
 // https://docs.microsoft.com/en-us/azure/key-vault/general/rbac-guide?tabs=azure-cli
 var roleDefinition_keyVaultAdmin = '00482a5a-887f-4fb3-b363-3b7fe8e74483'
 
-module kv './buildagent.kv.bicep' = if (deployKeyVault) {
+// Azure key valut depends on VM
+module kv './buildagent.kv.bicep' = {
   name: 'kvDeploy'
   scope: rg
   params: {
@@ -89,5 +86,16 @@ module kv './buildagent.kv.bicep' = if (deployKeyVault) {
     vmPrincipalId: vm.outputs.principalId
     vnetResourceId: vnet.outputs.vnetResourceId
     roleDef: roleDefinition_keyVaultAdmin
+  }
+}
+
+// The VM script depends on Auzre Key Vault
+module vmScript './buildagent.vmscript.bicep' = {
+  name: 'vmScipt'
+  scope: rg
+  params: {
+    vmName: vmName
+    buildScriptPath: buildScriptPath
+    akvName: kv.outputs.akvName
   }
 }
