@@ -19,11 +19,11 @@ Using Azure Key Vault and Managed HSM engine for nginx
 
    `curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash`
 
-5. Create an RSA private key 'testrsakey' in Azure Key Vault. Remember to replace the `<keyvalut name>` with your real Azure key vault
+5. Create an RSA private key 'testrsakey' in Azure Key Vault. Remember to replace the `<keyvault name>` with your real Azure key vault
 
     `az login --identity --allow-no-subscriptions`
     
-    `az keyvault key create --vault-name <keyvalut name> --name testrsakey --kty RSA --size 2048`
+    `az keyvault key create --vault-name <keyvault name> --name testrsakey --kty RSA --size 2048`
 
 6. Create a self-signed certificate to be used by nginx
     
@@ -31,7 +31,7 @@ Using Azure Key Vault and Managed HSM engine for nginx
     
     `sudo cp cert.pem /etc/ssl/certs/contoso_rsa_cert.cer`
 
-7. Modify nginx to use the engine. Remember to replace the `<keyvalut name>` with your real Azure key vault.
+7. Modify nginx to use the engine. Remember to replace the `<keyvault name>` with your real Azure key vault.
 
    The real change is to add "ssl_engine e_akv;" line to nginx.conf and the following changes in default file
    ```
