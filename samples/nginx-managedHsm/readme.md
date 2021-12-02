@@ -12,7 +12,7 @@ NOTE: This example shows how to use ECC key in Managed HSM for nginx. The prefix
 
 
 ## Create and activate an Managed HSM, also create an ECC key in it
-1. Create an Managed HSM in your subscription
+1. Prepare your subscription
 ```
    az login
    az account set --subscription <your subscription>
