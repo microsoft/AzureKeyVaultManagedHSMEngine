@@ -1,6 +1,8 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
+# NOTE: define your own Azure DevOps pipeline agents as $(LINUXAGENT) and $(WINAGENT)
+
 trigger:
 - main
 
@@ -11,7 +13,7 @@ jobs:
   pool:
     name: default
     demands:
-      - agent.name -equals hsmlinux
+      - agent.name -equals $(LINUXAGENT)
   steps:
   - script: |
       echo Install packages 
@@ -38,7 +40,7 @@ jobs:
   pool: 
     name: default
     demands:
-      - agent.name -equals hsmwin10
+      - agent.name -equals $(WINAGENT)
     vmImage:
   steps:
 #  - script: |
