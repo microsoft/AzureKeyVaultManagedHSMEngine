@@ -32,7 +32,7 @@ jobs:
       cp $(Build.SourcesDirectory)/src/build/e_akv.so $(Build.ArtifactStagingDirectory)
     displayName: Build and Load test
   - script: |
-      cd $(Build.SourcesDirectory)/examples/openssl
+      cd $(Build.SourcesDirectory)/samples/openssl
       openssl req -new -x509 -config openssl.cnf -engine e_akv -keyform engine -key $AKVKEY -out cert.pem
       openssl x509 -pubkey -noout -in cert.pem > publickey.pem
       openssl dgst -binary -sha256 -out hash256 readme.md
