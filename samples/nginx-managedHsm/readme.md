@@ -1,4 +1,4 @@
-# Using ECC key in Managed HSM engine for nginx
+# Using ECC key in Managed HSM for nginx
 
 NOTE: This example shows how to use ECC key in Managed HSM for nginx. The prefix will be "managedHsm", for example
    `managedHsm:<Hsm Name>:testecckey`
@@ -19,7 +19,7 @@ NOTE: This example shows how to use ECC key in Managed HSM for nginx. The prefix
    az group create --name "ContosoResourceGroup" --location westus3
 ```
 
-2. Get the Managed HSM adminstrator ID and use it in the Managed HSM creation (remember to replace [HSM NAME] with your real HSM name))
+2. Get the Managed HSM adminstrator ID and use it in the Managed HSM creation (remember to replace [HSM NAME] with your real HSM name and actual 'xxxx' value)
 ```
    az ad signed-in-user show --query objectId -o tsv
       xxxx
