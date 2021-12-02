@@ -1,4 +1,6 @@
 Using Azure Key Vault and Managed HSM engine for nginx
+NOTE: this example only shows the usage for Azure Key Vault. For Managed HSM, the prefix will be "managedHsm", for example
+   `managedHsm:<Hsm Name>:testrsakey`
 
 1. Install build-essential and nginx etc
 
@@ -23,15 +25,15 @@ Using Azure Key Vault and Managed HSM engine for nginx
 
     `az login --identity --allow-no-subscriptions`
     
-    `az keyvault key create --vault-name <keyvalut name> --name testrsakey --kty RSA --size 2048`
+    `az keyvault key create --vault-name <keyvault name> --name testrsakey --kty RSA --size 2048`
 
-6. Create a self-signed certificate to be used by nginx
+6. Create a self-signed certificate to be used by nginx (remember to replace the <keyvault name> with your real key vault name) 
     
-    `openssl req -new -x509 -config openssl.cnf -engine e_akv -keyform engine -key vault:$1:testrsakey -out cert.pem`
+    `openssl req -new -x509 -config openssl.cnf -engine e_akv -keyform engine -key vault:<keyvault name>:testrsakey -out cert.pem`
     
     `sudo cp cert.pem /etc/ssl/certs/contoso_rsa_cert.cer`
 
-7. Modify nginx to use the engine. Remember to replace the `<keyvalut name>` with your real Azure key vault.
+7. Modify nginx to use the engine. Remember to replace the `<keyvault name>` with your real Azure key vault.
 
    The real change is to add "ssl_engine e_akv;" line to nginx.conf and the following changes in default file
    ```
