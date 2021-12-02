@@ -1,19 +1,83 @@
-# Starter pipeline
-# Start with a minimal pipeline that you can customize to build and deploy your code.
-# Add steps that build, run tests, deploy, and more:
-# https://aka.ms/yaml
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT License.
 
 trigger:
 - main
 
-pool:
-  vmImage: ubuntu-latest
+pool: default
 
-steps:
-- script: echo Hello, world!
-  displayName: 'Run a one-line script'
-
-- script: |
-    echo Add other tasks to build, test, and deploy your project.
-    echo See https://aka.ms/yaml
-  displayName: 'Run a multi-line script'
+jobs:
+- job: 'Ubuntu'
+  pool:
+    name: default
+    demands:
+      - agent.name -equals hsmlinux
+  steps:
+  - script: |
+      echo Install packages 
+      echo Source Path : $(Build.SourcesDirectory)
+      sudo apt install -y libssl-dev
+      sudo apt install -y libcurl4-openssl-dev
+      sudo apt install -y libjson-c-dev
+      cd src
+      mkdir build
+      cd build
+      cmake ..
+      make
+      openssl version -a | grep ENGINESDIR
+      sudo cp e_akv.so /usr/lib/x86_64-linux-gnu/engines-1.1/e_akv.so
+      openssl engine -vvv -t e_akv
+    displayName: Build and Load test
+  - task: PublishBuildArtifacts@1
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+      ArtifactName: 'ubuntu20'
+      publishLocation: 'Container'
+- job: 'Windows_VCPKG'
+  pool: 
+    name: default
+    demands:
+      - agent.name -equals hsmwin10
+    vmImage:
+  steps:
+#  - script: |
+#      git clone https://github.com/Microsoft/vcpkg.git
+#      echo done checkout vcpkg 
+#    displayName: initialize vcpkg
+#  - script: |
+#      cd vcpkg
+#      bootstrap-vcpkg.bat -disableMetrics
+#    displayName: bootstrap
+#  - script: |     
+#      cd vcpkg
+#      vcpkg.exe install json-c:x64-windows-static
+#      vcpkg.exe install curl:x64-windows-static
+#      vcpkg.exe install openssl:x64-windows
+#      echo Install gRPC packages
+#      vcpkg.exe install abseil:x64-windows
+#      vcpkg.exe install c-ares:x64-windows
+#      vcpkg.exe install grpc:x64-windows
+#      vcpkg.exe install protobuf:x64-windows
+#      vcpkg.exe install re2:x64-windows
+#      vcpkg.exe install upb:x64-windows
+#    displayName: Install packages
+  - task: MSBuild@1
+    inputs:
+      solution: 'src/e_akv.vcxproj'
+      platform: 'x64'
+      configuration: 'Release'
+      msbuildArguments: /p:PkgCurl="C:\vcpkg\packages\curl_x64-windows-static" /p:PkgJson="C:\vcpkg\packages\json-c_x64-windows-static" /p:PkgZ="C:\vcpkg\packages\zlib_x64-windows-static" /p:PkgOpenssl="C:\vcpkg\packages\openssl_x64-windows" /p:Configuration=Release;Platform=x64
+    displayName: MSbuild task
+  - script: |
+      openssl version -a
+      copy /Y $(Build.SourcesDirectory)\src\x64\Release\e_akv.dll C:\vcpkg\packages\openssl_x64-windows\lib\engines-1_1\e_akv.dll
+      openssl engine -vvv -t e_akv
+    displayName: Load test
+  - script: |
+      copy /Y $(Build.SourcesDirectory)\src\x64\Release\e_akv.dll $(Build.ArtifactStagingDirectory)
+    displayName: Copy Output
+  - task: PublishBuildArtifacts@1
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+      ArtifactName: 'x64-windows'
+      publishLocation: 'Container' 
