@@ -31,6 +31,16 @@ jobs:
       openssl engine -vvv -t e_akv
       cp $(Build.SourcesDirectory)/src/build/e_akv.so $(Build.ArtifactStagingDirectory)
     displayName: Build and Load test
+  - script: |
+      cd $(Build.SourcesDirectory)/examples/openssl
+      openssl req -new -x509 -config openssl.cnf -engine e_akv -keyform engine -key $AKVKEY -out cert.pem
+      openssl x509 -pubkey -noout -in cert.pem > publickey.pem
+      openssl dgst -binary -sha256 -out hash256 readme.md
+      openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $AKVKEY -in hash256 -out hash256.sig
+      openssl pkeyutl -verify -pubin -inkey publickey.pem -in hash256 -sigfile hash256.sig -pkeyopt digest:sha256
+    env: 
+      AKVKEY : $(HSMECCKEY) # HSM ECC KEY
+    displayName: Openssl Sign Test for HSM ECC KEY
   - task: PublishBuildArtifacts@1
     inputs:
       PathtoPublish: '$(Build.ArtifactStagingDirectory)'
