@@ -27,7 +27,7 @@ NOTE: This example shows how to use ECC key in Managed HSM for nginx. The prefix
    az keyvault create --hsm-name "[HSM NAME]" --resource-group "ContosoResourceGroup" --location "West US 3" --administrators xxxx --retention-days 28
 ```
 
-3. Activate the newly created Managed HSM (remember to replace [HSM NAME] with your real HSM name)
+3. Activate the newly created Managed HSM (remember to replace [HSM NAME] with your real HSM name). You can use [openssl.cnf](https://github.com/microsoft/AzureKeyVaultManagedHSMEngine/blob/main/samples/nginx-managedHsm/openssl.cnf) under this sample directory.
 ```
    openssl req -newkey rsa:2048 -nodes -keyout cert_1.key -x509 -days 365 -out cert_1.cer -config openssl.cnf
    openssl req -newkey rsa:2048 -nodes -keyout cert_2.key -x509 -days 365 -out cert_2.cer -config openssl.cnf
@@ -35,7 +35,7 @@ NOTE: This example shows how to use ECC key in Managed HSM for nginx. The prefix
    az keyvault security-domain download --hsm-name "[HSM NAME]" --sd-wrapping-keys ./cert_1.cer ./cert_2.cer ./cert_3.cer --sd-quorum 2 --security-domain-file SD.json
 ```
 
-4. Create an ECC key in the HSM (remember to replace [HSM NAME] with your real HSM name)
+4. Create an ECC key in the HSM (remember to replace [HSM NAME] with your real HSM name). Please make sure the current login user has the role assignment to create keys in managed HSM.
 ```
    az keyvault key create --curve p-256 --kty EC-HSM --name testecckey --hsm-name [HSM NAME] --ops sign
 ```
@@ -92,7 +92,7 @@ After logon to your Azure Linux VM
 ```
    cd ~/AzureKeyVaultManagedHSMEngine/samples/nginx-managedHsm
    openssl req -new -x509 -config openssl.cnf -engine e_akv -keyform engine -key managedHsm:[HSM NAME]:testecckey -out certecc.pem
-   sudo cp certecc.pem /etc/ssl/certs/contoso_rsa_cert.cer`
+   sudo cp certecc.pem /etc/ssl/certs/contoso_rsa_cert.cer
 ```
 
 5. Modify nginx to use the engine. Remember to replace the [HSM NAME] with your real HSM name.
