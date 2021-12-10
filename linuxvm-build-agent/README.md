@@ -3,6 +3,7 @@ This template creates Linux VM as the build agent. It will provision all the res
 - An Azure Key Vault and RBAC assignment
 - A Linux VM with the Managed Identity to access the Azure Key Vault
 - An VNET with the private link to the Azure Key Vault
+> NOTE: Azure Key Vault should ONLY be used for development purposes with small numbers of requests. For production workloads, use Azure Managed HSM. For more information, see [Azure Key Vault Service Limits](https://docs.microsoft.com/en-us/azure/key-vault/general/service-limits)
 
 # How to build and deploy
 Prepare your local SSH key by running `ssh-keygen`, then copy the content of id_rsa.pub to the place holder `<ssh-public-key>` in files buildagent.parameters.json
