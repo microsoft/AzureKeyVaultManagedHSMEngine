@@ -1,6 +1,8 @@
 # Introduction 
 The Azure Key Vault and Managed HSM Engine allows OpenSSL-based applications to use RSA/EC private keys protected by Azure Key Vault and Managed HSM. It leverages the OpenSSL engine interface to perform cryptographic operations inside Azure Key Vault and Managed HSM. The goal is to seamlessly onboard OpenSSL-based applications with Azure Key Vault and Managed HSM, for example, NGINX, gRPC etc.
 
+> NOTE: Azure Key Vault should ONLY be used for development purposes with small numbers of requests. For production workloads, use Azure Managed HSM. For more information, see [Azure Key Vault Service Limits](https://docs.microsoft.com/en-us/azure/key-vault/general/service-limits)
+
 # Getting Started
 
 ## Linux/Ubuntu
