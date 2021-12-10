@@ -1,6 +1,8 @@
-Using Azure Key Vault and Managed HSM engine for nginx
 
-NOTE: this example only shows the usage for Azure Key Vault. For Managed HSM, the prefix will be "managedHsm", for example
+## Using Azure Key Vault and Managed HSM engine for NGINX
+
+> NOTE: Azure Key Vault should ONLY be used for development purposes with small numbers of requests. For production workloads, use Azure Managed HSM. For more information, see [Azure Key Vault Service Limits](https://docs.microsoft.com/en-us/azure/key-vault/general/service-limits)
+. This example only shows the usage for Azure Key Vault. For Managed HSM, the prefix will be "managedHsm", for example
    `managedHsm:<Hsm Name>:testrsakey`
 
 1. Install build-essential and nginx etc
