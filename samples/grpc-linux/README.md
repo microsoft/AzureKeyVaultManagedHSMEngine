@@ -17,23 +17,32 @@ The default SSL provider boringssl does not support OpenSSL engine
 See https://github.com/grpc/grpc/blob/master/src/core/tsi/ssl_transport_security.cc#:~:text=r%27%2C%20%27p%27%2C%20%27c%27%7D%3B-,%23if%20!defined(OPENSSL_IS_BORINGSSL)%20%26%26%20!defined(OPENSSL_NO_ENGINE),%23endif,-%23if%20OPENSSL_VERSION_NUMBER%20%3C%200x10100000
 
 ## build greeter client/server
+```
 mkdir build
 cd build
 cmake ..
 build
+```
 
 ## Testing
 NOTE: run the test in the parent directory of build/
 ### server with EC cert
+```
 ./ec_server.sh 
+```
 ### client with EC cert
-./ec_client.sh
+```
+ ./ec_client.sh
+```
 
 ### server with RSA cert
-./rsa_server.sh 
+```
+ ./rsa_server.sh 
+```
 ### client with RSA cert
-./rsa_client.sh
-
+```
+ ./rsa_client.sh
+```
 
 ### running log for server with RSA cert
 ```
