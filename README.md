@@ -56,6 +56,9 @@ The Azure Key Vault and Managed HSM Engine allows OpenSSL-based applications to 
    ```
    C:\vcpkg\packages\openssl_x64-windows\tools\openssl\openssl.exe engine -vvv -t e_akv
    ```
+# Samples
+
+Please check out the samples including nginx, gRPC, and openssl command line.
 
 # Contribute
 
