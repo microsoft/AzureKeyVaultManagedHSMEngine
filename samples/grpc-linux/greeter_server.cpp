@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <fstream>
+#include <unordered_map>
 #include <openssl/ssl.h>
 #include <openssl/engine.h>
 #pragma warning(push)
@@ -37,6 +38,9 @@ char* keyId = nullptr;
 char* keyIdFile = nullptr;
 bool userLocation = true;
 char* server_address = nullptr;
+const char* MYVERIFIED = "MyVerified";
+std::unordered_map<std::string, std::string> EXPECTED_SANS= { {"/helloworld.Greeter/SayHello", "TESTVMMHSM"} };
+
 
 typedef struct ::grpc::experimental::TlsServerAuthorizationCheckInterface TlsServerAuthorizationCheckInterface;
 typedef class ::grpc::experimental::TlsServerAuthorizationCheckArg TlsServerAuthorizationCheckArg;
@@ -57,27 +61,61 @@ static inline void rtrim(std::string &s) {
     }).base(), s.end());
 }
 
-static inline bool isVerified(std::shared_ptr<const AuthContext>  auth_ctx, const std::string& expectedSAN)
+class MyServiceAuthProcessor : public grpc::AuthMetadataProcessor
 {
-    auto commonName =
-         auth_ctx->FindPropertyValues(GRPC_X509_CN_PROPERTY_NAME);
-    for (auto cn : commonName)
-	    printf("common name: %s\n", cn.data());
+public:
+    grpc::Status Process(const InputMetadata &auth_metadata, grpc::AuthContext *context, OutputMetadata *consumed_auth_metadata, OutputMetadata *response_metadata) override
+    {
+        // determine intercepted method
+        std::string dispatch_keyname = ":path";
+        auto dispatch_kv = auth_metadata.find(dispatch_keyname);
+        if (dispatch_kv == auth_metadata.end())
+            return grpc::Status(grpc::StatusCode::INTERNAL, "Internal Error");
 
-    if (expectedSAN.compare("*") == 0 && commonName.size() >0)
-	    return true;
+        auto dispatch_value = std::string(dispatch_kv->second.data(), dispatch_kv->second.length());
+        printf("Auth Process path name: '%s'\n", dispatch_value.c_str());
 
-    auto altName =
-         auth_ctx->FindPropertyValues(GRPC_X509_SAN_PROPERTY_NAME);
+        if (EXPECTED_SANS.count(dispatch_value) > 0)
+        {
+            // check client cert for this method
+            auto alreadyVerified =
+                context->FindPropertyValues(MYVERIFIED);
+            if (alreadyVerified.size() > 0)
+            {
+                printf("already verified method path name: '%s'\n", dispatch_value.c_str());
+                return grpc::Status::OK;
+            }
 
-    for (auto san : altName)
-	    if (san.compare(expectedSAN) == 0)
-	    {
-		    printf("'%s' matched san '%s'\n", expectedSAN.c_str(), san.data());
-		    return true;
-	    }
+            // verify if client cert is valid for this method, aka, it includes the expected SAN.
+            auto altName =
+                context->FindPropertyValues(GRPC_X509_SAN_PROPERTY_NAME);
+            std::string expectedSAN = EXPECTED_SANS[dispatch_value];
+            for (auto san : altName)
+                if (san.compare(expectedSAN) == 0)
+                {
+                    printf("set MYVERIFIED, because expected SAN '%s' matched cert SAN '%s'\n", expectedSAN.c_str(), san.data());
+                    context->AddProperty(MYVERIFIED, "verified");
+                    return grpc::Status::OK;
+                }
+
+            return grpc::Status(grpc::StatusCode::UNAUTHENTICATED, "Invalid Token");
+        }
+
+        return grpc::Status::OK;
+    }
+};
+
+static inline bool isVerified(std::shared_ptr<const AuthContext>  auth_ctx)
+{
+    auto alreadyVerified = auth_ctx->FindPropertyValues(MYVERIFIED);
+
+    if (alreadyVerified.size() > 0)
+    {
+       printf("isVerified return true, because MYVERIFIED is set\n");
+       return true;
+    }
+
     return false;
-
 }
 
 // Logic and data behind the server's behavior.
@@ -95,7 +133,7 @@ class GreeterServiceImpl final : public Greeter::Service {
             if (verify_client)
             {
                 printf("mTLS checking...\n");
-                if (isVerified(auth_ctx, "*"))
+                if (isVerified(auth_ctx))
 		{
 		   printf("client cert AuthN & AuthZ passed\n");
 		}
@@ -104,13 +142,7 @@ class GreeterServiceImpl final : public Greeter::Service {
 		   return Status(grpc::PERMISSION_DENIED, "client cert is rejected");
 		}
 
-	        std::string prefix("Hello ");
-                if (isVerified(auth_ctx, "TESTVMMHSM"))
-		{
-			prefix += "TESTVMMHSM:";
-		}
-
-                reply->set_message(prefix + request->name());
+                reply->set_message(request->name());
                 return Status::OK;
             }
             else
@@ -196,8 +228,13 @@ void RunServer() {
     printf("Server Address: %s\n", server_address);
     std::string serverAddress(server_address);
     GreeterServiceImpl service;
+    std::shared_ptr<MyServiceAuthProcessor> auth_processor =
+        std::shared_ptr<MyServiceAuthProcessor>(new MyServiceAuthProcessor());
+  
     std::shared_ptr<grpc::ServerCredentials> serverChannelCredentials =  _grpc_get_server_credentials();
-
+    // set auth processor to do custom auth
+    serverChannelCredentials->SetAuthMetadataProcessor(auth_processor);
+    
     ServerBuilder builder;
     builder.AddListeningPort(serverAddress, serverChannelCredentials);
     builder.RegisterService(&service);

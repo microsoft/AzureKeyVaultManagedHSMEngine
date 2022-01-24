@@ -245,17 +245,25 @@ yoPwu8L8Sjm9Lmi0Y3g3D9gmFeJCZJh3vCWeH7o=
 KeyId:
 'engine:e_akv:managedHsm:az400popmhsm3:testvmmhsm'
 
-Server Address: localhost:50051
-Server Name: localhost
-Set client cert
-Creating Custom Channel
-Callback Schedule
-Callback TargetName: localhost
-Chain is verified
-Greeter world received: Hello TESTVMMHSM:world
-Reuse Custom Channel
-Greeter azure received: Hello TESTVMMHSM:azure
 
+Server Address: 0.0.0.0:50051
+ServerBuilder: Build and Start listening
+Server listening on 0.0.0.0:50051
+E0124 19:52:46.623583905  182291 ssl_transport_security.cc:1839] No match found for server name: localhost.
+Auth Process path name: '/helloworld.Greeter/SayHello'
+set MYVERIFIED, because expected SAN 'TESTVMMHSM' matched cert SAN 'TESTVMMHSM'
+
+Got Auth Context
+mTLS checking...
+isVerified return true, because MYVERIFIED is set
+client cert AuthN & AuthZ passed
+Auth Process path name: '/helloworld.Greeter/SayHello'
+already verified method path name: '/helloworld.Greeter/SayHello'
+
+Got Auth Context
+mTLS checking...
+isVerified return true, because MYVERIFIED is set
+client cert AuthN & AuthZ passed
 ```
 
 
@@ -357,8 +365,8 @@ Creating Custom Channel
 Callback Schedule
 Callback TargetName: localhost
 Chain is verified
-Greeter world received: Hello world
+Greeter world received: world
 Reuse Custom Channel
-Greeter azure received: Hello azure
+Greeter azure received: azure
 
 ```
