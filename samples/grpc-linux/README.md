@@ -137,21 +137,22 @@ engine:e_akv:managedHsm:az400popmhsm3:testvmmhsm
 Server Address: 0.0.0.0:50051
 ServerBuilder: Build and Start listening
 Server listening on 0.0.0.0:50051
-E0107 20:56:50.050211464   25723 ssl_transport_security.cc:1839] No match found for server name: localhost.
+E0124 19:52:46.623583905  182291 ssl_transport_security.cc:1839] No match found for server name: localhost.
+Auth Process path name: '/helloworld.Greeter/SayHello'
+set MYVERIFIED, because expected SAN 'TESTVMMHSM' matched cert SAN 'TESTVMMHSM'
 
 Got Auth Context
 mTLS checking...
-common name: TESTVMMHSM
+isVerified return true, because MYVERIFIED is set
 client cert AuthN & AuthZ passed
-common name: TESTVMMHSM
-'TESTVMMHSM' matched san 'TESTVMMHSM'
+Auth Process path name: '/helloworld.Greeter/SayHello'
+already verified method path name: '/helloworld.Greeter/SayHello'
 
 Got Auth Context
 mTLS checking...
-common name: TESTVMMHSM
+isVerified return true, because MYVERIFIED is set
 client cert AuthN & AuthZ passed
-common name: TESTVMMHSM
-'TESTVMMHSM' matched san 'TESTVMMHSM'
+
 
 ```
 
@@ -246,24 +247,16 @@ KeyId:
 'engine:e_akv:managedHsm:az400popmhsm3:testvmmhsm'
 
 
-Server Address: 0.0.0.0:50051
-ServerBuilder: Build and Start listening
-Server listening on 0.0.0.0:50051
-E0124 19:52:46.623583905  182291 ssl_transport_security.cc:1839] No match found for server name: localhost.
-Auth Process path name: '/helloworld.Greeter/SayHello'
-set MYVERIFIED, because expected SAN 'TESTVMMHSM' matched cert SAN 'TESTVMMHSM'
-
-Got Auth Context
-mTLS checking...
-isVerified return true, because MYVERIFIED is set
-client cert AuthN & AuthZ passed
-Auth Process path name: '/helloworld.Greeter/SayHello'
-already verified method path name: '/helloworld.Greeter/SayHello'
-
-Got Auth Context
-mTLS checking...
-isVerified return true, because MYVERIFIED is set
-client cert AuthN & AuthZ passed
+Server Address: localhost:50051
+Server Name: localhost
+Set client cert
+Creating Custom Channel
+Callback Schedule
+Callback TargetName: localhost
+Chain is verified
+Greeter world received: world
+Reuse Custom Channel
+Greeter azure received: azure
 ```
 
 
@@ -303,22 +296,13 @@ VYdkfCYhke+4UKx2v3RENQLeO9C3KPwhlVxLzMR+
 KeyId:
 engine:e_akv:managedHsm:az400popmhsm3:ecckey
 
+
 Server Address: 0.0.0.0:50051
 ServerBuilder: Build and Start listening
 Server listening on 0.0.0.0:50051
-E0107 21:00:16.994645109   26310 ssl_transport_security.cc:1839] No match found for server name: localhost.
-
-Got Auth Context
-mTLS checking...
-common name: www.Contoso.com
-client cert AuthN & AuthZ passed
-common name: www.Contoso.com
-
-Got Auth Context
-mTLS checking...
-common name: www.Contoso.com
-client cert AuthN & AuthZ passed
-common name: www.Contoso.com
+E0124 20:01:00.907269375  192220 ssl_transport_security.cc:1839] No match found for server name: localhost.
+Auth Process path name: '/helloworld.Greeter/SayHello'
+Auth Process path name: '/helloworld.Greeter/SayHello'
 
 ```
 
@@ -358,6 +342,7 @@ VYdkfCYhke+4UKx2v3RENQLeO9C3KPwhlVxLzMR+
 KeyId:
 'engine:e_akv:managedHsm:az400popmhsm3:ecckey'
 
+
 Server Address: localhost:50051
 Server Name: localhost
 Set client cert
@@ -365,8 +350,11 @@ Creating Custom Channel
 Callback Schedule
 Callback TargetName: localhost
 Chain is verified
-Greeter world received: world
+16: Invalid Token
+Greeter world received: RPC failed
 Reuse Custom Channel
-Greeter azure received: azure
+16: Invalid Token
+Greeter azure received: RPC failed
+
 
 ```
