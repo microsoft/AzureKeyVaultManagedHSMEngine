@@ -62,7 +62,7 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
   CURL *curl_handle;
   CURLcode res;
 
-  accessToken->memory = malloc(1); 
+  accessToken->memory = malloc(1);
   accessToken->size = 0;
 
   char *IDMSEnv = NULL;
@@ -131,6 +131,7 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
   {
     Log(LogLevel_Error, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
     free(accessToken->memory);
+    accessToken->memory = 0;
     accessToken->size = 0;
     return 0;
   }
@@ -138,7 +139,15 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
   struct json_object *parsed_json;
   struct json_object *atoken;
   parsed_json = json_tokener_parse(accessToken->memory);
-  json_object_object_get_ex(parsed_json, "access_token", &atoken);
+
+  if (!json_object_object_get_ex(parsed_json, "access_token", &atoken)) {
+    Log(LogLevel_Error, "An access_token field was not found in the IDMS endpoint response. Is a managed identity available?\n");
+    free(accessToken->memory);
+    accessToken->memory = 0;
+    accessToken->size = 0;
+    return 0;
+  }
+
   const char *accessTokenStr = json_object_get_string(atoken);
   const size_t accessTokenStrSize = strlen(accessTokenStr);
   char *access = (char *)malloc(accessTokenStrSize + 1);
