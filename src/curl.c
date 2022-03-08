@@ -792,7 +792,10 @@ int AkvEncrypt(const char *type, const char *keyvault, const char *keyname, cons
   parsed_json = json_tokener_parse(encryption.memory);
 
   struct json_object *cipherText;
-  json_object_object_get_ex(parsed_json, "value", &cipherText);
+  if (!json_object_object_get_ex(parsed_json, "value", &cipherText)) {
+    Log(LogLevel_Error, "no value defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
+    goto cleanup;
+  }
   const char *value = json_object_get_string(cipherText);
   const size_t valueSize = strlen(value);
   outputLen = 0;
