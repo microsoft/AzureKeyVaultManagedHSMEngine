@@ -210,6 +210,9 @@ int akv_pkey_rsa_sign(EVP_PKEY_CTX *ctx, unsigned char *sig,
                       size_t *siglen, const unsigned char *tbs,
                       size_t tbslen);
 
+static EVP_PKEY *akv_load_privkey(ENGINE *eng, const char *key_id,
+                           UI_METHOD *ui_method, void *callback_data);
+
 /**
  * @brief Engine function for RSA private key decrypt
  *

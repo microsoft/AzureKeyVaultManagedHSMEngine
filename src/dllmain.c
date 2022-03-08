@@ -82,6 +82,7 @@ static int akv_init(ENGINE *e)
             goto err;
         RSA_meth_set_priv_dec(akv_rsa_method, akv_rsa_priv_dec);
         RSA_meth_set_priv_enc(akv_rsa_method, akv_rsa_priv_enc);
+
         RSA_meth_set_finish(akv_rsa_method, akv_rsa_free);
 
         /* Setup EC_METHOD */
@@ -99,6 +100,8 @@ static int akv_init(ENGINE *e)
         EC_KEY_METHOD_set_init(akv_eckey_method, NULL, akv_eckey_free, NULL, NULL, NULL, NULL);
         EC_KEY_METHOD_set_sign(akv_eckey_method, akv_eckey_sign, old_eckey_sign_setup,
                                akv_eckey_sign_sig);
+
+        ENGINE_set_load_pubkey_function(e, akv_load_privkey);
     }
 
     return 1;
