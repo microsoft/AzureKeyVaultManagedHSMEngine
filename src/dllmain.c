@@ -15,7 +15,7 @@ int eckey_akv_idx = -1;
 
 /**
  * @brief Free RSA context, paired with RSA_set_ex_data in akv_load_privkey.
- * 
+ *
  * @param rsa RSA context
  * @return 0 == success, 1 == failure
  */
@@ -44,7 +44,7 @@ int akv_rsa_free(RSA *rsa)
 
 /**
  * @brief Free EC_KEY context, paired with EC_KEY_set_ex_data in akv_load_privkey.
- * 
+ *
  * @param eckey EC_KEY context
  */
 void akv_eckey_free(EC_KEY *eckey)
@@ -64,7 +64,7 @@ void akv_eckey_free(EC_KEY *eckey)
 
 /**
  * @brief Set up engine for AKV/HSM.
- * 
+ *
  * @param e Engine
  * @return 1 == success, 0 == failure
  */
@@ -81,6 +81,7 @@ static int akv_init(ENGINE *e)
         if (rsa_akv_idx < 0)
             goto err;
         RSA_meth_set_priv_dec(akv_rsa_method, akv_rsa_priv_dec);
+        RSA_meth_set_priv_enc(akv_rsa_method, akv_rsa_priv_enc);
         RSA_meth_set_finish(akv_rsa_method, akv_rsa_free);
 
         /* Setup EC_METHOD */
@@ -109,7 +110,7 @@ err:
 
 /**
  * @brief Free any resouces associated with AKV/HSM.
- * 
+ *
  * @param e Engine
  * @return 1 == success, 0 == failure
  */
@@ -120,7 +121,7 @@ static int akv_finish(ENGINE *e)
 
 /**
  * @brief Free engine methods
- * 
+ *
  * @param e Engine
  * @return 1 == success, 0 == failure
  */
@@ -144,7 +145,7 @@ static int akv_destroy(ENGINE *e)
 
 /**
  * @brief Load public key from AKV/HSM.
- * 
+ *
  * @param key_id Key ID to load, e.g. "<vault type>:<keyvault name>:<key name>"
  * @param pevpkey Public key
  * @return 1 == success, 0 == failure
@@ -250,7 +251,7 @@ err:
 
 /**
  * @brief Load public key from AKV/HSM.
- * 
+ *
  * @param eng Engine
  * @param key_id Key ID to load, e.g. "<vault type>:<keyvault name>:<key name>"
  * @param ui_method Not used
@@ -270,7 +271,7 @@ static EVP_PKEY *akv_load_privkey(ENGINE *eng, const char *key_id,
 
 /**
  * @brief Setup engine methods
- * 
+ *
  * @param e Engine
  * @param pmeth methods table
  * @param nids nids table
@@ -341,7 +342,7 @@ static int akv_pkey_meths(ENGINE *e, EVP_PKEY_METHOD **pmeth,
 
 /**
  * @brief Bind engine to OpenSSL
- * 
+ *
  * @param e Engine
  * @return 1 == success, 0 == failure
  */
@@ -373,7 +374,7 @@ memerr:
 
 /**
  * @brief Helper function to load engine
- * 
+ *
  * @param e Engine
  * @param id Engine ID
  * @return 1 == success, 0 == failure
@@ -393,7 +394,7 @@ IMPLEMENT_DYNAMIC_BIND_FN(bind_helper)
 #ifdef _WIN32
 /**
  * @brief DLL entry point
- * 
+ *
  * @param hModule Module handle
  * @param ul_reason_for_call unused
  * @param lpReserved unused
