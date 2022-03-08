@@ -82,7 +82,6 @@ static int akv_init(ENGINE *e)
             goto err;
         RSA_meth_set_priv_dec(akv_rsa_method, akv_rsa_priv_dec);
         RSA_meth_set_priv_enc(akv_rsa_method, akv_rsa_priv_enc);
-
         RSA_meth_set_finish(akv_rsa_method, akv_rsa_free);
 
         /* Setup EC_METHOD */
@@ -100,8 +99,6 @@ static int akv_init(ENGINE *e)
         EC_KEY_METHOD_set_init(akv_eckey_method, NULL, akv_eckey_free, NULL, NULL, NULL, NULL);
         EC_KEY_METHOD_set_sign(akv_eckey_method, akv_eckey_sign, old_eckey_sign_setup,
                                akv_eckey_sign_sig);
-
-        ENGINE_set_load_pubkey_function(e, akv_load_privkey);
     }
 
     return 1;
@@ -261,8 +258,8 @@ err:
  * @param callback_data  Not used
  * @return Public key == success, NULL == failure
  */
-static EVP_PKEY *akv_load_privkey(ENGINE *eng, const char *key_id,
-                                  UI_METHOD *ui_method, void *callback_data)
+static EVP_PKEY *akv_load_pubkey(ENGINE *eng, const char *key_id,
+                                 UI_METHOD *ui_method, void *callback_data)
 {
     EVP_PKEY *pkey = NULL;
 
@@ -360,7 +357,7 @@ static int bind_akv(ENGINE *e)
     if (!akv_eckey_method)
         goto memerr;
 
-    if (!ENGINE_set_id(e, engine_akv_id) || !ENGINE_set_name(e, engine_akv_name) || !ENGINE_set_flags(e, ENGINE_FLAGS_NO_REGISTER_ALL) || !ENGINE_set_init_function(e, akv_init) || !ENGINE_set_finish_function(e, akv_finish) || !ENGINE_set_destroy_function(e, akv_destroy) || !ENGINE_set_RSA(e, akv_rsa_method) || !ENGINE_set_EC(e, akv_eckey_method) || !ENGINE_set_load_privkey_function(e, akv_load_privkey) || !ENGINE_set_pkey_meths(e, akv_pkey_meths) || !ENGINE_set_cmd_defns(e, akv_cmd_defns) || !ENGINE_set_ctrl_function(e, akv_ctrl))
+    if (!ENGINE_set_id(e, engine_akv_id) || !ENGINE_set_name(e, engine_akv_name) || !ENGINE_set_flags(e, ENGINE_FLAGS_NO_REGISTER_ALL) || !ENGINE_set_init_function(e, akv_init) || !ENGINE_set_finish_function(e, akv_finish) || !ENGINE_set_destroy_function(e, akv_destroy) || !ENGINE_set_RSA(e, akv_rsa_method) || !ENGINE_set_EC(e, akv_eckey_method) || !ENGINE_set_load_pubkey_function(e, akv_load_pubkey) || !ENGINE_set_pkey_meths(e, akv_pkey_meths) || !ENGINE_set_cmd_defns(e, akv_cmd_defns) || !ENGINE_set_ctrl_function(e, akv_ctrl))
         goto memerr;
 
     ERR_load_AKV_strings();

@@ -131,7 +131,7 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
   {
     Log(LogLevel_Error, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
     free(accessToken->memory);
-    accessToken->memory = 0;
+    accessToken->memory = NULL;
     accessToken->size = 0;
     return 0;
   }
@@ -143,7 +143,7 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
   if (!json_object_object_get_ex(parsed_json, "access_token", &atoken)) {
     Log(LogLevel_Error, "An access_token field was not found in the IDMS endpoint response. Is a managed identity available?\n");
     free(accessToken->memory);
-    accessToken->memory = 0;
+    accessToken->memory = NULL;
     accessToken->size = 0;
     return 0;
   }
@@ -666,7 +666,10 @@ int AkvDecrypt(const char *type, const char *keyvault, const char *keyname, cons
   parsed_json = json_tokener_parse(decryption.memory);
 
   struct json_object *clearText;
-  json_object_object_get_ex(parsed_json, "value", &clearText);
+  if (!json_object_object_get_ex(parsed_json, "value", &clearText)) {
+    Log(LogLevel_Error, "no value defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
+    goto cleanup;
+  }
   const char *value = json_object_get_string(clearText);
   const size_t valueSize = strlen(value);
   outputLen = 0;
@@ -696,7 +699,7 @@ cleanup:
   return result;
 }
 
-int AkvEncrypt(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *plainText, size_t plainTextSize, MemoryStruct *encryptedText)
+int AkvEncrypt(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *clearText, size_t clearTextSize, MemoryStruct *encryptedText)
 {
   CURL *curl_handle;
   CURLcode res;
@@ -759,22 +762,22 @@ int AkvEncrypt(const char *type, const char *keyvault, const char *keyname, cons
   /* build post data
     {
         "alg": "RSA1_5",
-        "value": "plaintext"
+        "value": "cleartext"
     }
   */
   size_t outputLen = 0;
-  base64urlEncode(plainText, plainTextSize, NULL, &outputLen);
+  base64urlEncode(clearText, clearTextSize, NULL, &outputLen);
   if (outputLen <= 0)
   {
-    Log(LogLevel_Error, "could not encode plain text\n");
+    Log(LogLevel_Error, "could not encode cleartext\n");
     goto cleanup;
   }
 
-  unsigned char *encodedPlainText = (unsigned char *)malloc(outputLen);
-  base64urlEncode(plainText, plainTextSize, encodedPlainText, &outputLen);
+  unsigned char *encodedClearText = (unsigned char *)malloc(outputLen);
+  base64urlEncode(clearText, clearTextSize, encodedClearText, &outputLen);
   json_object_object_add(request_json, "alg", json_object_new_string(alg));
-  json_object_object_add(request_json, "value", json_object_new_string(encodedPlainText));
-  free(encodedPlainText);
+  json_object_object_add(request_json, "value", json_object_new_string(encodedClearText));
+  free(encodedClearText);
 
   /* set curl options */
   curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "POST");

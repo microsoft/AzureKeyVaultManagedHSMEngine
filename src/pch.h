@@ -145,12 +145,12 @@ int AkvDecrypt(const char *type, const char *keyvault, const char *keyname, cons
  * @param keyname The key name
  * @param accessToken The access token
  * @param alg Algorithm, e.g. "RS256"
- * @param plainText The plain text to be decrypted
- * @param plainTextSize The size of the plain text
+ * @param clearText The clear text to be encrypted
+ * @param clearTextSize The size of the clear text
  * @param encryptedText The returned encrypted text
  * @return 1 == success, 0 == failure
  */
-int AkvEncrypt(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *plainText, size_t plainTextSize, MemoryStruct *encryptedText);
+int AkvEncrypt(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *clearText, size_t clearTextSize, MemoryStruct *encryptedText);
 
 /**
  * @brief Get the Openssl public key from key vault or managed HSM
@@ -210,9 +210,6 @@ int akv_pkey_rsa_sign(EVP_PKEY_CTX *ctx, unsigned char *sig,
                       size_t *siglen, const unsigned char *tbs,
                       size_t tbslen);
 
-static EVP_PKEY *akv_load_privkey(ENGINE *eng, const char *key_id,
-                           UI_METHOD *ui_method, void *callback_data);
-
 /**
  * @brief Engine function for RSA private key decrypt
  *
@@ -231,7 +228,7 @@ int akv_rsa_priv_dec(int flen, const unsigned char *from,
  * @brief Engine function for RSA private key encrypt
  *
  * @param flen cipher text length
- * @param from plain text
+ * @param from clear text
  * @param to cipher text
  * @param rsa RSA key context
  * @param padding Padding type
