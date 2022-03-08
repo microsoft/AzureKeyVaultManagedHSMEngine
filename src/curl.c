@@ -229,7 +229,7 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
 
   json = json_object_new_object();
-  json_object_object_add(json, "alg", json_object_new_string(alg));
+  json_object_object_add(json, "alg", json_object_new_string(alg)); // this line segfaults
   json_object_object_add(json, "value", json_object_new_string(encodeResult));
 
   curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "POST");
@@ -247,7 +247,12 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   parsed_json = json_tokener_parse(signature.memory);
 
   struct json_object *signedText;
-  json_object_object_get_ex(parsed_json, "value", &signedText);
+
+  if (!json_object_object_get_ex(parsed_json, "value", &signedText))
+  {
+    Log(LogLevel_Error, "no value defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
+    goto cleanup;
+  }
   const char *value = json_object_get_string(signedText);
   const size_t valueSize = strlen(value);
   outputLen = 0;
