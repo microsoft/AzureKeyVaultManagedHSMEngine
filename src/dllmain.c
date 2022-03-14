@@ -357,7 +357,7 @@ static int bind_akv(ENGINE *e)
     if (!akv_eckey_method)
         goto memerr;
 
-    if (!ENGINE_set_id(e, engine_akv_id) || !ENGINE_set_name(e, engine_akv_name) || !ENGINE_set_flags(e, ENGINE_FLAGS_NO_REGISTER_ALL) || !ENGINE_set_init_function(e, akv_init) || !ENGINE_set_finish_function(e, akv_finish) || !ENGINE_set_destroy_function(e, akv_destroy) || !ENGINE_set_RSA(e, akv_rsa_method) || !ENGINE_set_EC(e, akv_eckey_method) || !ENGINE_set_load_pubkey_function(e, akv_load_pubkey) || !ENGINE_set_pkey_meths(e, akv_pkey_meths) || !ENGINE_set_cmd_defns(e, akv_cmd_defns) || !ENGINE_set_ctrl_function(e, akv_ctrl))
+    if (!ENGINE_set_id(e, engine_akv_id) || !ENGINE_set_name(e, engine_akv_name) || !ENGINE_set_flags(e, ENGINE_FLAGS_NO_REGISTER_ALL) || !ENGINE_set_init_function(e, akv_init) || !ENGINE_set_finish_function(e, akv_finish) || !ENGINE_set_destroy_function(e, akv_destroy) || !ENGINE_set_RSA(e, akv_rsa_method) || !ENGINE_set_EC(e, akv_eckey_method) || !ENGINE_set_load_privkey_function(e, akv_load_pubkey) || !ENGINE_set_load_pubkey_function(e, akv_load_pubkey)|| !ENGINE_set_pkey_meths(e, akv_pkey_meths) || !ENGINE_set_cmd_defns(e, akv_cmd_defns) || !ENGINE_set_ctrl_function(e, akv_ctrl))
         goto memerr;
 
     ERR_load_AKV_strings();
