@@ -15,6 +15,19 @@ int strcat_s(char *restrict dest, int destsz, const char *restrict src)
 }
 #endif
 
+static void vaultErrorLog(json_object *parsed_json)
+{
+    struct json_object *errorText;
+    if (json_object_object_get_ex(parsed_json, "error", &errorText))
+    {
+      Log(LogLevel_Error, "Vault error %s\n", json_object_to_json_string_ext(errorText, JSON_C_TO_STRING_PLAIN));
+    }
+    else
+    {
+      Log(LogLevel_Error, "Vault error - unknown.\n");
+    }
+}
+
 char *HexStr(const char *data, size_t len)
 {
   if (data == NULL || len == 0)
@@ -139,6 +152,13 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
   struct json_object *atoken;
   parsed_json = json_tokener_parse(accessToken->memory);
   json_object_object_get_ex(parsed_json, "access_token", &atoken);
+  if (atoken == NULL)
+  {
+    vaultErrorLog(parsed_json);
+    free(accessToken->memory);
+    accessToken->size = 0;
+    return 0;
+  }
   const char *accessTokenStr = json_object_get_string(atoken);
   const size_t accessTokenStrSize = strlen(accessTokenStr);
   char *access = (char *)malloc(accessTokenStrSize + 1);
@@ -239,6 +259,11 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
 
   struct json_object *signedText;
   json_object_object_get_ex(parsed_json, "value", &signedText);
+  if (signedText == NULL)
+  {
+    vaultErrorLog(parsed_json);
+    goto cleanup;
+  }
   const char *value = json_object_get_string(signedText);
   const size_t valueSize = strlen(value);
   outputLen = 0;
@@ -406,6 +431,11 @@ EVP_PKEY *AkvGetKey(const char *type, const char *keyvault, const char *keyname,
 
   struct json_object *keyMaterial;
   json_object_object_get_ex(parsed_json, "key", &keyMaterial);
+  if (keyMaterial == NULL)
+  {
+    vaultErrorLog(parsed_json);
+    goto cleanup;
+  }
 
   struct json_object *jKeyType;
   json_object_object_get_ex(keyMaterial, "kty", &jKeyType);
@@ -653,6 +683,11 @@ int AkvDecrypt(const char *type, const char *keyvault, const char *keyname, cons
 
   struct json_object *clearText;
   json_object_object_get_ex(parsed_json, "value", &clearText);
+  if (clearText == NULL)
+  {
+    vaultErrorLog(parsed_json);
+    goto cleanup;
+  }
   const char *value = json_object_get_string(clearText);
   const size_t valueSize = strlen(value);
   outputLen = 0;
