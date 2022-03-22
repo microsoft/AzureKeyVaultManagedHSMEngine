@@ -92,7 +92,9 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
     Log(LogLevel_Info, "Use overrided IDMS url : %s\n", IDMSEnv);
     strcat_s(idmsUrl, sizeof idmsUrl, IDMSEnv);
     strcat_s(idmsUrl, sizeof idmsUrl, "?api-version=2018-02-01");
+#ifdef _WIN32
     free(IDMSEnv);
+#endif
   }
   else
   {
