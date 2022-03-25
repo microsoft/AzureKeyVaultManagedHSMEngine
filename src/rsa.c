@@ -6,7 +6,7 @@
 /**
  * @brief return the algorithm name for key vault or managed HSM for the given public key and hash algorithm
  * @see https://docs.microsoft.com/en-us/rest/api/keyvault/sign/sign
- * 
+ *
  * @param ctx Public key context
  * @param sigmd signature hash algorithm
  * @return algorithm name == success, NULL == failure
@@ -180,6 +180,63 @@ int akv_rsa_priv_dec(int flen, const unsigned char *from,
 
     MemoryStruct clearText;
     if (AkvDecrypt(akv_key->keyvault_type, akv_key->keyvault_name, akv_key->key_name, &accessToken, alg, from, flen, &clearText) == 1)
+    {
+        Log(LogLevel_Debug, "Decrypt successfully clear text size=[%zu]\n", clearText.size);
+        if (to != NULL)
+        {
+            memcpy(to, clearText.memory, clearText.size);
+        }
+        else
+        {
+            Log(LogLevel_Debug, "size probe, return [%zu]\n", clearText.size);
+        }
+
+        free(clearText.memory);
+        free(accessToken.memory);
+        return (int)clearText.size;
+    }
+    else
+    {
+        Log(LogLevel_Error, "Failed to decrypt\n");
+        free(clearText.memory);
+        free(accessToken.memory);
+        return -1;
+    }
+}
+
+
+int akv_rsa_priv_enc(int flen, const unsigned char *from,
+                     unsigned char *to, RSA *rsa, int padding)
+{
+    if (padding != RSA_PKCS1_PADDING && padding != RSA_PKCS1_OAEP_PADDING)
+    {
+        Log(LogLevel_Error, "   unsurported openssl_padding type=%d, only support RSA1_5 or RSA_OAEP \n", padding);
+        return -1;
+    }
+
+    AKV_KEY *akv_key = NULL;
+    const char *alg = padding_to_alg(padding);
+    if (alg == NULL)
+    {
+        Log(LogLevel_Error, "   unsurported openssl_padding type=%d\n, only support RSA1_5 or RSA_OAEP", padding);
+        return -1;
+    }
+
+    akv_key = RSA_get_ex_data(rsa, rsa_akv_idx);
+    if (!akv_key)
+    {
+        AKVerr(AKV_F_RSA_PRIV_DEC, AKV_R_CANT_GET_AKV_KEY);
+        return -1;
+    }
+
+    MemoryStruct accessToken;
+    if (!GetAccessTokenFromIMDS(akv_key->keyvault_type, &accessToken))
+    {
+        return -1;
+    }
+
+    MemoryStruct clearText;
+    if (AkvEncrypt(akv_key->keyvault_type, akv_key->keyvault_name, akv_key->key_name, &accessToken, alg, from, flen, &clearText) == 1)
     {
         Log(LogLevel_Debug, "Decrypt successfully clear text size=[%zu]\n", clearText.size);
         if (to != NULL)
