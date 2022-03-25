@@ -15,6 +15,19 @@ int strcat_s(char *restrict dest, int destsz, const char *restrict src)
 }
 #endif
 
+static void vaultErrorLog(json_object *parsed_json)
+{
+    struct json_object *errorText;
+    if (json_object_object_get_ex(parsed_json, "error", &errorText))
+    {
+      Log(LogLevel_Error, "Vault error %s\n", json_object_to_json_string_ext(errorText, JSON_C_TO_STRING_PLAIN));
+    }
+    else
+    {
+      Log(LogLevel_Error, "Vault error - unknown.\n");
+    }
+}
+
 char *HexStr(const char *data, size_t len)
 {
   if (data == NULL || len == 0)
@@ -142,6 +155,7 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
 
   if (!json_object_object_get_ex(parsed_json, "access_token", &atoken)) {
     Log(LogLevel_Error, "An access_token field was not found in the IDMS endpoint response. Is a managed identity available?\n");
+    vaultErrorLog(parsed_json);
     free(accessToken->memory);
     accessToken->memory = NULL;
     accessToken->size = 0;
@@ -251,6 +265,7 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   if (!json_object_object_get_ex(parsed_json, "value", &signedText))
   {
     Log(LogLevel_Error, "no value defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
+    vaultErrorLog(parsed_json);
     goto cleanup;
   }
   const char *value = json_object_get_string(signedText);
@@ -420,6 +435,11 @@ EVP_PKEY *AkvGetKey(const char *type, const char *keyvault, const char *keyname,
 
   struct json_object *keyMaterial;
   json_object_object_get_ex(parsed_json, "key", &keyMaterial);
+  if (keyMaterial == NULL)
+  {
+    vaultErrorLog(parsed_json);
+    goto cleanup;
+  }
 
   struct json_object *jKeyType;
   json_object_object_get_ex(keyMaterial, "kty", &jKeyType);
@@ -668,6 +688,7 @@ int AkvDecrypt(const char *type, const char *keyvault, const char *keyname, cons
   struct json_object *clearText;
   if (!json_object_object_get_ex(parsed_json, "value", &clearText)) {
     Log(LogLevel_Error, "no value defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
+    vaultErrorLog(parsed_json);
     goto cleanup;
   }
   const char *value = json_object_get_string(clearText);
