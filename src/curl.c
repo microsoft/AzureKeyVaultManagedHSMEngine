@@ -62,7 +62,7 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
   CURL *curl_handle;
   CURLcode res;
 
-  accessToken->memory = malloc(1); 
+  accessToken->memory = malloc(1);
   accessToken->size = 0;
 
   char *IDMSEnv = NULL;
@@ -131,6 +131,7 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
   {
     Log(LogLevel_Error, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
     free(accessToken->memory);
+    accessToken->memory = NULL;
     accessToken->size = 0;
     return 0;
   }
@@ -138,7 +139,15 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
   struct json_object *parsed_json;
   struct json_object *atoken;
   parsed_json = json_tokener_parse(accessToken->memory);
-  json_object_object_get_ex(parsed_json, "access_token", &atoken);
+
+  if (!json_object_object_get_ex(parsed_json, "access_token", &atoken)) {
+    Log(LogLevel_Error, "An access_token field was not found in the IDMS endpoint response. Is a managed identity available?\n");
+    free(accessToken->memory);
+    accessToken->memory = NULL;
+    accessToken->size = 0;
+    return 0;
+  }
+
   const char *accessTokenStr = json_object_get_string(atoken);
   const size_t accessTokenStrSize = strlen(accessTokenStr);
   char *access = (char *)malloc(accessTokenStrSize + 1);
@@ -238,7 +247,12 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   parsed_json = json_tokener_parse(signature.memory);
 
   struct json_object *signedText;
-  json_object_object_get_ex(parsed_json, "value", &signedText);
+
+  if (!json_object_object_get_ex(parsed_json, "value", &signedText))
+  {
+    Log(LogLevel_Error, "no value defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
+    goto cleanup;
+  }
   const char *value = json_object_get_string(signedText);
   const size_t valueSize = strlen(value);
   outputLen = 0;
@@ -652,7 +666,10 @@ int AkvDecrypt(const char *type, const char *keyvault, const char *keyname, cons
   parsed_json = json_tokener_parse(decryption.memory);
 
   struct json_object *clearText;
-  json_object_object_get_ex(parsed_json, "value", &clearText);
+  if (!json_object_object_get_ex(parsed_json, "value", &clearText)) {
+    Log(LogLevel_Error, "no value defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
+    goto cleanup;
+  }
   const char *value = json_object_get_string(clearText);
   const size_t valueSize = strlen(value);
   outputLen = 0;
@@ -675,6 +692,135 @@ int AkvDecrypt(const char *type, const char *keyvault, const char *keyname, cons
 cleanup:
   if (decryption.memory)
     free(decryption.memory);
+  if (parsed_json)
+    json_object_put(parsed_json);
+  if (request_json)
+    json_object_put(request_json);
+  return result;
+}
+
+int AkvEncrypt(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *clearText, size_t clearTextSize, MemoryStruct *encryptedText)
+{
+  CURL *curl_handle;
+  CURLcode res;
+  int result = 0;
+
+  struct json_object *parsed_json = NULL;
+  json_object *request_json = NULL;
+
+  MemoryStruct encryption;
+  encryption.memory = malloc(1); /* will be grown as needed by the realloc above */
+  encryption.size = 0;           /* no data at this point */
+
+  char keyVaultUrl[4 * 1024] = {0};
+  if (strcasecmp(type, "managedHsm") == 0)
+  {
+    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "https://");
+    strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyvault);
+    strcat_s(keyVaultUrl, sizeof keyVaultUrl, ".managedhsm.azure.net/keys/");
+    strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyname);
+    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "/encrypt");
+  }
+  else if (strcasecmp(type, "vault") == 0)
+  {
+    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "https://");
+    strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyvault);
+    strcat_s(keyVaultUrl, sizeof keyVaultUrl, ".vault.azure.net/keys/");
+    strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyname);
+    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "/encrypt");
+    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "?");
+    strcat_s(keyVaultUrl, sizeof keyVaultUrl, ApiVersion);
+  }
+  else
+  {
+    Log(LogLevel_Error, "AKV type must be either 'managedhsm' or 'vault'!\n");
+    goto cleanup;
+  }
+
+  /* init the curl session */
+  curl_handle = curl_easy_init();
+
+  /* specify URL to get */
+  curl_easy_setopt(curl_handle, CURLOPT_URL, keyVaultUrl);
+  // adding the header so service can serialize the request to Bond from Protobuf using Content-Type field
+  struct curl_slist *headers = NULL;
+  headers = curl_slist_append(headers, "Accept: application/json");
+  headers = curl_slist_append(headers, "Content-Type: application/json");
+  char authHeader[4 * 1024] = {0};
+  const char *bearer = "Authorization: Bearer ";
+  strcat_s(authHeader, sizeof authHeader, bearer);
+  strcat_s(authHeader, sizeof authHeader, accessToken->memory);
+
+  headers = curl_slist_append(headers, authHeader);
+  curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headers);
+  curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+  curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)(&encryption));
+  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+
+  /* create json object for post */
+  request_json = json_object_new_object();
+  /* build post data
+    {
+        "alg": "RSA1_5",
+        "value": "cleartext"
+    }
+  */
+  size_t outputLen = 0;
+  base64urlEncode(clearText, clearTextSize, NULL, &outputLen);
+  if (outputLen <= 0)
+  {
+    Log(LogLevel_Error, "could not encode cleartext\n");
+    goto cleanup;
+  }
+
+  unsigned char *encodedClearText = (unsigned char *)malloc(outputLen);
+  base64urlEncode(clearText, clearTextSize, encodedClearText, &outputLen);
+  json_object_object_add(request_json, "alg", json_object_new_string(alg));
+  json_object_object_add(request_json, "value", json_object_new_string(encodedClearText));
+  free(encodedClearText);
+
+  /* set curl options */
+  curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "POST");
+  curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, json_object_to_json_string(request_json));
+
+  res = curl_easy_perform(curl_handle);
+  curl_easy_cleanup(curl_handle);
+
+  if (res != CURLE_OK)
+  {
+    Log(LogLevel_Error, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+    goto cleanup;
+  }
+
+  parsed_json = json_tokener_parse(encryption.memory);
+
+  struct json_object *cipherText;
+  if (!json_object_object_get_ex(parsed_json, "value", &cipherText)) {
+    Log(LogLevel_Error, "no value defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
+    goto cleanup;
+  }
+  const char *value = json_object_get_string(cipherText);
+  const size_t valueSize = strlen(value);
+  outputLen = 0;
+
+  int decodeErr = base64urlDecode((const unsigned char *)value, valueSize, NULL, &outputLen);
+  if (!decodeErr && outputLen > 0)
+  {
+    unsigned char *result = (unsigned char *)malloc(outputLen);
+    base64urlDecode((const unsigned char *)value, strlen(value), result, &outputLen);
+    encryptedText->memory = result;
+    encryptedText->size = outputLen;
+  }
+  else
+  {
+    Log(LogLevel_Error, "decode error %d\n", decodeErr);
+    goto cleanup;
+  }
+
+  result = 1;
+cleanup:
+  if (encryption.memory)
+    free(encryption.memory);
   if (parsed_json)
     json_object_put(parsed_json);
   if (request_json)
