@@ -67,6 +67,15 @@ int akv_pkey_rsa_sign(EVP_PKEY_CTX *ctx, unsigned char *sig,
         return -1;
     }
 
+    if (!sig) {
+        // OpenSSL may call this method without a sig array to
+        // obtain the expected siglen value. This should be
+        // treated as a successful call.
+        *siglen = RSA_size(rsa);
+        Log(LogLevel_Debug, "sig is null, setting siglen to [%zu]\n", *siglen);
+        return 1;
+    }
+
     AKV_KEY *akv_key = RSA_get_ex_data(rsa, rsa_akv_idx);
     if (!akv_key)
     {
