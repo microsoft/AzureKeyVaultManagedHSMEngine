@@ -3,6 +3,9 @@ The Azure Key Vault and Managed HSM Engine allows OpenSSL-based applications to 
 
 > NOTE: Azure Key Vault should ONLY be used for development purposes with small numbers of requests. For production workloads, use Azure Managed HSM. For more information, see [Azure Key Vault Service Limits](https://docs.microsoft.com/en-us/azure/key-vault/general/service-limits)
 
+# Blog
+[Introducing Azure Key Vault and Managed HSM Engine: An Open-Source Project](https://techcommunity.microsoft.com/t5/azure-confidential-computing/introducing-azure-key-vault-and-managed-hsm-engine-an-open/ba-p/3032273)
+
 # Getting Started
 
 ## Linux/Ubuntu
