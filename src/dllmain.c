@@ -1,6 +1,7 @@
 /* Copyright (c) Microsoft Corporation.
    Licensed under the MIT License. */
 
+#include "log.h"
 #include "pch.h"
 
 static const char *engine_akv_id = "e_akv";
@@ -99,6 +100,13 @@ static int akv_init(ENGINE *e)
         EC_KEY_METHOD_set_init(akv_eckey_method, NULL, akv_eckey_free, NULL, NULL, NULL, NULL);
         EC_KEY_METHOD_set_sign(akv_eckey_method, akv_eckey_sign, old_eckey_sign_setup,
                                akv_eckey_sign_sig);
+
+
+        // create a log file pointer
+        FILE* fp = fopen("/var/log/nginx/akv_error.log", "aw+");
+        
+        // add log file to the logger
+        log_add_fp(fp, LOG_DEBUG);
     }
 
     return 1;

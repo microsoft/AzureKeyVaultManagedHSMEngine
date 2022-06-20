@@ -4,8 +4,8 @@ server {
   listen 443 ssl default_server;
   listen [::]:443 ssl default_server;
   ssl on;
-  ssl_certificate /etc/ssl/certs/contoso_rsa_cert.cer;
-  ssl_certificate_key "engine:e_akv:vault:KEYVAULTNAME:testrsakey";
+  ssl_certificate /etc/ssl/certs/azurefd-test.net.crt;
+  ssl_certificate_key "engine:e_akv:vault:t-cbrugal-kv:azurefd-test";
   root /var/www/html;
   index index.html index.htm index.nginx-debian.html;
   server_name _;

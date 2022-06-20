@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "log.h"
 #include "pch.h"
 
 #ifndef _WIN32
@@ -20,11 +21,11 @@ static void vaultErrorLog(json_object *parsed_json)
     struct json_object *errorText;
     if (json_object_object_get_ex(parsed_json, "error", &errorText))
     {
-      Log(LogLevel_Error, "Vault error %s\n", json_object_to_json_string_ext(errorText, JSON_C_TO_STRING_PLAIN));
+      log_error( "Vault error %s\n", json_object_to_json_string_ext(errorText, JSON_C_TO_STRING_PLAIN));
     }
     else
     {
-      Log(LogLevel_Error, "Vault error - unknown.\n");
+      log_error( "Vault error - unknown.\n");
     }
 }
 
@@ -59,7 +60,7 @@ size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *user
   if (mem->memory == NULL)
   {
     /* out of memory */
-    Log(LogLevel_Error, "not enough memory (realloc returned NULL)\n");
+    log_error( "not enough memory (realloc returned NULL)\n");
     return 0;
   }
 
@@ -85,11 +86,11 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
   getenv_s(&requiredSize, NULL, 0, "IDENTITY_ENDPOINT");
   if (requiredSize != 0)
   {
-    Log(LogLevel_Error, "IDENTITY_ENDPOINT defined [%zu]\n", requiredSize);
+    log_error( "IDENTITY_ENDPOINT defined [%zu]\n", requiredSize);
     IDMSEnv = (char *)malloc(requiredSize * sizeof(char));
     if (!IDMSEnv)
     {
-      Log(LogLevel_Error, "Failed to allocate memory!\n");
+      log_error( "Failed to allocate memory!\n");
       return 0;
     }
 
@@ -102,7 +103,7 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
   char idmsUrl[4 * 1024] = {0};
   if (IDMSEnv)
   {
-    Log(LogLevel_Info, "Use overrided IDMS url : %s\n", IDMSEnv);
+    log_info( "Use overrided IDMS url : %s\n", IDMSEnv);
     strcat_s(idmsUrl, sizeof idmsUrl, IDMSEnv);
     strcat_s(idmsUrl, sizeof idmsUrl, "?api-version=2018-02-01");
 #ifdef _WIN32
@@ -124,7 +125,7 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
   }
   else
   {
-    Log(LogLevel_Error, "AKV type must be either 'managedhsm' or 'vault'!\n");
+    log_error( "AKV type must be either 'managedhsm' or 'vault'!\n");
     return 0;
   }
 
@@ -144,7 +145,7 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
 
   if (res != CURLE_OK)
   {
-    Log(LogLevel_Error, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+    log_error( "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
     free(accessToken->memory);
     accessToken->memory = NULL;
     accessToken->size = 0;
@@ -156,7 +157,7 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
   parsed_json = json_tokener_parse(accessToken->memory);
 
   if (!json_object_object_get_ex(parsed_json, "access_token", &atoken)) {
-    Log(LogLevel_Error, "An access_token field was not found in the IDMS endpoint response. Is a managed identity available?\n");
+    log_error( "An access_token field was not found in the IDMS endpoint response. Is a managed identity available?\n");
     vaultErrorLog(parsed_json);
     free(accessToken->memory);
     accessToken->memory = NULL;
@@ -177,6 +178,7 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
   return 1;
 }
 
+
 int AkvSign(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *hashText, size_t hashTextSize, MemoryStruct *signatureText)
 {
   CURL *curl_handle;
@@ -191,15 +193,26 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   signature.size = 0;
 
   size_t outputLen = 0;
+  
+  for (int i=0; i<hashTextSize; i++){
+    log_debug("%d", hashText[i]);
+  }
+
   base64urlEncode(hashText, hashTextSize, NULL, &outputLen);
+
+  log_debug("Hash text: %s and the size it %d", hashText, outputLen);
+
   if (outputLen <= 0)
   {
-    Log(LogLevel_Error, "could not encode hash text\n");
+    log_error( "could not encode hash text\n");
     goto cleanup;
   }
 
+  unsigned char *hash = (unsigned char *)malloc(outputLen);
+  memcpy(hash, hashText, outputLen);
+
   encodeResult = (unsigned char *)malloc(outputLen);
-  base64urlEncode(hashText, hashTextSize, encodeResult, &outputLen);
+  base64urlEncode(hash, hashTextSize, encodeResult, &outputLen);
 
   char keyVaultUrl[4 * 1024] = {0};
   if (strcasecmp(type, "managedHsm") == 0)
@@ -222,9 +235,12 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   }
   else
   {
-    Log(LogLevel_Error, "AKV type must be either 'managedhsm' or 'vault'!\n");
+    log_error( "AKV type must be either 'managedhsm' or 'vault'!\n");
     goto cleanup;
   }
+  
+  log_info("about to print hash in urlencode!");
+  //log_info("hash in urlencode: %s", encodeResult);
 
   curl_handle = curl_easy_init();
   curl_easy_setopt(curl_handle, CURLOPT_URL, keyVaultUrl);
@@ -246,7 +262,7 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
 
   json = json_object_new_object();
   json_object_object_add(json, "alg", json_object_new_string(alg));
-  json_object_object_add(json, "value", json_object_new_string(encodeResult));
+  json_object_object_add(json, "value", json_object_new_string(hash));
 
   curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "POST");
   curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, json_object_to_json_string(json));
@@ -256,7 +272,7 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
 
   if (res != CURLE_OK)
   {
-    Log(LogLevel_Error, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+    log_error( "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
     goto cleanup;
   }
 
@@ -266,7 +282,7 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
 
   if (!json_object_object_get_ex(parsed_json, "value", &signedText))
   {
-    Log(LogLevel_Error, "no value defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
+    log_error( "no value defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
     vaultErrorLog(parsed_json);
     goto cleanup;
   }
@@ -286,7 +302,7 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   }
   else
   {
-    Log(LogLevel_Error, "decode error %d\n", decodeErr);
+    log_error( "decode error %d\n", decodeErr);
     goto cleanup;
   }
 
@@ -318,7 +334,7 @@ static EVP_PKEY *getPKey(const unsigned char *n, const size_t nSize, const unsig
   if (!RSA_set0_key(rsa, BN_bin2bn(n, (int)nSize, NULL), BN_bin2bn(e, (int)eSize, NULL), NULL))
   {
     EVP_PKEY_free(pk);
-    Log(LogLevel_Error, "RSA_set0_key failed\n");
+    log_error( "RSA_set0_key failed\n");
     return NULL;
   }
 
@@ -336,7 +352,7 @@ static EVP_PKEY *getECPKey(int nid_curve, const unsigned char *x, const size_t x
           BN_bin2bn(x, (int)xSize, NULL),
           BN_bin2bn(y, (int)ySize, NULL)))
   {
-    Log(LogLevel_Error, "set affine coordinatres failed\n");
+    log_error( "set affine coordinatres failed\n");
     return NULL;
   }
 
@@ -345,7 +361,7 @@ static EVP_PKEY *getECPKey(int nid_curve, const unsigned char *x, const size_t x
   {
     EC_KEY_free(ec_key);
     EVP_PKEY_free(pk);
-    Log(LogLevel_Error, "EVP_PKEY_assign_EC_KEY failed\n");
+    log_error( "EVP_PKEY_assign_EC_KEY failed\n");
     return NULL;
   }
 
@@ -396,7 +412,7 @@ EVP_PKEY *AkvGetKey(const char *type, const char *keyvault, const char *keyname,
   }
   else
   {
-    Log(LogLevel_Error, "AKV type must be either 'managedhsm' or 'vault'!\n");
+    log_error( "AKV type must be either 'managedhsm' or 'vault'!\n");
     goto cleanup;
   }
 
@@ -428,12 +444,12 @@ EVP_PKEY *AkvGetKey(const char *type, const char *keyvault, const char *keyname,
 
   if (res != CURLE_OK)
   {
-    Log(LogLevel_Error, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+    log_error( "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
     goto cleanup;
   }
 
   parsed_json = json_tokener_parse(keyInfo.memory);
-  Log(LogLevel_Debug, "Key Info in Json \n---\n%s\n---\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
+  log_debug( "Key Info in Json \n---\n%s\n---\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
 
   struct json_object *keyMaterial;
   json_object_object_get_ex(parsed_json, "key", &keyMaterial);
@@ -449,7 +465,7 @@ EVP_PKEY *AkvGetKey(const char *type, const char *keyvault, const char *keyname,
 
   if (keyType == NULL)
   {
-    Log(LogLevel_Error, "no kty defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
+    log_error( "no kty defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
     goto cleanup;
   }
 
@@ -460,7 +476,7 @@ EVP_PKEY *AkvGetKey(const char *type, const char *keyvault, const char *keyname,
     const char *crv = json_object_get_string(jKeyCrv);
     if (crv == NULL)
     {
-      Log(LogLevel_Error, "no crv defined in EC-HSM, returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
+      log_error( "no crv defined in EC-HSM, returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
       goto cleanup;
     }
 
@@ -489,7 +505,7 @@ EVP_PKEY *AkvGetKey(const char *type, const char *keyvault, const char *keyname,
     }
     else
     {
-      Log(LogLevel_Error, "EC-HSM curve not supported: %s\n", crv);
+      log_error( "EC-HSM curve not supported: %s\n", crv);
       goto cleanup;
     }
 
@@ -511,7 +527,7 @@ EVP_PKEY *AkvGetKey(const char *type, const char *keyvault, const char *keyname,
     }
     else
     {
-      Log(LogLevel_Error, "decode X error %d\n", decodeErr);
+      log_error( "decode X error %d\n", decodeErr);
       goto cleanup;
     }
 
@@ -525,7 +541,7 @@ EVP_PKEY *AkvGetKey(const char *type, const char *keyvault, const char *keyname,
     }
     else
     {
-      Log(LogLevel_Error, "decode Y error %d\n", decodeErr);
+      log_error( "decode Y error %d\n", decodeErr);
       goto cleanup;
     }
 
@@ -550,7 +566,7 @@ EVP_PKEY *AkvGetKey(const char *type, const char *keyvault, const char *keyname,
     }
     else
     {
-      Log(LogLevel_Error, "decode N error %d\n", decodeErr);
+      log_error( "decode N error %d\n", decodeErr);
       goto cleanup;
     }
 
@@ -564,7 +580,7 @@ EVP_PKEY *AkvGetKey(const char *type, const char *keyvault, const char *keyname,
     }
     else
     {
-      Log(LogLevel_Error, "decode E error %d\n", decodeErr);
+      log_error( "decode E error %d\n", decodeErr);
       goto cleanup;
     }
 
@@ -572,7 +588,7 @@ EVP_PKEY *AkvGetKey(const char *type, const char *keyvault, const char *keyname,
   }
   else
   {
-    Log(LogLevel_Error, "kty [%s] not supported\n", keyType);
+    log_error( "kty [%s] not supported\n", keyType);
     goto cleanup;
   }
 
@@ -626,7 +642,7 @@ int AkvDecrypt(const char *type, const char *keyvault, const char *keyname, cons
   }
   else
   {
-    Log(LogLevel_Error, "AKV type must be either 'managedhsm' or 'vault'!\n");
+    log_error( "AKV type must be either 'managedhsm' or 'vault'!\n");
     goto cleanup;
   }
 
@@ -662,7 +678,7 @@ int AkvDecrypt(const char *type, const char *keyvault, const char *keyname, cons
   base64urlEncode(ciperText, ciperTextSize, NULL, &outputLen);
   if (outputLen <= 0)
   {
-    Log(LogLevel_Error, "could not encode ciper text\n");
+    log_error( "could not encode ciper text\n");
     goto cleanup;
   }
 
@@ -681,7 +697,7 @@ int AkvDecrypt(const char *type, const char *keyvault, const char *keyname, cons
 
   if (res != CURLE_OK)
   {
-    Log(LogLevel_Error, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+    log_error( "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
     goto cleanup;
   }
 
@@ -689,7 +705,7 @@ int AkvDecrypt(const char *type, const char *keyvault, const char *keyname, cons
 
   struct json_object *clearText;
   if (!json_object_object_get_ex(parsed_json, "value", &clearText)) {
-    Log(LogLevel_Error, "no value defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
+    log_error( "no value defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
     vaultErrorLog(parsed_json);
     goto cleanup;
   }
@@ -707,7 +723,7 @@ int AkvDecrypt(const char *type, const char *keyvault, const char *keyname, cons
   }
   else
   {
-    Log(LogLevel_Error, "decode error %d\n", decodeErr);
+    log_error( "decode error %d\n", decodeErr);
     goto cleanup;
   }
 
@@ -756,7 +772,7 @@ int AkvEncrypt(const char *type, const char *keyvault, const char *keyname, cons
   }
   else
   {
-    Log(LogLevel_Error, "AKV type must be either 'managedhsm' or 'vault'!\n");
+    log_error( "AKV type must be either 'managedhsm' or 'vault'!\n");
     goto cleanup;
   }
 
@@ -792,7 +808,7 @@ int AkvEncrypt(const char *type, const char *keyvault, const char *keyname, cons
   base64urlEncode(clearText, clearTextSize, NULL, &outputLen);
   if (outputLen <= 0)
   {
-    Log(LogLevel_Error, "could not encode cleartext\n");
+    log_error( "could not encode cleartext\n");
     goto cleanup;
   }
 
@@ -811,7 +827,7 @@ int AkvEncrypt(const char *type, const char *keyvault, const char *keyname, cons
 
   if (res != CURLE_OK)
   {
-    Log(LogLevel_Error, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+    log_error( "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
     goto cleanup;
   }
 
@@ -819,7 +835,7 @@ int AkvEncrypt(const char *type, const char *keyvault, const char *keyname, cons
 
   struct json_object *cipherText;
   if (!json_object_object_get_ex(parsed_json, "value", &cipherText)) {
-    Log(LogLevel_Error, "no value defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
+    log_error( "no value defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
     goto cleanup;
   }
   const char *value = json_object_get_string(cipherText);
@@ -836,7 +852,7 @@ int AkvEncrypt(const char *type, const char *keyvault, const char *keyname, cons
   }
   else
   {
-    Log(LogLevel_Error, "decode error %d\n", decodeErr);
+    log_error( "decode error %d\n", decodeErr);
     goto cleanup;
   }
 

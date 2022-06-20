@@ -13,6 +13,7 @@ set(eakv_src
   base64.c
   curl.c
   pch.c
+  log.c
   )
 add_library(eakv_obj OBJECT ${eakv_src})
 set_property(TARGET eakv_obj PROPERTY POSITION_INDEPENDENT_CODE 1)

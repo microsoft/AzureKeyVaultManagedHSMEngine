@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
-#include "pch.h"
+#include "log.h"
 
 //Base64url encoding table
 static const unsigned char base64urlEncTable[64] =

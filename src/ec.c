@@ -1,6 +1,7 @@
 /* Copyright (c) Microsoft Corporation.
    Licensed under the MIT License. */
 
+#include "log.h"
 #include "pch.h"
 
 /**
@@ -14,14 +15,14 @@ static char *eckey_to_alg(const EC_KEY *ecKey)
 {
   if (ecKey == NULL)
   {
-    Log(LogLevel_Error, "ecKey is null\n");
+    log_error( "ecKey is null\n");
     return NULL;
   }
 
   const EC_GROUP *ec_group = EC_KEY_get0_group(ecKey);
   if (ec_group == NULL)
   {
-    Log(LogLevel_Error, "ec_group is null\n");
+    log_error( "ec_group is null\n");
     return NULL;
   }
 
@@ -43,7 +44,7 @@ static char *eckey_to_alg(const EC_KEY *ecKey)
     return "ES512";
   }
 
-  Log(LogLevel_Error, "curve not supported: %d\n", nid_crv);
+  log_error( "curve not supported: %d\n", nid_crv);
   return NULL;
 }
 
@@ -70,7 +71,7 @@ int akv_eckey_sign(int type, const unsigned char *dgst, int dlen,
     return res;
   }
 
-  Log(LogLevel_Debug, "-->akv_eckey_sign, dgst size [%d], AKV_ALG [%s]\n", dlen, AKV_ALG);
+  log_debug( "-->akv_eckey_sign, dgst size [%d], AKV_ALG [%s]\n", dlen, AKV_ALG);
 
   MemoryStruct accessToken;
   if (!GetAccessTokenFromIMDS(akv_key->keyvault_type, &accessToken))
@@ -79,10 +80,10 @@ int akv_eckey_sign(int type, const unsigned char *dgst, int dlen,
   }
 
   MemoryStruct signatureText;
-  Log(LogLevel_Debug, "keyvault [%s][%s]\n", akv_key->keyvault_name, akv_key->key_name);
+  log_debug("keyvault [%s][%s]\n", akv_key->keyvault_name, akv_key->key_name);
   if (AkvSign(akv_key->keyvault_type, akv_key->keyvault_name, akv_key->key_name, &accessToken, AKV_ALG, dgst, dlen, &signatureText) == 1)
   {
-    Log(LogLevel_Debug, "Signed successfully signature.size=[%zu]\n", signatureText.size);
+    log_debug( "Signed successfully signature.size=[%zu]\n", signatureText.size);
     int rSize = (int)signatureText.size / 2;
     int sSize = rSize;
 
@@ -111,12 +112,12 @@ int akv_eckey_sign(int type, const unsigned char *dgst, int dlen,
       free(accessToken.memory);
     if (ecdsa_sig)
       ECDSA_SIG_free(ecdsa_sig);
-    Log(LogLevel_Debug, "<--akv_eckey_sign, siglen size [%d], AKV_ALG [%s]\n", derSize, AKV_ALG);
+    log_debug( "<--akv_eckey_sign, siglen size [%d], AKV_ALG [%s]\n", derSize, AKV_ALG);
     return 1;
   }
   else
   {
-    Log(LogLevel_Error, "Failed to Sign\n");
+    log_error( "Failed to Sign\n");
     if (signatureText.memory)
       free(signatureText.memory);
     if (accessToken.memory)

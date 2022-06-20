@@ -1,6 +1,7 @@
 /* Copyright (c) Microsoft Corporation.
    Licensed under the MIT License. */
 
+#include "log.h"
 #include "pch.h"
 
 AKV_KEY *acquire_akv_key(
