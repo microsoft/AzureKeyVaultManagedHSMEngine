@@ -33,13 +33,13 @@ void WriteLog(
             }
         }
     }
-    printf("[%c] %s %s(%d) ",
+    fprintf(stderr, "[%c] %s %s(%d) ",
            level == LogLevel_Error ? 'e' : level == LogLevel_Info ? 'i'
                                                                   : 'd',
            function,
            shortFilename,
            line);
-    vprintf(format, arglist);
+    vfprintf(stderr, format, arglist);
     va_end(arglist);
-    printf("\n");
+    fprintf(stderr, "\n");
 }
