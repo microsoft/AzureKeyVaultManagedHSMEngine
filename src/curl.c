@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 #include "log.h"
 #include "pch.h"
@@ -28,7 +29,7 @@ static void vaultErrorLog(json_object *parsed_json)
       log_error( "Vault error - unknown.\n");
     }
 }
-
+//hex to ascii helper function
 char *HexStr(const char *data, size_t len)
 {
   if (data == NULL || len == 0)
@@ -179,6 +180,109 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
 }
 
 
+//Encoder and Decoder library. Grabbed from
+//  https://github.com/mllg/base64url
+
+static const unsigned char pr2six[256] = {
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 62, 64, 63,
+    52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 64, 64, 64, 64, 64, 64,
+    64,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
+    15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 64, 64, 64, 64, 63,
+    64, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
+    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64
+};
+
+static const char basis_64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+
+static int Base64decode_len(const char *bufcoded) {
+    int nbytesdecoded;
+    register const unsigned char *bufin;
+    register int nprbytes;
+
+    bufin = (const unsigned char *) bufcoded;
+    while (pr2six[*(bufin++)] <= 63);
+
+    nprbytes = (bufin - (const unsigned char *) bufcoded) - 1;
+    nbytesdecoded = ((nprbytes + 3) / 4) * 3;
+
+    return nbytesdecoded + 1;
+}
+
+
+static int Base64encode_len(int len) {
+    return ((len + 2) / 3 * 4) + 1;
+}
+
+
+static void Base64decode(char *bufplain, const char *bufcoded) {
+    register const unsigned char *bufin;
+    register unsigned char *bufout;
+    register int nprbytes;
+
+    bufin = (const unsigned char *) bufcoded;
+    while (pr2six[*(bufin++)] <= 63);
+    nprbytes = (bufin - (const unsigned char *) bufcoded) - 1;
+
+    bufout = (unsigned char *) bufplain;
+    bufin = (const unsigned char *) bufcoded;
+
+    while (nprbytes > 4) {
+        *(bufout++) = (unsigned char) (pr2six[*bufin] << 2 | pr2six[bufin[1]] >> 4);
+        *(bufout++) = (unsigned char) (pr2six[bufin[1]] << 4 | pr2six[bufin[2]] >> 2);
+        *(bufout++) = (unsigned char) (pr2six[bufin[2]] << 6 | pr2six[bufin[3]]);
+        bufin += 4;
+        nprbytes -= 4;
+    }
+
+    if (nprbytes > 1)
+        *(bufout++) = (unsigned char) (pr2six[*bufin] << 2 | pr2six[bufin[1]] >> 4);
+    if (nprbytes > 2)
+        *(bufout++) = (unsigned char) (pr2six[bufin[1]] << 4 | pr2six[bufin[2]] >> 2);
+    if (nprbytes > 3)
+        *(bufout++) = (unsigned char) (pr2six[bufin[2]] << 6 | pr2six[bufin[3]]);
+
+
+    *(bufout++) = '\0';
+}
+
+
+static void Base64encode(char *encoded, const char *string, int len) {
+    int i;
+    char *p = encoded;
+
+    for (i = 0; i < len - 2; i += 3) {
+        *p++ = basis_64[(string[i] >> 2) & 0x3F];
+        *p++ = basis_64[((string[i] & 0x3) << 4) | ((int) (string[i + 1] & 0xF0) >> 4)];
+        *p++ = basis_64[((string[i + 1] & 0xF) << 2) | ((int) (string[i + 2] & 0xC0) >> 6)];
+        *p++ = basis_64[string[i + 2] & 0x3F];
+    }
+
+    if (i < len) {
+        *p++ = basis_64[(string[i] >> 2) & 0x3F];
+        if (i == (len - 1)) {
+            *p++ = basis_64[((string[i] & 0x3) << 4)];
+        } else {
+            *p++ = basis_64[((string[i] & 0x3) << 4) | ((int) (string[i + 1] & 0xF0) >> 4)];
+            *p++ = basis_64[((string[i + 1] & 0xF) << 2)];
+        }
+    }
+
+    // *p++ = '\0';
+}
+
+
+
 int AkvSign(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *hashText, size_t hashTextSize, MemoryStruct *signatureText)
 {
   CURL *curl_handle;
@@ -186,33 +290,34 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   json_object *json = NULL;
   int result = 0;
   struct json_object *parsed_json = NULL;
-  unsigned char *encodeResult = NULL;
+  char *encodeResult = NULL;
 
   MemoryStruct signature;
   signature.memory = NULL;
   signature.size = 0;
 
   size_t outputLen = 0;
-  
-  for (int i=0; i<hashTextSize; i++){
-    log_debug("%d", hashText[i]);
-  }
 
+  //to find the output length
   base64urlEncode(hashText, hashTextSize, NULL, &outputLen);
 
-  log_debug("Hash text: %s and the size it %d", hashText, outputLen);
-
-  if (outputLen <= 0)
-  {
-    log_error( "could not encode hash text\n");
-    goto cleanup;
+  // encode the hashtext
+  encodeResult = malloc(outputLen+15);
+  for(int i = 0; i < outputLen+15; i++){
+    encodeResult[i] = '\0';
   }
+  Base64encode(encodeResult, hashText, hashTextSize);
 
-  unsigned char *hash = (unsigned char *)malloc(outputLen);
-  memcpy(hash, hashText, outputLen);
-
-  encodeResult = (unsigned char *)malloc(outputLen);
-  base64urlEncode(hash, hashTextSize, encodeResult, &outputLen);
+  //prints to check the results/passed values
+  log_info("Hashtext size (from parameters): %d", hashTextSize);
+  log_info("Hashtext: %s", HexStr(hashText, hashTextSize));
+  log_info("Given Encoded result: %s", encodeResult);
+  log_info("output length: %d", outputLen);
+  log_info("keyvault: %s", keyvault);
+  log_info("keyname: %s", keyname);
+  log_info("accesstoken: %s", accessToken->memory);
+  log_info("alg: %s", alg);
+  log_info("type %s", type);
 
   char keyVaultUrl[4 * 1024] = {0};
   if (strcasecmp(type, "managedHsm") == 0)
@@ -238,10 +343,8 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
     log_error( "AKV type must be either 'managedhsm' or 'vault'!\n");
     goto cleanup;
   }
-  
-  log_info("about to print hash in urlencode!");
-  //log_info("hash in urlencode: %s", encodeResult);
 
+  //building up the curl_handle call (url, headers, tokens, values (POST))
   curl_handle = curl_easy_init();
   curl_easy_setopt(curl_handle, CURLOPT_URL, keyVaultUrl);
   struct curl_slist *headers = NULL;
@@ -251,6 +354,8 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   const char *bearer = "Authorization: Bearer ";
   strcat_s(authHeader, sizeof authHeader, bearer);
   strcat_s(authHeader, sizeof authHeader, accessToken->memory);
+  log_info("auth header bearer: %s", bearer);
+  log_info("auth header accesstoken: %s", accessToken->memory); 
 
   signature.memory = malloc(1);
   signature.size = 0;
@@ -262,11 +367,11 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
 
   json = json_object_new_object();
   json_object_object_add(json, "alg", json_object_new_string(alg));
-  json_object_object_add(json, "value", json_object_new_string(hash));
-
+  json_object_object_add(json, "value", json_object_new_string(encodeResult));
   curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "POST");
   curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, json_object_to_json_string(json));
 
+  log_info( "json: \n%s", json_object_to_json_string_ext(json, JSON_C_TO_STRING_SPACED));
   res = curl_easy_perform(curl_handle);
   curl_easy_cleanup(curl_handle);
 
@@ -280,6 +385,7 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
 
   struct json_object *signedText;
 
+  log_info( "parsed json: \n%s", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED));
   if (!json_object_object_get_ex(parsed_json, "value", &signedText))
   {
     log_error( "no value defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
@@ -289,12 +395,18 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   const char *value = json_object_get_string(signedText);
   const size_t valueSize = strlen(value);
   outputLen = 0;
-
   int decodeErr = base64urlDecode((const unsigned char *)value, valueSize, NULL, &outputLen);
-  if (!decodeErr && outputLen > 0)
+
+  log_info("Value size: %d", valueSize);
+  log_info("Output length: %d", outputLen);
+
+  unsigned char * decodeResult = malloc(outputLen+100);
+
+  if ( !decodeErr && outputLen > 0)
   {
-    unsigned char *decodeResult = (unsigned char *)malloc(outputLen);
     base64urlDecode((const unsigned char *)value, strlen(value), decodeResult, &outputLen);
+    log_info("Given Decoded result: %s",  HexStr(decodeResult, outputLen));
+    log_info("signature text size: %d", signatureText->size);
     signatureText->memory = decodeResult;
     signatureText->size = outputLen;
     result = 1;
@@ -302,7 +414,7 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   }
   else
   {
-    log_error( "decode error %d\n", decodeErr);
+    log_error( "decode error: did not decode properly\n");
     goto cleanup;
   }
 
