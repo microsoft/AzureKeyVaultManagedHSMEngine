@@ -251,9 +251,6 @@ static void Base64decode(char *bufplain, const char *bufcoded) {
         *(bufout++) = (unsigned char) (pr2six[bufin[1]] << 4 | pr2six[bufin[2]] >> 2);
     if (nprbytes > 3)
         *(bufout++) = (unsigned char) (pr2six[bufin[2]] << 6 | pr2six[bufin[3]]);
-
-
-    *(bufout++) = '\0';
 }
 
 
@@ -277,8 +274,6 @@ static void Base64encode(char *encoded, const char *string, int len) {
             *p++ = basis_64[((string[i + 1] & 0xF) << 2)];
         }
     }
-
-    // *p++ = '\0';
 }
 
 
@@ -302,8 +297,8 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   base64urlEncode(hashText, hashTextSize, NULL, &outputLen);
 
   // encode the hashtext
-  encodeResult = malloc(outputLen+15);
-  for(int i = 0; i < outputLen+15; i++){
+  encodeResult = malloc(outputLen+1);
+  for(int i = 0; i < outputLen+1; i++){
     encodeResult[i] = '\0';
   }
   Base64encode(encodeResult, hashText, hashTextSize);
@@ -400,7 +395,7 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   log_info("Value size: %d", valueSize);
   log_info("Output length: %d", outputLen);
 
-  unsigned char * decodeResult = malloc(outputLen+100);
+  unsigned char * decodeResult = malloc(outputLen+1);
 
   if ( !decodeErr && outputLen > 0)
   {
