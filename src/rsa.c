@@ -15,7 +15,7 @@
 static char *ctx_to_alg(EVP_PKEY_CTX *ctx, const EVP_MD *sigmd)
 {
     int mdType = EVP_MD_type(sigmd);
-    log_debug( "   sigmd type=%d\n", mdType);
+    log_debug( "   sigmd type=%d", mdType);
 
     int pad_mode = RSA_PKCS1_PADDING;
     if (EVP_PKEY_CTX_get_rsa_padding(ctx, &pad_mode) != 1)
@@ -99,7 +99,7 @@ int akv_pkey_rsa_sign(EVP_PKEY_CTX *ctx, unsigned char *sig,
     }
 
     const char *AKV_ALG = ctx_to_alg(ctx, sigmd);
-    log_debug( "-->akv_pkey_rsa_sign, tbs size [%zu], AKV_ALG [%s]\n", tbslen, AKV_ALG);
+    log_debug( "-->akv_pkey_rsa_sign, tbs size [%zu], AKV_ALG [%s]", tbslen, AKV_ALG);
 
     MemoryStruct accessToken;
     if (!GetAccessTokenFromIMDS(akv_key->keyvault_type, &accessToken))
