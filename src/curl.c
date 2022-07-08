@@ -196,13 +196,19 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
 
   //to find the output length
   outputLen = Base64encode_len(hashTextSize);
-
+  
   // encode the hashtext
   encodeResult = malloc(outputLen+1);
   for(int i = 0; i < outputLen+1; i++){
     encodeResult[i] = '\0';
   }
-  Base64encode(encodeResult, hashText, hashTextSize);
+  if(type == "vault"){
+    //AKV Encoder
+    Base64encode(encodeResult, hashText, hashTextSize);
+  }else{
+    //MHSM Encoder
+    base64urlEncode(hashText, hashTextSize, encodeResult, &outputLen);
+  }
 
   //prints to check the results/passed values
   log_info("Hashtext size (from parameters): %d", hashTextSize);
@@ -284,7 +290,7 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   log_info( "parsed json: \n%s", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED));
   if (!json_object_object_get_ex(parsed_json, "value", &signedText))
   {
-    log_error( "no value defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
+    log_error( "no value defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED));
     vaultErrorLog(parsed_json);
     goto cleanup;
   }
