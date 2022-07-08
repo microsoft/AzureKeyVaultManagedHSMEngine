@@ -195,8 +195,7 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   size_t outputLen = 0;
 
   //to find the output length
-  outputLen = Base64encode_len(hashTextSize);
-  
+  outputLen = base64_encode_len(hashTextSize);
   // encode the hashtext
   encodeResult = malloc(outputLen+1);
   for(int i = 0; i < outputLen+1; i++){
@@ -204,7 +203,7 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   }
   if(type == "vault"){
     //AKV Encoder
-    Base64encode(encodeResult, hashText, hashTextSize);
+    base64_encode(encodeResult, hashText, hashTextSize);
   }else{
     //MHSM Encoder
     base64urlEncode(hashText, hashTextSize, encodeResult, &outputLen);

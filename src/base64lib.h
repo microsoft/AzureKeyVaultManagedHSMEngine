@@ -2,12 +2,12 @@
 #define BASE64LIB_H
 
 /**
- * @brief Find the length for the 
+ * @brief Find the length for the encoded string 
  * 
  * @param bufcoded Length of the data to encode
  * @return Length of the encoded string
  */
-int Base64encode_len(int len);
+int base64_encode_len(int len);
 
 /**
  * @brief Base64url encoding 
@@ -16,6 +16,6 @@ int Base64encode_len(int len);
  * @param string Input data to encode
  * @param len Length of the data to encode
  */
-void Base64encode(char *encoded, const char *string, int len);
+void base64_encode(char *encoded, const char *string, int len);
 
 #endif /* BASE64LIB_H */

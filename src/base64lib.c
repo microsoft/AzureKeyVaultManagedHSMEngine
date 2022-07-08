@@ -22,11 +22,24 @@ static const unsigned char pr2six[256] = {
 
 static const char basis_64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-int Base64encode_len(int len) {
+/**
+ * @brief Find the length for the encoded string 
+ * 
+ * @param bufcoded Length of the data to encode
+ * @return Length of the encoded string
+ */
+int base64_encode_len(int len) {
     return ((len + 2) / 3 * 4) + 1;
 }
 
-void Base64encode(char *encoded, const char *string, int len) {
+/**
+ * @brief Base64url encoding 
+ * 
+ * @param encoded String encoded with Base64url algorithm
+ * @param string Input data to encode
+ * @param len Length of the data to encode
+ */
+void base64_encode(char *encoded, const char *string, int len) {
     int i;
     char *p = encoded;
 
