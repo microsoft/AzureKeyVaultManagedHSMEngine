@@ -201,13 +201,7 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   for(int i = 0; i < outputLen+1; i++){
     encodeResult[i] = '\0';
   }
-  if(type == "vault"){
-    //AKV Encoder
-    base64_encode(encodeResult, hashText, hashTextSize);
-  }else{
-    //MHSM Encoder
-    base64urlEncode(hashText, hashTextSize, encodeResult, &outputLen);
-  }
+  base64_encode(encodeResult, hashText, hashTextSize);
 
   //prints to check the results/passed values
   log_info("Hashtext size (from parameters): %d", hashTextSize);
