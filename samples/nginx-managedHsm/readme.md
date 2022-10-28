@@ -38,11 +38,11 @@ NOTE: This example shows how to use ECC key in Managed HSM for nginx. The prefix
 4. Create an ECC key in the HSM (remember to replace [HSM NAME] with your real HSM name). Please make sure the current login user has the [role assignment](https://learn.microsoft.com/azure/key-vault/managed-hsm/built-in-roles#built-in-roles) to create keys in managed HSM.
 
 ```
-# Grant current login user permissions to manage keys using the "Managed HSM Crypto User" local built-in role.
-# See https://learn.microsoft.com/azure/key-vault/managed-hsm/built-in-roles#built-in-roles
+   # Grant current login user permissions to manage keys using the "Managed HSM Crypto User" local built-in role.
+   # See https://learn.microsoft.com/azure/key-vault/managed-hsm/built-in-roles#built-in-roles
 
-oid=$(az ad signed-in-user show --query id -o tsv)
-az keyvault role assignment create  --hsm-name [HSM NAME] --assignee $oid  --scope / --role "Managed HSM Crypto User"
+   oid=$(az ad signed-in-user show --query id -o tsv)
+   az keyvault role assignment create  --hsm-name [HSM NAME] --assignee $oid  --scope / --role "Managed HSM Crypto User"
 ```
 
 ```
