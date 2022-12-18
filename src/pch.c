@@ -36,23 +36,13 @@ void WriteLog(
             }
         }
     }
-    time_t t;
-    struct tm * timeinfo;
-    time(&t);
-    timeinfo = localtime(&t);
-    if (filepntr != 0){
-        fprintf(filepntr, "[%c] [%d:%d:%d] %s %s(%d) ",
-            level == LogLevel_Error ? 'e' : level == LogLevel_Info ? 'i'
-                                                                    : 'd',
-            timeinfo->tm_hour,
-            timeinfo->tm_min,
-            timeinfo->tm_sec,
-            function,
-            shortFilename,
-            line);
-        vfprintf(filepntr, format, arglist);
-        vfprintf(filepntr, "\n", arglist);
-        fclose(filepntr);
-    }
-    // va_end(arglist);
+    fprintf(stderr, "[%c] %s %s(%d) ",
+           level == LogLevel_Error ? 'e' : level == LogLevel_Info ? 'i'
+                                                                  : 'd',
+           function,
+           shortFilename,
+           line);
+    vfprintf(stderr, format, arglist);
+    va_end(arglist);
+    fprintf(stderr, "\n");
 }
