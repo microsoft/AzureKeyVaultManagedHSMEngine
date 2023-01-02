@@ -90,7 +90,26 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
     accessToken->size = azureCliAccessTokenSize;
     return 1;
   }
+#else
+  char *azureCliToken = getenv("AZURE_CLI_ACCESS_TOKEN");
+  size_t azureCliAccessTokenSize;
+  if (azureCliToken)
+  {
+    azureCliAccessTokenSize = strlen(azureCliToken);
+    Log(LogLevel_Info, "Environment variable AZURE_CLI_ACCESS_TOKEN defined [%zu]\n", azureCliAccessTokenSize);
+    accessToken->memory  = (char *)malloc(azureCliAccessTokenSize * sizeof(char)  );
+    if (!accessToken->memory)
+    {
+      Log(LogLevel_Error, "Environment variable AZURE_CLI_ACCESS_TOKEN defined, but failed to allocate memory for accessToken->memory!\n");
+      return 0;
+    }
+
+    memcpy(accessToken->memory, azureCliToken, azureCliAccessTokenSize);
+    accessToken->size = azureCliAccessTokenSize;
+    return 1;
+  }
 #endif
+
 
   CURL *curl_handle;
   CURLcode res;
