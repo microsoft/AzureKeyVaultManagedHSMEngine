@@ -1,5 +1,5 @@
-# Windows Only: Use Azure CLI credentials as Access Token
-## The powershell script to set Access Token environment variable
+# Use Azure CLI credentials as Access Token
+## Windows using Powershell script to set Access Token environment variable
 ### Step 1
 Install Azure CLI tool and login
 ```
@@ -105,4 +105,105 @@ Cert Hash(sha1): 03f5b11491a94614ce0ff6653eb33b77f4834afc
 Cert Hash(sha256): 259eaea8456027509a38a693c66d52d5be821aa3e8f54c95b43bb6ea196c27ae
 Signature Hash: 90b9d31f14acccc6d914846766c039c8003f1601151daf0b00c0ffcf7c018ea0
 CertUtil: -dump command completed successfully.
+```
+## Linux (tested in WSL) using bash script to set Access Token environment variable
+### Step 1
+Install Azure CLI tool and login
+```
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+az login
+az account set --name <default subscription name>
+```
+### Step 2
+Get Tenant id via the following command and look for "tenantId" value like "yyyyyy-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+```
+az account show --name <default subscription name>
+{
+  "environmentName": "AzureCloud",
+  "homeTenantId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxx",
+  "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxx",
+  "isDefault": true,
+  "managedByTenants": [
+    {
+      "tenantId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxx"
+    }
+  ],
+  "name": "<default subscription name>",
+  "state": "Enabled",
+  "tenantId": "yyyyyy-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "user": {
+    "name": "xxx@microsoft.com",
+    "type": "user"
+  }
+}
+```
+
+### Step 3
+In the bash shell, retrieve the access token for managed HSM resource. NOTE: use the actual tenant ID from step 2
+```
+sudo apt install jq
+t=$(az account get-access-token --output json --tenant yyyyyy-xxxx-xxxx-xxxx-xxxxxxxxxxxx --resource https://managedhsm.azure.net | jq -r '.accessToken')
+export AZURE_CLI_ACCESS_TOKEN=$t
+```
+
+### Step 4
+Verify via Openssl, for example, using ECC KEY "managedHsm:ManagedHSMOpenSSLEngine:ecckey"
+```
+puliu@popdev2:~/AzureKeyVaultManagedHSMEngine/src/build$ cp ../../samples/openssl/openssl.cnf .
+puliu@popdev2:~/AzureKeyVaultManagedHSMEngine/src/build$ openssl req -new -x509 -config openssl.cnf -engine e_akv -keyform engine -key managedHsm:ManagedHSMOpenSSLEngine:ecckey -out cert.pem
+Engine "e_akv" set.
+[i] GetAccessTokenFromIMDS curl.c(99) Environment variable AZURE_CLI_ACCESS_TOKEN defined [2060]
+
+[i] GetAccessTokenFromIMDS curl.c(99) Environment variable AZURE_CLI_ACCESS_TOKEN defined [2060]
+
+puliu@popdev2:~/AzureKeyVaultManagedHSMEngine/src/build$ cat cert.pem
+-----BEGIN CERTIFICATE-----
+MIIBpzCCAU0CFBkwiKvYHfv1s2L4LYiIOesjYZzsMAoGCCqGSM49BAMCMGYxCzAJ
+BgNVBAYTAlVTMQswCQYDVQQIDAJXQTEQMA4GA1UEBwwHUmVkbW9uZDEQMA4GA1UE
+CgwHQ29udG9zbzEMMAoGA1UECwwDQUtWMRgwFgYDVQQDDA93d3cuQ29udG9zby5j
+b20wHhcNMjMwMTAyMjA1MDQ5WhcNMjMwMjAxMjA1MDQ5WjBmMQswCQYDVQQGEwJV
+UzELMAkGA1UECAwCV0ExEDAOBgNVBAcMB1JlZG1vbmQxEDAOBgNVBAoMB0NvbnRv
+c28xDDAKBgNVBAsMA0FLVjEYMBYGA1UEAwwPd3d3LkNvbnRvc28uY29tMDkwEwYH
+KoZIzj0CAQYIKoZIzj0DAQcDIgADS4Hb5igmMcgX/64iCjA5PYjG2F9BdrRF76oF
+khqqdAQwCgYIKoZIzj0EAwIDSAAwRQIhAPyKM0512zAPM4N4zts8xBn3emjjAWF6
+mW+PFBHxysR/AiBEUrt5bZQdxhypx8Z1ATbpXY7rqmG1PIsGH1W5Wj1erQ==
+-----END CERTIFICATE-----
+puliu@popdev2:~/AzureKeyVaultManagedHSMEngine/src/build$ openssl x509 -in cert.pem -text
+Certificate:
+    Data:
+        Version: 1 (0x0)
+        Serial Number:
+            19:30:88:ab:d8:1d:fb:f5:b3:62:f8:2d:88:88:39:eb:23:61:9c:ec
+        Signature Algorithm: ecdsa-with-SHA256
+        Issuer: C = US, ST = WA, L = Redmond, O = Contoso, OU = AKV, CN = www.Contoso.com
+        Validity
+            Not Before: Jan  2 20:50:49 2023 GMT
+            Not After : Feb  1 20:50:49 2023 GMT
+        Subject: C = US, ST = WA, L = Redmond, O = Contoso, OU = AKV, CN = www.Contoso.com
+        Subject Public Key Info:
+            Public Key Algorithm: id-ecPublicKey
+                Public-Key: (256 bit)
+                pub:
+                    03:4b:81:db:e6:28:26:31:c8:17:ff:ae:22:0a:30:
+                    39:3d:88:c6:d8:5f:41:76:b4:45:ef:aa:05:92:1a:
+                    aa:74:04
+                ASN1 OID: prime256v1
+                NIST CURVE: P-256
+    Signature Algorithm: ecdsa-with-SHA256
+    Signature Value:
+        30:45:02:21:00:fc:8a:33:4e:75:db:30:0f:33:83:78:ce:db:
+        3c:c4:19:f7:7a:68:e3:01:61:7a:99:6f:8f:14:11:f1:ca:c4:
+        7f:02:20:44:52:bb:79:6d:94:1d:c6:1c:a9:c7:c6:75:01:36:
+        e9:5d:8e:eb:aa:61:b5:3c:8b:06:1f:55:b9:5a:3d:5e:ad
+-----BEGIN CERTIFICATE-----
+MIIBpzCCAU0CFBkwiKvYHfv1s2L4LYiIOesjYZzsMAoGCCqGSM49BAMCMGYxCzAJ
+BgNVBAYTAlVTMQswCQYDVQQIDAJXQTEQMA4GA1UEBwwHUmVkbW9uZDEQMA4GA1UE
+CgwHQ29udG9zbzEMMAoGA1UECwwDQUtWMRgwFgYDVQQDDA93d3cuQ29udG9zby5j
+b20wHhcNMjMwMTAyMjA1MDQ5WhcNMjMwMjAxMjA1MDQ5WjBmMQswCQYDVQQGEwJV
+UzELMAkGA1UECAwCV0ExEDAOBgNVBAcMB1JlZG1vbmQxEDAOBgNVBAoMB0NvbnRv
+c28xDDAKBgNVBAsMA0FLVjEYMBYGA1UEAwwPd3d3LkNvbnRvc28uY29tMDkwEwYH
+KoZIzj0CAQYIKoZIzj0DAQcDIgADS4Hb5igmMcgX/64iCjA5PYjG2F9BdrRF76oF
+khqqdAQwCgYIKoZIzj0EAwIDSAAwRQIhAPyKM0512zAPM4N4zts8xBn3emjjAWF6
+mW+PFBHxysR/AiBEUrt5bZQdxhypx8Z1ATbpXY7rqmG1PIsGH1W5Wj1erQ==
+-----END CERTIFICATE-----
 ```
