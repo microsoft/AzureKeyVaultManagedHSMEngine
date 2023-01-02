@@ -59,6 +59,26 @@ The Azure Key Vault and Managed HSM Engine allows OpenSSL-based applications to 
    ```
    C:\vcpkg\packages\openssl_x64-windows\tools\openssl\openssl.exe engine -vvv -t e_akv
    ```
+   
+NOTE: new vcpkg is using openssl 3.0 and please use vcpkg.json to override openssl version
+```
+vcpkg.json
+{ 
+  "name": "dbkg", 
+  "version-string": "1.0.0", 
+  "dependencies": [ "zlib", "json-c", "curl", "abseil", "c-ares", "grpc", "protobuf", "re2", "upb", "openssl"],
+  "builtin-baseline": "2ac61f87f69f0484b8044f95ab274038fbaf7bdd", 
+  "overrides": [ 
+     { "name": "openssl", "version-string": "1.1.1n" },
+     { "name": "zlib", "version-string": "1.2.13" }
+  ] 
+} 
+
+vcpkg\vcpkg install --triplet=x64-windows-static
+cd D:\AzureKeyVaultManagedHSMEngine\src
+set VCPKG_ROOT=D:\vcpkg
+msbuild  e_akv.vcxproj /p:PkgOpenssl="%VCPKG_ROOT%\packages\openssl_x64-windows" /p:PkgCurl="%VCPKG_ROOT%\packages\curl_x64-windows-static" /p:PkgJson="%VCPKG_ROOT%\packages\json-c_x64-windows-static" /p:PkgZ="%VCPKG_ROOT%\packages\zlib_x64-windows-static" /p:Configuration=Release;Platform=x64
+```
 # Samples
 
 Please check out the samples including nginx, gRPC, and openssl command line.
