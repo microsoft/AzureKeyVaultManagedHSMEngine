@@ -82,6 +82,7 @@ msbuild  e_akv.vcxproj /p:PkgOpenssl="%VCPKG_ROOT%\packages\openssl_x64-windows"
 # Samples
 
 Please check out the samples including nginx, gRPC, and openssl command line.
+NEW: AZURE CLI Credentials are supported, details in https://github.com/microsoft/AzureKeyVaultManagedHSMEngine/blob/main/samples/openssl/UseAzureCliCredential.md
 
 # Contribute
 
