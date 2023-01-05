@@ -207,3 +207,58 @@ khqqdAQwCgYIKoZIzj0EAwIDSAAwRQIhAPyKM0512zAPM4N4zts8xBn3emjjAWF6
 mW+PFBHxysR/AiBEUrt5bZQdxhypx8Z1ATbpXY7rqmG1PIsGH1W5Wj1erQ==
 -----END CERTIFICATE-----
 ```
+
+### RSA testing script
+set environments variables
+```
+export AZURE_SUBS="YOUR SUBSCRIPT NAME"
+export AZURE_TENANT="YOUR TENANT ID"
+export AZURE_RSAKEY="YOUR HSM RSA KEY"
+az login
+az account set --name "$AZURE_SUBS"
+```
+
+test.sh
+```
+t=$(az account get-access-token --output json --tenant $AZURE_TENANT --resource https://managedhsm.azure.net | jq -r '.accessToken')
+export AZURE_CLI_ACCESS_TOKEN=$t
+
+echo "rsa key Managed HSM test" > readme.md
+date >> readme.md
+openssl pkey -engine e_akv -inform engine -in $AZURE_RSAKEY -pubout -text -out leafpubkey.pem
+openssl dgst -binary -sha256 -out hash256 readme.md
+openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $AZURE_RSAKEY -in hash256 -out hash256.sig.pss -pkeyopt digest:sha256 -pkeyopt rsa_padding_mode:pss
+openssl pkeyutl -verify -pubin -inkey leafpubkey.pem -in hash256 -sigfile hash256.sig.pss -pkeyopt digest:sha256  -pkeyopt rsa_padding_mode:pss
+openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $AZURE_RSAKEY -in hash256 -out hash256.sig -pkeyopt digest:sha256
+openssl pkeyutl -verify -pubin -inkey leafpubkey.pem -in hash256 -sigfile hash256.sig -pkeyopt digest:sha256
+```
+
+Result
+```
+puliu@PopDevBox:~/AzureKeyVaultManagedHSMEngine/src/build$ openssl version -a
+OpenSSL 1.1.1f  31 Mar 2020
+built on: Mon Jul  4 11:24:28 2022 UTC
+platform: debian-amd64
+options:  bn(64,64) rc4(16x,int) des(int) blowfish(ptr)
+compiler: gcc -fPIC -pthread -m64 -Wa,--noexecstack -Wall -Wa,--noexecstack -g -O2 -fdebug-prefix-map=/build/openssl-51ig8V/openssl-1.1.1f=. -fstack-protector-strong -Wformat -Werror=format-security -DOPENSSL_TLS_SECURITY_LEVEL=2 -DOPENSSL_USE_NODELETE -DL_ENDIAN -DOPENSSL_PIC -DOPENSSL_CPUID_OBJ -DOPENSSL_IA32_SSE2 -DOPENSSL_BN_ASM_MONT -DOPENSSL_BN_ASM_MONT5 -DOPENSSL_BN_ASM_GF2m -DSHA1_ASM -DSHA256_ASM -DSHA512_ASM -DKECCAK1600_ASM -DRC4_ASM -DMD5_ASM -DAESNI_ASM -DVPAES_ASM -DGHASH_ASM -DECP_NISTZ256_ASM -DX25519_ASM -DPOLY1305_ASM -DNDEBUG -Wdate-time -D_FORTIFY_SOURCE=2
+OPENSSLDIR: "/usr/lib/ssl"
+ENGINESDIR: "/usr/lib/x86_64-linux-gnu/engines-1.1"
+Seeding source: os-specific
+
+puliu@PopDevBox:~/AzureKeyVaultManagedHSMEngine/src/build$ ./test.sh
+engine "e_akv" set.
+[i] GetAccessTokenFromIMDS curl.c(99) Environment variable AZURE_CLI_ACCESS_TOKEN defined [2058]
+
+engine "e_akv" set.
+[i] GetAccessTokenFromIMDS curl.c(99) Environment variable AZURE_CLI_ACCESS_TOKEN defined [2058]
+
+[i] GetAccessTokenFromIMDS curl.c(99) Environment variable AZURE_CLI_ACCESS_TOKEN defined [2058]
+
+Signature Verified Successfully
+engine "e_akv" set.
+[i] GetAccessTokenFromIMDS curl.c(99) Environment variable AZURE_CLI_ACCESS_TOKEN defined [2058]
+
+[i] GetAccessTokenFromIMDS curl.c(99) Environment variable AZURE_CLI_ACCESS_TOKEN defined [2058]
+
+Signature Verified Successfully
+```
