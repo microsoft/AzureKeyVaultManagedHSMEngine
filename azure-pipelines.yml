@@ -42,6 +42,8 @@ jobs:
       AKVKEY : $(HSMECCKEY) # HSM ECC KEY
     displayName: Openssl ECC Key test
   - script: |
+      echo "make sure the HSM RSA key has keyOps : sign,  decrypt,  encrypt"
+      echo "for example: az keyvault key set-attributes --hsm-name ManagedHSMOpenSSLEngine --name myrsakey --ops sign encrypt decrypt"
       cd $(Build.SourcesDirectory)/samples/openssl
       echo "create self sign cert"
       openssl req -new -x509 -config openssl.cnf -engine e_akv -keyform engine -key $AKVKEY -out rsacert.pem
