@@ -38,6 +38,7 @@ jobs:
       openssl dgst -binary -sha256 -out hash256 readme.md
       openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $AKVKEY -in hash256 -out hash256.sig
       openssl pkeyutl -verify -pubin -inkey publickey.pem -in hash256 -sigfile hash256.sig -pkeyopt digest:sha256
+      echo "Unlike RSA, ECC can not perform encryption and decryption directly. See ECIES (Elliptic Curve Integrated Encryption Scheme)."
     env: 
       AKVKEY : $(HSMECCKEY) # HSM ECC KEY
     displayName: Openssl ECC Key test
