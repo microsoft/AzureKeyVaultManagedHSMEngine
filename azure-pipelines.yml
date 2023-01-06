@@ -56,6 +56,17 @@ jobs:
       echo "RSA sign with PKCS padding"
       openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $AKVKEY -in hash256 -out hash256.sig -pkeyopt digest:sha256
       openssl pkeyutl -verify -pubin -inkey leafpubkey.pem -in hash256 -sigfile hash256.sig -pkeyopt digest:sha256
+      echo "RSA encrypt/decrypt with pkeyutil RSA1_5"
+      openssl pkeyutl -encrypt -pubin -inkey leafpubkey.pem -in hash256 -out rsa15.enc
+      openssl pkeyutl -engine e_hsm -decrypt -keyform engine -inkey  $AKVKEY -in rsa15.enc -out rsa15.dec
+      diff rsa15.dec hash256
+      echo "RSA encrypt/decrypt with rsautl oaep"
+      openssl rsautl -encrypt -pubin -inkey leafpubkey.pem -in hash256 -out oaep.enc -oaep
+      openssl rsautl -engine e_hsm -decrypt -keyform engine -inkey $AKVKEY -in oaep.enc -out oaep.dec -oaep
+      diff oaep.dec hash256
+      echo "pkeyutl is NOT working for -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:SHA1 or -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:SHA256"
+      echo "The engine will get padding=3 but 3 is RSA_NO_PADDING and HSM REST API does not support no-padding."
+      echo "see  https://superuser.com/questions/943972/what-is-the-difference-between-openssl-pkeyutl-sign-and-openssl-rsautl-sign"
     env: 
       AKVKEY : $(HSMRSAKEY) # HSM RSA KEY
     displayName: Openssl Sign Test for HSM RSA KEY
