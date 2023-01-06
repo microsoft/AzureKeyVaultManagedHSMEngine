@@ -41,6 +41,24 @@ jobs:
     env: 
       AKVKEY : $(HSMECCKEY) # HSM ECC KEY
     displayName: Openssl Sign Test for HSM ECC KEY
+  - script: |
+      cd $(Build.SourcesDirectory)/samples/openssl
+      openssl req -new -x509 -config openssl.cnf -engine e_akv -keyform engine -key $AKVKEY -out rsacert.pem
+      openssl x509 -pubkey -noout -in rsacert.pem > rsapublickey.pem
+      openssl dgst -binary -sha256 -out hash256 readme.md
+      openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $AKVKEY -in hash256 -out hash256.sig
+      openssl pkeyutl -verify -pubin -inkey rsapublickey.pem -in hash256 -sigfile hash256.sig -pkeyopt digest:sha256
+      echo "rsa key Managed HSM test" > readme.md
+      date >> readme.md
+      openssl pkey -engine e_akv -inform engine -in $AKVKEY -pubout -text -out leafpubkey.pem
+      openssl dgst -binary -sha256 -out hash256 readme.md
+      openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $AKVKEY -in hash256 -out hash256.sig.pss -pkeyopt digest:sha256 -pkeyopt rsa_padding_mode:pss
+      openssl pkeyutl -verify -pubin -inkey leafpubkey.pem -in hash256 -sigfile hash256.sig.pss -pkeyopt digest:sha256  -pkeyopt rsa_padding_mode:pss
+      openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $AKVKEY -in hash256 -out hash256.sig -pkeyopt digest:sha256
+      openssl pkeyutl -verify -pubin -inkey leafpubkey.pem -in hash256 -sigfile hash256.sig -pkeyopt digest:sha256
+    env: 
+      AKVKEY : $(HSMRSAKEY) # HSM RSA KEY
+    displayName: Openssl Sign Test for HSM RSA KEY
   - task: PublishBuildArtifacts@1
     inputs:
       PathtoPublish: '$(Build.ArtifactStagingDirectory)'
