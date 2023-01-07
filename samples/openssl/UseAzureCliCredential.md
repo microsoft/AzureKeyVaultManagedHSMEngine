@@ -105,7 +105,69 @@ Cert Hash(sha1): 03f5b11491a94614ce0ff6653eb33b77f4834afc
 Cert Hash(sha256): 259eaea8456027509a38a693c66d52d5be821aa3e8f54c95b43bb6ea196c27ae
 Signature Hash: 90b9d31f14acccc6d914846766c039c8003f1601151daf0b00c0ffcf7c018ea0
 CertUtil: -dump command completed successfully.
+
 ```
+### RSA testing powershell script
+Set Environment variables
+```
+$Env:AZURE_SUBS="YOUR SUBSCRIPTION NAME"
+$Env:AZURE_TENANT="YOUR TENANT ID"
+$Env:AZURE_RSAKEY="YOUR RSA HSM KEY NAME"
+```
+
+Run the powershell script
+```
+az login
+az account set --name "$Env:AZURE_SUBS"
+
+$s=(az account get-access-token --output json --tenant $Env:AZURE_TENANT --resource https://managedhsm.azure.net)
+$t=$s | ConvertFrom-Json
+$Env:AZURE_CLI_ACCESS_TOKEN=$t.accessToken
+
+
+echo "rsa key Managed HSM test" > readme.md
+date >> readme.md
+openssl pkey -engine e_akv -inform engine -in $Env:AZURE_RSAKEY -pubout -text -out leafpubkey.pem
+openssl dgst -binary -sha256 -out hash256 readme.md
+openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $Env:AZURE_RSAKEY -in hash256 -out hash256.sig.pss -pkeyopt digest:sha256 -pkeyopt rsa_padding_mode:pss
+openssl pkeyutl -verify -pubin -inkey leafpubkey.pem -in hash256 -sigfile hash256.sig.pss -pkeyopt digest:sha256  -pkeyopt rsa_padding_mode:pss
+openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $Env:AZURE_RSAKEY -in hash256 -out hash256.sig -pkeyopt digest:sha256
+openssl pkeyutl -verify -pubin -inkey leafpubkey.pem -in hash256 -sigfile hash256.sig -pkeyopt digest:sha256
+```
+
+For example, using HSM RSA KEY "managedHsm:ManagedHSMOpenSSLEngine:myrsakey"
+```
+$Env:AZURE_RSAKEY="managedHsm:ManagedHSMOpenSSLEngine:myrsakey"
+PS D:\AzureKeyVaultManagedHSMEngine\src\build> az login
+PS D:\AzureKeyVaultManagedHSMEngine\src\build> az account set --name "$Env:AZURE_SUBS"
+PS D:\AzureKeyVaultManagedHSMEngine\src\build> $s=(az account get-access-token --output json --tenant $Env:AZURE_TENANT --resource https://managedhsm.azure.net)
+PS D:\AzureKeyVaultManagedHSMEngine\src\build> $t=$s | ConvertFrom-Json
+PS D:\AzureKeyVaultManagedHSMEngine\src\build> $Env:AZURE_CLI_ACCESS_TOKEN=$t.accessToken
+PS D:\AzureKeyVaultManagedHSMEngine\src\build> echo "rsa key Managed HSM test" > readme.md
+PS D:\AzureKeyVaultManagedHSMEngine\src\build> date >> readme.md
+PS D:\AzureKeyVaultManagedHSMEngine\src\build> openssl pkey -engine e_akv -inform engine -in $Env:AZURE_RSAKEY -pubout -text -out leafpubkey.pem
+engine "e_akv" set.
+[i] GetAccessTokenFromIMDS curl.c(81) Environment variable AZURE_CLI_ACCESS_TOKEN defined [2069]
+
+PS D:\AzureKeyVaultManagedHSMEngine\src\build> openssl dgst -binary -sha256 -out hash256 readme.md
+PS D:\AzureKeyVaultManagedHSMEngine\src\build> openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $Env:AZURE_RSAKEY -in hash256 -out hash256.sig.pss -pkeyopt digest:sha256 -pkeyopt rsa_padding_mode:pss
+engine "e_akv" set.
+[i] GetAccessTokenFromIMDS curl.c(81) Environment variable AZURE_CLI_ACCESS_TOKEN defined [2069]
+
+[i] GetAccessTokenFromIMDS curl.c(81) Environment variable AZURE_CLI_ACCESS_TOKEN defined [2069]
+
+PS D:\AzureKeyVaultManagedHSMEngine\src\build> openssl pkeyutl -verify -pubin -inkey leafpubkey.pem -in hash256 -sigfile hash256.sig.pss -pkeyopt digest:sha256  -pkeyopt rsa_padding_mode:pss
+Signature Verified Successfully
+PS D:\AzureKeyVaultManagedHSMEngine\src\build> openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $Env:AZURE_RSAKEY -in hash256 -out hash256.sig -pkeyopt digest:sha256
+engine "e_akv" set.
+[i] GetAccessTokenFromIMDS curl.c(81) Environment variable AZURE_CLI_ACCESS_TOKEN defined [2069]
+
+[i] GetAccessTokenFromIMDS curl.c(81) Environment variable AZURE_CLI_ACCESS_TOKEN defined [2069]
+
+PS D:\AzureKeyVaultManagedHSMEngine\src\build> openssl pkeyutl -verify -pubin -inkey leafpubkey.pem -in hash256 -sigfile hash256.sig -pkeyopt digest:sha256
+Signature Verified Successfully
+```
+
 ## Linux (tested in WSL) using bash script to set Access Token environment variable
 ### Step 1
 Install Azure CLI tool and login
