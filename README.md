@@ -32,7 +32,23 @@ The Azure Key Vault and Managed HSM Engine allows OpenSSL-based applications to 
    ```
    openssl engine -vvv -t e_akv
    ```
-[NOTE] if the openssl version is 3.0 or 3.0+, please reinstall the openssl 
+[NOTE] if the openssl version is 3.0 or 3.0+, please reinstall the openssl1.1
+For example
+```
+$>cat /etc/os-release
+PRETTY_NAME="Ubuntu 22.04.1 LTS"
+NAME="Ubuntu"
+VERSION_ID="22.04"
+VERSION="22.04.1 LTS (Jammy Jellyfish)"
+VERSION_CODENAME=jammy
+ID=ubuntu
+ID_LIKE=debian
+HOME_URL="https://www.ubuntu.com/"
+SUPPORT_URL="https://help.ubuntu.com/"
+BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
+PRIVACY_POLICY_URL="https://www.ubuntu.com/legal/terms-and-policies/privacy-policy"
+```
+Run the following command
 ```
 wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl-dev_1.1.1f-1ubuntu2.16_amd64.deb
 wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.16_amd64.deb
