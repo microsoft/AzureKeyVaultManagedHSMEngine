@@ -137,6 +137,16 @@ openssl pkeyutl -verify -pubin -inkey leafpubkey.pem -in hash256 -sigfile hash25
 
 For example, using HSM RSA KEY "managedHsm:ManagedHSMOpenSSLEngine:myrsakey"
 ```
+PS D:\AzureKeyVaultManagedHSMEngine\src\build> openssl version -a
+OpenSSL 1.1.1n  15 Mar 2022
+built on: Sat Dec 31 21:08:05 2022 UTC
+platform: VC-WIN64A
+options:  bn(64,64) rc4(16x,int) des(long) idea(int) blowfish(ptr)
+compiler: cl /Zi /Fdossl_static.pdb /Gs0 /GF /Gy /MD /W3 /wd4090 /nologo /O2 -utf-8 -FS -DL_ENDIAN -DOPENSSL_PIC -DOPENSSL_CPUID_OBJ -DOPENSSL_IA32_SSE2 -DOPENSSL_BN_ASM_MONT -DOPENSSL_BN_ASM_MONT5 -DOPENSSL_BN_ASM_GF2m -DSHA1_ASM -DSHA256_ASM -DSHA512_ASM -DKECCAK1600_ASM -DRC4_ASM -DMD5_ASM -DAESNI_ASM -DVPAES_ASM -DGHASH_ASM -DECP_NISTZ256_ASM -DX25519_ASM -DPOLY1305_ASM
+OPENSSLDIR: "D:\vcpkg\packages\openssl_x64-windows"
+ENGINESDIR: "D:\vcpkg\packages\openssl_x64-windows\lib\engines-1_1"
+Seeding source: os-specific
+
 $Env:AZURE_RSAKEY="managedHsm:ManagedHSMOpenSSLEngine:myrsakey"
 PS D:\AzureKeyVaultManagedHSMEngine\src\build> az login
 PS D:\AzureKeyVaultManagedHSMEngine\src\build> az account set --name "$Env:AZURE_SUBS"
