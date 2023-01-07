@@ -35,10 +35,10 @@ The Azure Key Vault and Managed HSM Engine allows OpenSSL-based applications to 
 [NOTE] if the openssl version is 3.0 or 3.0+, please reinstall the openssl 
 ```
 wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl-dev_1.1.1f-1ubuntu2.16_amd64.deb
-wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1.1f-1ubuntu2.16_amd64.deb
+wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.16_amd64.deb
 wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/openssl_1.1.1f-1ubuntu2.16_amd64.deb
 sudo dpkg -i libssl-dev_1.1.1f-1ubuntu2.16_amd64.deb
-sudo dpkg -i libssl1.1.1f-1ubuntu2.16_amd64.deb
+sudo dpkg -i libssl1.1_1.1.1f-1ubuntu2.16_amd64.deb
 sudo dpkg -i openssl_1.1.1f-1ubuntu2.16_amd64.deb
 ```
 ## Windows
