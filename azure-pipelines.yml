@@ -119,6 +119,17 @@ jobs:
       openssl engine -vvv -t e_akv
     displayName: Load test
   - script: |
+      powershell
+      echo "rsa key Managed HSM test" > readme.md
+      date >> readme.md
+      openssl pkey -engine e_akv -inform engine -in $Env:AZURE_RSAKEY -pubout -text -out leafpubkey.pem
+      openssl dgst -binary -sha256 -out hash256 readme.md
+      openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $Env:AZURE_RSAKEY -in hash256 -out hash256.sig.pss -pkeyopt digest:sha256 -pkeyopt rsa_padding_mode:pss
+      openssl pkeyutl -verify -pubin -inkey leafpubkey.pem -in hash256 -sigfile hash256.sig.pss -pkeyopt digest:sha256  -pkeyopt rsa_padding_mode:pss
+      openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $Env:AZURE_RSAKEY -in hash256 -out hash256.sig -pkeyopt digest:sha256
+      openssl pkeyutl -verify -pubin -inkey leafpubkey.pem -in hash256 -sigfile hash256.sig -pkeyopt digest:sha256
+    displayName: RSA Key test 
+  - script: |
       copy /Y $(Build.SourcesDirectory)\src\x64\Release\e_akv.dll $(Build.ArtifactStagingDirectory)
     displayName: Copy Output
   - task: PublishBuildArtifacts@1
