@@ -127,7 +127,16 @@ jobs:
       openssl pkeyutl -verify -pubin -inkey leafpubkey.pem -in hash256 -sigfile hash256.sig.pss -pkeyopt digest:sha256  -pkeyopt rsa_padding_mode:pss
       openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $(HSMRSAKEY) -in hash256 -out hash256.sig -pkeyopt digest:sha256
       openssl pkeyutl -verify -pubin -inkey leafpubkey.pem -in hash256 -sigfile hash256.sig -pkeyopt digest:sha256
-    displayName: RSA Key test 
+    displayName: RSA Key test
+  - script: |
+      cd $(Build.SourcesDirectory)/samples/openssl
+      openssl req -new -x509 -config openssl.cnf -engine e_akv -keyform engine -key $(HSMECCKEY) -out cert.pem
+      openssl x509 -pubkey -noout -in cert.pem > publickey.pem
+      openssl dgst -binary -sha256 -out hash256 readme.md
+      openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $(HSMECCKEY) -in hash256 -out hash256.sig
+      openssl pkeyutl -verify -pubin -inkey publickey.pem -in hash256 -sigfile hash256.sig -pkeyopt digest:sha256
+      echo "Unlike RSA, ECC can not perform encryption and decryption directly. See ECIES (Elliptic Curve Integrated Encryption Scheme)."
+    displayName: ECC Key test
   - script: |
       copy /Y $(Build.SourcesDirectory)\src\x64\Release\e_akv.dll $(Build.ArtifactStagingDirectory)
     displayName: Copy Output
