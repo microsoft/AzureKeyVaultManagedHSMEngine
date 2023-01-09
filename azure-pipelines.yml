@@ -121,14 +121,12 @@ jobs:
     displayName: Load test
   - script: |
       echo "rsa key Managed HSM test" > readme.md
-      openssl pkey -engine e_akv -inform engine -in $(AKVKEY) -pubout -text -out leafpubkey.pem
+      openssl pkey -engine e_akv -inform engine -in $(HSMRSAKEY) -pubout -text -out leafpubkey.pem
       openssl dgst -binary -sha256 -out hash256 readme.md
-      openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $(AKVKEY) -in hash256 -out hash256.sig.pss -pkeyopt digest:sha256 -pkeyopt rsa_padding_mode:pss
+      openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $(HSMRSAKEY) -in hash256 -out hash256.sig.pss -pkeyopt digest:sha256 -pkeyopt rsa_padding_mode:pss
       openssl pkeyutl -verify -pubin -inkey leafpubkey.pem -in hash256 -sigfile hash256.sig.pss -pkeyopt digest:sha256  -pkeyopt rsa_padding_mode:pss
-      openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $(AKVKEY) -in hash256 -out hash256.sig -pkeyopt digest:sha256
+      openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $(HSMRSAKEY) -in hash256 -out hash256.sig -pkeyopt digest:sha256
       openssl pkeyutl -verify -pubin -inkey leafpubkey.pem -in hash256 -sigfile hash256.sig -pkeyopt digest:sha256
-    env: 
-      AKVKEY : $(HSMRSAKEY) # HSM RSA KEY
     displayName: RSA Key test 
   - script: |
       copy /Y $(Build.SourcesDirectory)\src\x64\Release\e_akv.dll $(Build.ArtifactStagingDirectory)
