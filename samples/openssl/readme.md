@@ -15,9 +15,15 @@ openssl x509 -pubkey -noout -in cert.pem > publickey.pem
 ```
 openssl dgst -binary -sha256 -out hash256 readme.md
 openssl pkeyutl -engine e_akv -sign -keyform engine -inkey $AKVKEY -in hash256 -out hash256.sig -pkeyopt rsa_padding_mode:pss -pkeyopt digest:sha256
+
+For ECC KEY, for example "managedHsm:ManagedHSMOpenSSLEngine:ecckey"
+openssl pkeyutl -engine e_akv -sign -keyform engine -inkey managedHsm:ManagedHSMOpenSSLEngine:ecckey -in hash256 -out hash256.sig
 ```
 
 ## verify the signature
 ```
 openssl pkeyutl -verify -pubin -inkey publickey.pem -in hash256 -sigfile hash256.sig -pkeyopt digest:sha256 -pkeyopt rsa_padding_mode:pss
+
+For ECC KEY,
+openssl pkeyutl -verify -pubin -inkey publickey.pem -in hash256 -sigfile hash256.sig -pkeyopt digest:sha256
 ```

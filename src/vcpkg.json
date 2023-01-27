@@ -1,0 +1,10 @@
+{ 
+  "name": "dbkg", 
+  "version-string": "1.0.0", 
+  "dependencies": [ "zlib", "json-c", "curl", "abseil", "c-ares", "grpc", "protobuf", "re2", "upb", "openssl"],
+  "builtin-baseline": "2ac61f87f69f0484b8044f95ab274038fbaf7bdd", 
+  "overrides": [ 
+     { "name": "openssl", "version-string": "1.1.1n" },
+     { "name": "zlib", "version-string": "1.2.13" }
+  ] 
+} 

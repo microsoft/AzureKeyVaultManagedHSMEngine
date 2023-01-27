@@ -32,7 +32,31 @@ The Azure Key Vault and Managed HSM Engine allows OpenSSL-based applications to 
    ```
    openssl engine -vvv -t e_akv
    ```
-
+[NOTE] if the openssl version is 3.0 or 3.0+, please reinstall the openssl1.1
+For example
+```
+$>cat /etc/os-release
+PRETTY_NAME="Ubuntu 22.04.1 LTS"
+NAME="Ubuntu"
+VERSION_ID="22.04"
+VERSION="22.04.1 LTS (Jammy Jellyfish)"
+VERSION_CODENAME=jammy
+ID=ubuntu
+ID_LIKE=debian
+HOME_URL="https://www.ubuntu.com/"
+SUPPORT_URL="https://help.ubuntu.com/"
+BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
+PRIVACY_POLICY_URL="https://www.ubuntu.com/legal/terms-and-policies/privacy-policy"
+```
+Run the following command
+```
+wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl-dev_1.1.1f-1ubuntu2.16_amd64.deb
+wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.16_amd64.deb
+wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/openssl_1.1.1f-1ubuntu2.16_amd64.deb
+sudo dpkg -i libssl-dev_1.1.1f-1ubuntu2.16_amd64.deb
+sudo dpkg -i libssl1.1_1.1.1f-1ubuntu2.16_amd64.deb
+sudo dpkg -i openssl_1.1.1f-1ubuntu2.16_amd64.deb
+```
 ## Windows
 
 1. Install Visual Studio 2019
@@ -59,9 +83,30 @@ The Azure Key Vault and Managed HSM Engine allows OpenSSL-based applications to 
    ```
    C:\vcpkg\packages\openssl_x64-windows\tools\openssl\openssl.exe engine -vvv -t e_akv
    ```
+   
+NOTE: new vcpkg is using openssl 3.0 and please use vcpkg.json to override openssl version
+```
+vcpkg.json
+{ 
+  "name": "dbkg", 
+  "version-string": "1.0.0", 
+  "dependencies": [ "zlib", "json-c", "curl", "abseil", "c-ares", "grpc", "protobuf", "re2", "upb", "openssl"],
+  "builtin-baseline": "2ac61f87f69f0484b8044f95ab274038fbaf7bdd", 
+  "overrides": [ 
+     { "name": "openssl", "version-string": "1.1.1n" },
+     { "name": "zlib", "version-string": "1.2.13" }
+  ] 
+} 
+
+vcpkg\vcpkg install --triplet=x64-windows-static
+cd D:\AzureKeyVaultManagedHSMEngine\src
+set VCPKG_ROOT=D:\vcpkg
+msbuild  e_akv.vcxproj /p:PkgOpenssl="%VCPKG_ROOT%\packages\openssl_x64-windows" /p:PkgCurl="%VCPKG_ROOT%\packages\curl_x64-windows-static" /p:PkgJson="%VCPKG_ROOT%\packages\json-c_x64-windows-static" /p:PkgZ="%VCPKG_ROOT%\packages\zlib_x64-windows-static" /p:Configuration=Release;Platform=x64
+```
 # Samples
 
 Please check out the samples including nginx, gRPC, and openssl command line.
+NEW: AZURE CLI Credentials are supported, details in https://github.com/microsoft/AzureKeyVaultManagedHSMEngine/blob/main/samples/openssl/UseAzureCliCredential.md
 
 # Contribute
 
