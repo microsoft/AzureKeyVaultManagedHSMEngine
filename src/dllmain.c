@@ -3,6 +3,10 @@
 
 #include "log.h"
 #include "pch.h"
+#include <signal.h>
+#include <openssl/async.h>
+#include <unistd.h>
+#include <sys/eventfd.h>
 
 static const char *engine_akv_id = "e_akv";
 static const char *engine_akv_name = "AKV/HSM engine";
@@ -13,6 +17,74 @@ static EC_KEY_METHOD *akv_eckey_method = NULL;
 int akv_idx = -1;
 int rsa_akv_idx = -1;
 int eckey_akv_idx = -1;
+
+volatile crypto_op_queue* async_crypto_op_queue = NULL;
+volatile int* volatile txt = NULL;
+pthread_mutex_t txt_mutex;
+pthread_t thread_id, thread_id2;
+
+/*int wake_job(volatile ASYNC_JOB *job)
+{
+    ASYNC_WAIT_CTX *waitctx;
+    int ret = 0;
+    OSSL_ASYNC_FD efd;
+    void *custom = NULL;
+    // Arbitary value '1' to write down the pipe to trigger event 
+    uint64_t buf = 1;
+
+    if ((waitctx = ASYNC_get_wait_ctx((ASYNC_JOB *)job)) == NULL) {
+        log_debug("waitctx == NULL\n");
+        return ret;
+    }
+
+    if ((ret = ASYNC_WAIT_CTX_get_fd(waitctx, "e_akv", &efd,
+                                     &custom)) > 0) {
+        if (write(efd, &buf, sizeof(uint64_t)) == -1) {
+            log_debug("Failed to write to fd: %d - error: %d\n", efd, errno);
+        }
+    }
+    return ret;
+}
+
+void *async_thread2(void *vargp)
+{
+    log_debug("In async thread 2\n");
+    unsigned cpu, node;
+
+    while (true)
+    {
+        sleep(1);
+        getcpu(&cpu, &node);
+        pthread_mutex_lock(&txt_mutex);
+        *txt = 100;
+        log_debug("Thread2: op_data queue size is %d txt %d txt ptr %p cpu %u node %u\n", crypto_op_queue_get_size(async_crypto_op_queue),*txt, txt, cpu, node);
+        pthread_mutex_unlock(&txt_mutex);
+    }
+}
+
+void *async_thread_task(void *vargp)
+{
+    log_debug("In async thread\n");
+    unsigned cpu, node;
+    while (true)
+    {
+        sleep(1);
+        getcpu(&cpu, &node);
+        pthread_mutex_lock(&txt_mutex);
+        log_debug("op_data queue size is %d txt %d txt ptr %p cpu %u node %u\n", crypto_op_queue_get_size(async_crypto_op_queue),*txt, txt, cpu, node);
+        pthread_mutex_unlock(&txt_mutex);
+        crypto_op_data* op_data = crypto_op_dequeue(async_crypto_op_queue);
+        log_debug("op_data dequeued is %p\n", op_data);
+
+        if (op_data) 
+        {
+            log_debug("Dequeued item\n");
+            AkvSign(op_data->type, op_data->keyvault, op_data->keyname, op_data->accessToken, op_data->alg, op_data->hashText, op_data->hashTextSize, op_data->signatureText);
+            log_debug("Waking async job\n");
+            wake_job(op_data->async_job);
+        }
+    }
+}*/
 
 /**
  * @brief Free RSA context, paired with RSA_set_ex_data in akv_load_privkey.
@@ -107,6 +179,14 @@ static int akv_init(ENGINE *e)
         
         // add log file to the logger
         log_add_fp(fp, LOG_DEBUG);
+        pthread_mutex_init(&txt_mutex, NULL);
+        pthread_mutex_lock(&txt_mutex);
+        txt = malloc(sizeof(int));
+        *txt = 0;
+        pthread_mutex_unlock(&txt_mutex);
+        async_crypto_op_queue = crypto_op_queue_create();
+       /* pthread_create(&thread_id, NULL, async_thread_task, NULL);
+        pthread_create(&thread_id2, NULL, async_thread2, NULL);*/
     }
 
     return 1;
@@ -124,6 +204,12 @@ err:
  */
 static int akv_finish(ENGINE *e)
 {
+    log_debug("In akv_finish\n");
+    free(async_crypto_op_queue);
+   /* pthread_kill(thread_id, SIGKILL);
+    pthread_join(thread_id, NULL); 
+    pthread_kill(thread_id2, SIGKILL);
+    pthread_join(thread_id2, NULL); */
     return 1;
 }
 

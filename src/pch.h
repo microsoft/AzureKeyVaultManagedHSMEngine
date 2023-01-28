@@ -13,6 +13,7 @@
 #include <openssl/rsa.h>
 #include <openssl/dsa.h>
 #include <openssl/engine.h>
+#include <openssl/async.h>
 #include <assert.h>
 #include <ctype.h>
 
@@ -268,5 +269,41 @@ int akv_eckey_sign(int type, const unsigned char *dgst, int dlen,
 ECDSA_SIG *akv_eckey_sign_sig(const unsigned char *dgst, int dgst_len,
                               const BIGNUM *in_kinv, const BIGNUM *in_r,
                               EC_KEY *eckey);
+
+typedef struct _crypto_op_data {
+    struct _crypto_op_data *prev;
+    struct _crypto_op_data *next;
+    const char *type;
+    const char *keyvault;
+    const char *keyname;
+    const MemoryStruct *accessToken;
+    const char *alg;
+    const unsigned char *hashText;
+    size_t hashTextSize;
+    ASYNC_JOB* async_job;
+    MemoryStruct *signatureText;
+    int x;
+} crypto_op_data;
+
+typedef struct _crypto_op_queue
+{
+    pthread_mutex_t crypto_op_queue_mutex;
+    crypto_op_data *head;
+    crypto_op_data *tail;
+    int num_items;
+} crypto_op_queue;
+
+extern volatile crypto_op_queue* async_crypto_op_queue;
+extern volatile int* volatile txt;
+extern pthread_mutex_t txt_mutex;
+
+int crypto_op_enqueue(volatile crypto_op_queue *queue,
+                               crypto_op_data *item);
+
+crypto_op_data * crypto_op_dequeue(volatile crypto_op_queue *queue);
+
+int crypto_op_queue_get_size(volatile crypto_op_queue *queue);
+
+crypto_op_queue * crypto_op_queue_create();
 
 #endif //PCH_H

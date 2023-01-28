@@ -8,6 +8,145 @@
 
 #include "log.h"
 #include "pch.h"
+#include <openssl/async.h>
+#include <unistd.h>
+#define _GNU_SOURCE             /* See feature_test_macros(7) */
+#include <sys/mman.h>
+#include <fcntl.h>
+//#include <sched.h>
+
+
+const char *engine_id = "e_akv";
+bool do_async = true;
+CURL *curl_handle;
+
+static void fd_cleanup(ASYNC_WAIT_CTX *ctx, const void *key,
+                           OSSL_ASYNC_FD readfd, void *custom)
+{
+    if (close(readfd) != 0) {
+        log_debug("Failed to close readfd: %d - error: %d\n", readfd, errno);
+    }
+}
+
+int setup_async_event_notification(volatile ASYNC_JOB *job, char* buf)
+{
+    ASYNC_WAIT_CTX *waitctx;
+    OSSL_ASYNC_FD memfd;
+    void *custom = NULL;
+
+    if ((waitctx = ASYNC_get_wait_ctx((ASYNC_JOB *)job)) == NULL) {
+        log_debug("Could not obtain wait context for job\n");
+        return 0;
+    }
+
+    if (ASYNC_WAIT_CTX_get_fd(waitctx, engine_id, &memfd,
+                              &custom) == 0) {
+        //efd = eventfd(0, EFD_NONBLOCK);
+        memfd = memfd_create("test", 0);
+        if (memfd == -1) {
+            log_debug("Failed to get memfd = %d\n", errno);
+            return 0;
+        }
+        if (write(memfd, buf, strlen(buf)) == -1)
+        {
+          if (errno != EAGAIN) {
+            log_debug("Failed to write to fd: %d - error: %d\n", memfd, errno);
+          } 
+        }
+        else {
+          log_debug("memfd is %d\n", memfd);
+          void *ptr = mmap(NULL, strlen(buf), PROT_READ | PROT_WRITE, MAP_SHARED, memfd, 0);
+          log_debug("Read from memfd %s", (char*)ptr);
+        }
+
+        if (ASYNC_WAIT_CTX_set_wait_fd(waitctx, engine_id, memfd,
+                                       custom, fd_cleanup) == 0) {
+            log_debug("failed to set the fd in the ASYNC_WAIT_CTX\n");
+            fd_cleanup(waitctx, engine_id, memfd, NULL);
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int pause_job(volatile ASYNC_JOB *job, void* userp)
+{
+    ASYNC_WAIT_CTX *waitctx;
+    int ret = 0;
+    OSSL_ASYNC_FD readfd;
+    void *custom = NULL;
+    uint64_t buf = 0;
+    char* response;
+
+    if ((waitctx = ASYNC_get_wait_ctx((ASYNC_JOB *)job)) == NULL) {
+        log_debug("waitctx == NULL\n");
+        return ret;
+    }
+    log_debug("Pausing job\n");
+    if (ASYNC_pause_job() == 0) {
+        log_debug("Failed to pause the job\n");
+        return ret;
+    }
+    else {
+        log_debug("Paused job\n");
+    }
+    log_debug("In pause job function, resumed\n");
+    if ((ret = ASYNC_WAIT_CTX_get_fd(waitctx, engine_id, &readfd,
+                                     &custom)) > 0) {
+        /*if (read(readfd, &buf, sizeof(uint64_t)) == -1) {
+            if (errno != EAGAIN) {
+                log_debug("Failed to read from fd: %d - error: %d\n", readfd, errno);
+            } 
+            return 0;
+        }*/
+        log_debug("memfd is %d\n", readfd);
+        void *ptr = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, readfd, 0);
+        response = (char*)ptr;
+        log_debug("Read from memfd after resuming job %s\n", response);
+    }
+    
+    // Parsing response from AKV/MHSM
+    //char* cl_start = strstr(response, "Content-Length: ") + 16;
+    char* cl_start = strstr(response, "content-length: ") + 16;
+    if (cl_start == NULL) {
+      log_debug("Content Length is not found in response\n");
+      return 0;
+    }
+    int cl = 0;
+    while (isdigit(cl_start[0])) {
+      cl = 10*cl + (int)cl_start[0] - 48;  // 48 is ASCII code for '0'
+      cl_start++;
+    }
+    log_debug("Content length is %d\n", cl);
+    char* response_start = strstr(cl_start, "\r\n\r\n") + 4;
+    WriteMemoryCallback(response_start, cl, 1, userp);
+    log_debug("Response is %s\n", ((MemoryStruct *)userp)->memory);
+    close(readfd);
+    return ret;
+}
+
+int wake_job(volatile ASYNC_JOB *job)
+{
+    ASYNC_WAIT_CTX *waitctx;
+    int ret = 0;
+    OSSL_ASYNC_FD efd;
+    void *custom = NULL;
+    // Arbitary value '1' to write down the pipe to trigger event 
+    uint64_t buf = 1;
+
+    if ((waitctx = ASYNC_get_wait_ctx((ASYNC_JOB *)job)) == NULL) {
+        log_debug("waitctx == NULL\n");
+        return ret;
+    }
+
+    if ((ret = ASYNC_WAIT_CTX_get_fd(waitctx, engine_id, &efd,
+                                     &custom)) > 0) {
+        if (write(efd, &buf, sizeof(uint64_t)) == -1) {
+            log_debug("Failed to write to fd: %d - error: %d\n", efd, errno);
+        }
+    }
+    return ret;
+}
 
 #ifndef _WIN32
 int strcat_s(char *restrict dest, int destsz, const char *restrict src)
@@ -19,6 +158,7 @@ int strcat_s(char *restrict dest, int destsz, const char *restrict src)
 
 static void vaultErrorLog(json_object *parsed_json)
 {
+    log_debug("In vaultErrorLog \n");
     struct json_object *errorText;
     if (json_object_object_get_ex(parsed_json, "error", &errorText))
     {
@@ -32,6 +172,7 @@ static void vaultErrorLog(json_object *parsed_json)
 //hex to ascii helper function
 char *HexStr(const char *data, size_t len)
 {
+  log_debug("In HexStr \n");
   if (data == NULL || len == 0)
   {
     return NULL;
@@ -54,6 +195,7 @@ char *HexStr(const char *data, size_t len)
 
 size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
 {
+  log_debug("In WriteMemoryCallback \n");
   size_t realsize = size * nmemb;
   MemoryStruct *mem = (MemoryStruct *)userp;
 
@@ -74,6 +216,49 @@ size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *user
 
 int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
 {
+  log_debug("In GetAccessTokenFromIMDS \n");
+
+	#ifdef _WIN32	
+  // Allow AZURE CLI Access token override by environment variable "AZURE_CLI_ACCESS_TOKEN"	
+  size_t azureCliAccessTokenSize;	
+  getenv_s(&azureCliAccessTokenSize, NULL, 0, "AZURE_CLI_ACCESS_TOKEN");	
+  if (azureCliAccessTokenSize != 0)	
+  {	
+    Log(LogLevel_Info, "Environment variable AZURE_CLI_ACCESS_TOKEN defined [%zu]\n", azureCliAccessTokenSize);	
+    accessToken->memory  = (char *)malloc(azureCliAccessTokenSize * sizeof(char));	
+    if (!accessToken->memory)	
+    {	
+      Log(LogLevel_Error, "Environment variable AZURE_CLI_ACCESS_TOKEN defined, but failed to allocate memory for accessToken->memory!\n");	
+      return 0;	
+    }	
+    getenv_s(&azureCliAccessTokenSize, accessToken->memory, azureCliAccessTokenSize, "AZURE_CLI_ACCESS_TOKEN");	
+    accessToken->size = azureCliAccessTokenSize;	
+    return 1;	
+  }	
+#else	
+  //char *azureCliToken = getenv("AZURE_CLI_ACCESS_TOKEN");
+  const char *azureCliToken = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsIng1dCI6Ii1LSTNROW5OUjdiUm9meG1lWm9YcWJIWkdldyIsImtpZCI6Ii1LSTNROW5OUjdiUm9meG1lWm9YcWJIWkdldyJ9.eyJhdWQiOiJodHRwczovL21hbmFnZWRoc20uYXp1cmUubmV0IiwiaXNzIjoiaHR0cHM6Ly9zdHMud2luZG93cy5uZXQvMzNlMDE5MjEtNGQ2NC00ZjhjLWEwNTUtNWJkYWZmZDVlMzNkLyIsImlhdCI6MTY3NDg3Njc0NSwibmJmIjoxNjc0ODc2NzQ1LCJleHAiOjE2NzQ4ODE0MjEsImFjciI6IjEiLCJhaW8iOiJBVlFBcS84VEFBQUFUcENYVlZ4bkFleGVIYno3U2htbWoxdnNpWGdSSUtEQUxHdE9NN0Z3Vm8wZW0rQUJVZ01RenBRd0VoUEJoRUNDUDVUcmNNMlAzWWFZLzVrT0l0Sk9VVW5oQmFEVHZKdmltR1UwWmhUYWE2UT0iLCJhbXIiOlsicnNhIiwibWZhIl0sImFwcGlkIjoiMTk1MGEyNTgtMjI3Yi00ZTMxLWE5Y2YtNzE3NDk1OTQ1ZmMyIiwiYXBwaWRhY3IiOiIwIiwiZGV2aWNlaWQiOiJmYTdiMzI1OS00YjFiLTQ2ZGQtYTk2MC0yYTM2ZDRhYzk4YTUiLCJmYW1pbHlfbmFtZSI6IkJhZGFybGEiLCJnaXZlbl9uYW1lIjoiTW9oYW4gUGF2YW4iLCJncm91cHMiOlsiZmIzZDBlMDYtODI0NS00ZWVkLTkzMTgtYThhMGRjODExZDZiIiwiNzRjOGRmMGEtN2M5My00MGI2LWFjMTgtMDEwYjZhZTg0MDU2IiwiYzk1YWM0MGItOWEyZS00ODRmLThmYmEtYTAxODQ3ODdiMTY0IiwiMDc4M2I5MTItOGI5Yy00YmQzLTlkMGYtNzI4MTYwMmZlMDU3IiwiOGVkZmJmMzktZDI4OC00NWU1LTg5NzItNGMzMzM2NzhkNDRhIiwiZmEwZWFlNDItN2Q1Yi00ZWQ2LWI2NmUtOTUyMzIxNTE1MDBjIiwiZTI5ZDY5NTItMmJhZS00ZmRhLWI3ZmUtNGY3YmQyZTVjODYyIiwiNGRiMGE5NWMtOGVlZi00YzliLWIzYTAtYmFlNWIxMDQ0NTRlIiwiZmRkYzVkNmYtMzgxOC00MzE4LTk5ZmItYzA2YTZlODRiNDM5IiwiMjRjZDBmODQtMDAyOS00ODYzLWE3YjMtM2FlZjM5ZTQ0YjFkIiwiMDU0NDM5ODYtMWNmYS00OTczLWJmZTMtNGIxNDNmM2JjMmY5IiwiMzIyNDcwOTktNWYwNS00NmM0LWI0MjAtZWMwM2E1ZTViY2FlIiwiNDJhNmEwOWMtYWUxMS00NDM4LWFiYWEtYWNiYjA4ZDY5NTBiIiwiOTBjMzAzOWUtOTVjOC00MjdmLThjZWMtZTRjMTBmZmQ2NmVkIiwiNWYyZjVjYTgtOGQ4Zi00YzlmLTlhYzAtOTk1ZGRiN2Y3ZjdlIiwiNWQxN2M0YjEtY2MwYy00NWY5LTgwNDQtNTRlMGQ2ZWUwYzIxIiwiZmQ5ZjlmYzAtZTcyMC00Y2U3LWExM2EtNDUxYWU0OTc5NDg0IiwiMzY4YzkzY2UtNjYwZi00MzU4LWIwYmMtY2JjNGMxMjY3MjgyIiwiM2FlZTJhZDItZThlNS00NTM1LTgxYmUtYjUxYWUyMjdhMjQ0IiwiZmNjOGY2ZDctOTg2NS00NGVhLTk5OWYtNjIzNDBhNThjNzg3IiwiNTA0ZTg0ZDktN2M1Mi00NGEyLThhOWUtYjM0NGM2ZWI3YWQ0IiwiM2YyZDNiZTgtYzRiYi00ZjQ3LTljNzYtNTNkYmE3YTllOWUyIiwiYTRlYmUwZjctYzE1My00NjA2LTkzMjYtNzM1YjhkZmFmZDFmIiwiMTAxZDg3ZjgtNGViMi00OGE1LWJhZWEtZDU1M2Y2ZDM0MWQ5Il0sImlwYWRkciI6IjE1Ny41OC4yMTYuOTgiLCJuYW1lIjoiTW9oYW4gUGF2YW4gQmFkYXJsYSAoTU9CQURBUkwpIiwib2lkIjoiMmY3YTE2OTctY2U0MS00ODliLWI3MDktNzcxNDc4M2JlNmMzIiwib25wcmVtX3NpZCI6IlMtMS01LTIxLTQxMjk4NjgyMjUtMTMyODU4MTEyNi0zODk3NTcxNDQ2LTEzMzYyNSIsInB1aWQiOiIxMDAzMjAwMUZGMTFEOUI4IiwicmgiOiIwLkFUTUFJUm5nTTJSTmpFLWdWVnZhXzlYalBZTlFuVmdSYnpCTnBpcWtzeGFoU3I4ekFLNC4iLCJzY3AiOiJ1c2VyX2ltcGVyc29uYXRpb24iLCJzdWIiOiJhbGFfRDRIcDlsMXpTQUJVbGwwT0xPTjI3bDVJbFJNOHkwbzB4UllBMEk0IiwidGlkIjoiMzNlMDE5MjEtNGQ2NC00ZjhjLWEwNTUtNWJkYWZmZDVlMzNkIiwidW5pcXVlX25hbWUiOiJNT0JBREFSTEBhbWUuZ2JsIiwidXBuIjoiTU9CQURBUkxAYW1lLmdibCIsInV0aSI6Ik5tTFZlM3llSkVtdDBiTi15RDVBQVEiLCJ2ZXIiOiIxLjAiLCJ3aWRzIjpbImI3OWZiZjRkLTNlZjktNDY4OS04MTQzLTc2YjE5NGU4NTUwOSJdfQ.QR-a1mgJXq9e_iogK5lZDlK0Hha0Af7AEDB-Q18LTzfjfgoEqbz_jy12j4ZFThKOhXS-pkFxlIhvPY9Z2evHSoS9bY7fd0ElqFK7xwcV1j8Aq_CxPrAmLB91UXIZb42QJftQihWNPrYPHjzMkAK1AEFnZwYq9WCOl25BysCd8mWbrETKCNG6VPkd90FvgwHRQ_IlZ4RJk5IKyyiHwGYD2XD42oRAN7hSgH8BgQGprds2-hZEIKkhHAoiqdYRbQ2UXy5P9_34SrHc5A4waoQsCkxmntWMxmr4233sbgCkDC2--XguWgtww2btRw51Zpxn1_jrhgXt_hCN6evCXHl6qQ";
+  size_t azureCliAccessTokenSize;	
+  if (azureCliToken)	
+  {	
+    log_debug("azureCliToken is not null\n");
+    azureCliAccessTokenSize = strlen(azureCliToken);	
+    Log(LogLevel_Info, "Environment variable AZURE_CLI_ACCESS_TOKEN defined [%zu]\n", azureCliAccessTokenSize);	
+    accessToken->memory  = (char *)malloc((azureCliAccessTokenSize+1) * sizeof(char));	
+    if (!accessToken->memory)	
+    {	
+      Log(LogLevel_Error, "Environment variable AZURE_CLI_ACCESS_TOKEN defined, but failed to allocate memory for accessToken->memory!\n");	
+      return 0;	
+    }	
+    memcpy(accessToken->memory, azureCliToken, azureCliAccessTokenSize);	
+    accessToken->memory[azureCliAccessTokenSize] = '\0';	
+    accessToken->size = azureCliAccessTokenSize;	
+    log_debug("Access token fetched from env\n");
+    return 1;	
+  }	
+#endif
+
+  log_debug("Access token not fetched from env\n");
   CURL *curl_handle;
   CURLcode res;
 
@@ -181,7 +366,8 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
 
 int AkvSign(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *hashText, size_t hashTextSize, MemoryStruct *signatureText)
 {
-  CURL *curl_handle;
+  log_debug("In AkvSign \n");
+  //CURL *curl_handle;
   CURLcode res;
   json_object *json = NULL;
   int result = 0;
@@ -239,12 +425,6 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
     goto cleanup;
   }
 
-  //building up the curl_handle call (url, headers, tokens, values (POST))
-  curl_handle = curl_easy_init();
-  curl_easy_setopt(curl_handle, CURLOPT_URL, keyVaultUrl);
-  struct curl_slist *headers = NULL;
-  headers = curl_slist_append(headers, "Accept: application/json");
-  headers = curl_slist_append(headers, "Content-Type: application/json");
   char authHeader[4 * 1024] = {0};
   const char *bearer = "Authorization: Bearer ";
   strcat_s(authHeader, sizeof authHeader, bearer);
@@ -254,28 +434,54 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
 
   signature.memory = malloc(1);
   signature.size = 0;
-  headers = curl_slist_append(headers, authHeader);
-  curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headers);
-  curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-  curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)(&signature));
-  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
 
   json = json_object_new_object();
   json_object_object_add(json, "alg", json_object_new_string(alg));
   json_object_object_add(json, "value", json_object_new_string(encodeResult));
-  curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "POST");
-  curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, json_object_to_json_string(json));
-
+  const char *post_body = json_object_to_json_string(json);
   log_info( "json: \n%s", json_object_to_json_string_ext(json, JSON_C_TO_STRING_SPACED));
-  res = curl_easy_perform(curl_handle);
-  curl_easy_cleanup(curl_handle);
 
-  if (res != CURLE_OK)
+  ASYNC_JOB *currjob;
+  currjob = ASYNC_get_current_job();
+  if (currjob && do_async) 
   {
-    log_error( "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
-    goto cleanup;
+    log_debug("Executing within a job\n");
+    const char *post_request_format = "POST /keys/%s/sign HTTP/1.1\r\nHost: afd-keyless-test-auc.managedhsm.azure.net\r\nAccept: application/json\r\nConnection: keep-alive, Keep-Alive\r\nKeep-Alive: timeout=5, max=100\r\nContent-Type: application/json\r\nContent-Length: %d\r\nAuthorization: Bearer %s\r\n\r\n%s\r\n\r\n\r\n";
+    //const char *post_request_format = "POST /keys/%s/sign?api-version=7.2 HTTP/1.1\r\nHost: t-cbrugal-kv.vault.azure.net\r\nAccept: application/json\r\nConnection: keep-alive, Keep-Alive\r\nKeep-Alive: timeout=5, max=100\r\nContent-Type: application/json\r\nContent-Length: %d\r\nAuthorization: Bearer %s\r\n\r\n%s\r\n\r\n\r\n";
+    int buf_size = strlen(post_request_format)+strlen(keyname)+strlen(accessToken->memory)+strlen(post_body);
+    char *buf = malloc(buf_size);
+    sprintf(buf, post_request_format, keyname, strlen(post_body), accessToken->memory, post_body);
+    log_debug("%s\n", buf);
+    setup_async_event_notification(currjob, buf);
+    pause_job(currjob, &signature);
   }
+  else {
+    log_debug("Not executing within a job\n");
+    //building up the curl_handle call (url, headers, tokens, values (POST))
+    if (curl_handle == NULL) {
+      curl_handle = curl_easy_init();
+    }
+    curl_easy_setopt(curl_handle, CURLOPT_URL, keyVaultUrl);
+    struct curl_slist *headers = NULL;
+    headers = curl_slist_append(headers, "Accept: application/json");
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+    headers = curl_slist_append(headers, authHeader);
+    curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+    curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)(&signature));
+    curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+    curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "POST");
+    curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, post_body);
 
+    res = curl_easy_perform(curl_handle);
+    //curl_easy_cleanup(curl_handle);
+
+    if (res != CURLE_OK)
+    {
+      log_error( "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+      goto cleanup;
+    }
+  }
   parsed_json = json_tokener_parse(signature.memory);
 
   struct json_object *signedText;
@@ -328,6 +534,7 @@ cleanup:
 
 static EVP_PKEY *getPKey(const unsigned char *n, const size_t nSize, const unsigned char *e, const size_t eSize)
 {
+  log_debug("In getPKey \n");
   RSA *rsa = RSA_new();
   EVP_PKEY *pk = EVP_PKEY_new();
 
@@ -350,6 +557,7 @@ static EVP_PKEY *getPKey(const unsigned char *n, const size_t nSize, const unsig
 
 static EVP_PKEY *getECPKey(int nid_curve, const unsigned char *x, const size_t xSize, const unsigned char *y, const size_t ySize)
 {
+  log_debug("In getECPKey \n");
   EC_KEY *ec_key = EC_KEY_new_by_curve_name(nid_curve);
   EC_KEY_set_asn1_flag(ec_key, OPENSSL_EC_NAMED_CURVE);
   EC_KEY_set_conv_form(ec_key, POINT_CONVERSION_COMPRESSED);
@@ -377,6 +585,7 @@ static EVP_PKEY *getECPKey(int nid_curve, const unsigned char *x, const size_t x
 
 EVP_PKEY *AkvGetKey(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken)
 {
+  log_debug("In AkvGetKey \n");
   CURL *curl_handle;
   CURLcode res;
   EVP_PKEY *retPKey = NULL;
@@ -617,6 +826,7 @@ cleanup:
 
 int AkvDecrypt(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *ciperText, size_t ciperTextSize, MemoryStruct *decryptedText)
 {
+  log_debug("In AkvDecrypt \n");
   CURL *curl_handle;
   CURLcode res;
   int result = 0;
@@ -747,6 +957,7 @@ cleanup:
 
 int AkvEncrypt(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *clearText, size_t clearTextSize, MemoryStruct *encryptedText)
 {
+  log_debug("In AkvEncrypt \n");
   CURL *curl_handle;
   CURLcode res;
   int result = 0;
