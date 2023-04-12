@@ -8,7 +8,8 @@
 
 #include "log.h"
 #include "pch.h"
-#include <openssl/async.h>
+//#include <openssl/async.h>
+#include "/home/azureuser/repos/roxy/dependencies/include/openssl/async.h"
 #include <unistd.h>
 #define _GNU_SOURCE             /* See feature_test_macros(7) */
 #include <sys/mman.h>
@@ -17,7 +18,7 @@
 
 
 const char *engine_id = "e_akv";
-bool do_async = true;
+bool do_async_fd = false;
 CURL *curl_handle;
 
 static void fd_cleanup(ASYNC_WAIT_CTX *ctx, const void *key,
@@ -60,7 +61,7 @@ int setup_async_event_notification(volatile ASYNC_JOB *job, char* buf)
         }
 
         if (ASYNC_WAIT_CTX_set_wait_fd(waitctx, engine_id, memfd,
-                                       custom, fd_cleanup) == 0) {
+                                       buf, fd_cleanup) == 0) {
             log_debug("failed to set the fd in the ASYNC_WAIT_CTX\n");
             fd_cleanup(waitctx, engine_id, memfd, NULL);
             return 0;
@@ -121,7 +122,7 @@ int pause_job(volatile ASYNC_JOB *job, void* userp)
     char* response_start = strstr(cl_start, "\r\n\r\n") + 4;
     WriteMemoryCallback(response_start, cl, 1, userp);
     log_debug("Response is %s\n", ((MemoryStruct *)userp)->memory);
-    close(readfd);
+    //close(readfd);
     return ret;
 }
 
@@ -239,7 +240,7 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
   //char *azureCliToken = getenv("AZURE_CLI_ACCESS_TOKEN");
   const char *azureCliToken = "";
   size_t azureCliAccessTokenSize;	
-  if (azureCliToken)	
+  if (azureCliToken)
   {	
     log_debug("azureCliToken is not null\n");
     azureCliAccessTokenSize = strlen(azureCliToken);	
@@ -443,10 +444,10 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
 
   ASYNC_JOB *currjob;
   currjob = ASYNC_get_current_job();
-  if (currjob && do_async) 
+  if (currjob && do_async_fd) 
   {
     log_debug("Executing within a job\n");
-    const char *post_request_format = "POST /keys/%s/sign HTTP/1.1\r\nHost: afd-keyless-test-auc.managedhsm.azure.net\r\nAccept: application/json\r\nConnection: keep-alive, Keep-Alive\r\nKeep-Alive: timeout=5, max=100\r\nContent-Type: application/json\r\nContent-Length: %d\r\nAuthorization: Bearer %s\r\n\r\n%s\r\n\r\n\r\n";
+    const char *post_request_format = "POST /keys/%s/sign HTTP/1.1\r\nHost: afd-keyless-test-wus.managedhsm.azure.net\r\nAccept: application/json\r\nConnection: keep-alive, Keep-Alive\r\nKeep-Alive: timeout=5, max=100\r\nContent-Type: application/json\r\nContent-Length: %d\r\nAuthorization: Bearer %s\r\n\r\n%s\r\n\r\n\r\n";
     //const char *post_request_format = "POST /keys/%s/sign?api-version=7.2 HTTP/1.1\r\nHost: t-cbrugal-kv.vault.azure.net\r\nAccept: application/json\r\nConnection: keep-alive, Keep-Alive\r\nKeep-Alive: timeout=5, max=100\r\nContent-Type: application/json\r\nContent-Length: %d\r\nAuthorization: Bearer %s\r\n\r\n%s\r\n\r\n\r\n";
     int buf_size = strlen(post_request_format)+strlen(keyname)+strlen(accessToken->memory)+strlen(post_body);
     char *buf = malloc(buf_size);
@@ -454,6 +455,22 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
     log_debug("%s\n", buf);
     setup_async_event_notification(currjob, buf);
     pause_job(currjob, &signature);
+  }
+  else if (currjob) {
+    log_debug("Executing within a job, in nginx threadpool flow\n");
+    KEYLESS_CTX *keyless_ctx = malloc(sizeof(KEYLESS_CTX));
+    keyless_ctx->type = type;
+    keyless_ctx->keyvault = &keyVaultUrl;
+    keyless_ctx->keyname = keyname;
+    keyless_ctx->access_token = &authHeader;
+    keyless_ctx->alg = alg;
+    keyless_ctx->input_buffer = hashText;
+    keyless_ctx->input_buffer_size = hashTextSize;
+    ASYNC_WAIT_CTX_set_keyless_ctx(ASYNC_get_wait_ctx(currjob), keyless_ctx);
+    ASYNC_pause_job();
+    log_debug("Job woken up in nginx threadpool flow\n");
+    signature.memory = keyless_ctx->output_buffer;
+    signature.size = keyless_ctx->output_buffer_size;
   }
   else {
     log_debug("Not executing within a job\n");
