@@ -382,13 +382,14 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   size_t outputLen = 0;
 
   //to find the output length
-  outputLen = base64_encode_len(hashTextSize);
+  outputLen = base64_encode_len_keyless(hashTextSize);
   // encode the hashtext
   encodeResult = malloc(outputLen+1);
   for(int i = 0; i < outputLen+1; i++){
     encodeResult[i] = '\0';
   }
-  base64_encode(encodeResult, hashText, hashTextSize);
+
+  base64_encode_keyless(encodeResult, hashText, hashTextSize);
 
   //prints to check the results/passed values
   log_info("Hashtext size (from parameters): %d", hashTextSize);
@@ -540,7 +541,7 @@ cleanup:
   if (encodeResult)
     free(encodeResult);
 
-  if (signature.memory)
+  if (signature.memory && !currjob)
     free(signature.memory);
 
   if (parsed_json)
