@@ -8,8 +8,8 @@
 
 #include "log.h"
 #include "pch.h"
-//#include <openssl/async.h>
-#include "/home/azureuser/repos/roxy/dependencies/include/openssl/async.h"
+#include <openssl/async.h>
+//#include "/home/azureuser/repos/roxy/dependencies/include/openssl/async.h"
 #include <unistd.h>
 #define _GNU_SOURCE             /* See feature_test_macros(7) */
 #include <sys/mman.h>
@@ -19,7 +19,49 @@
 
 const char *engine_id = "e_akv";
 bool do_async_fd = false;
-CURL *curl_handle;
+
+/*CURL *curl_handles_array[64];
+int curl_handles_size = 0;
+pthread_mutex_t curl_handle_mutex;
+void CurlMutexInitialize(void) __attribute__((constructor));
+
+void CurlMutexInitialize(void) {
+  pthread_mutex_init(&curl_handle_mutex, NULL);
+}*/
+
+CURLSH *share;
+pthread_mutex_t curl_share_mutex;
+static void curl_share_lock(CURL *handle, curl_lock_data data,
+                    curl_lock_access laccess, void *useptr)
+{
+  (void)handle;
+  (void)data;
+  (void)laccess;
+  (void)useptr;
+  if (data == CURL_LOCK_DATA_CONNECT)
+  {
+    pthread_mutex_lock(&curl_share_mutex);
+  }
+}
+ 
+static void curl_share_unlock(CURL *handle, curl_lock_data data, void *useptr)
+{
+  (void)handle;
+  (void)useptr;
+  if (data == CURL_LOCK_DATA_CONNECT)
+  {
+    pthread_mutex_unlock(&curl_share_mutex);
+  }
+}
+
+void CurlShareInitialize(void) __attribute__((constructor));
+void CurlShareInitialize(void) {
+  share = curl_share_init();
+  curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT);
+  curl_share_setopt(share, CURLSHOPT_LOCKFUNC, curl_share_lock);
+  curl_share_setopt(share, CURLSHOPT_UNLOCKFUNC, curl_share_unlock);
+  pthread_mutex_init(&curl_share_mutex, NULL);
+}
 
 static void fd_cleanup(ASYNC_WAIT_CTX *ctx, const void *key,
                            OSSL_ASYNC_FD readfd, void *custom)
@@ -239,9 +281,9 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
 #else	
   //char *azureCliToken = getenv("AZURE_CLI_ACCESS_TOKEN");
   const char *azureCliToken = "";
-  size_t azureCliAccessTokenSize;	
+  size_t azureCliAccessTokenSize;
   if (azureCliToken)
-  {	
+  {
     log_debug("azureCliToken is not null\n");
     azureCliAccessTokenSize = strlen(azureCliToken);	
     Log(LogLevel_Info, "Environment variable AZURE_CLI_ACCESS_TOKEN defined [%zu]\n", azureCliAccessTokenSize);	
@@ -365,12 +407,34 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
   return 1;
 }
 
+struct keyless_ctx_st {
+    char *type;
+    char *keyvault;
+    char *keyname;
+    char *access_token;
+    char *alg;
+    unsigned char *input_buffer;
+    size_t input_buffer_size;
+    unsigned char *output_buffer;
+    size_t output_buffer_size;
+};
+typedef struct keyless_ctx_st KEYLESS_CTX;
+
+void AkvSignAsync(void *data)
+{
+  KEYLESS_CTX* keyless_ctx = (KEYLESS_CTX*)data;
+  MemoryStruct signatureText;
+  //MemoryStruct accessToken;
+  //accessToken.memory = keyless_ctx->access_token;
+  AkvSign(keyless_ctx->type, keyless_ctx->keyvault, keyless_ctx->keyname, keyless_ctx->access_token, keyless_ctx->alg, keyless_ctx->input_buffer, keyless_ctx->input_buffer_size, &signatureText);
+  keyless_ctx->output_buffer = signatureText.memory;
+  keyless_ctx->output_buffer_size = signatureText.size;
+}
+
 int AkvSign(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *hashText, size_t hashTextSize, MemoryStruct *signatureText)
 {
   log_debug("In AkvSign \n");
-  //CURL *curl_handle;
-  CURLcode res;
-  json_object *json = NULL;
+  
   int result = 0;
   struct json_object *parsed_json = NULL;
   char *encodeResult = NULL;
@@ -379,6 +443,33 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   signature.memory = NULL;
   signature.size = 0;
 
+  ASYNC_JOB *currjob;
+  currjob = ASYNC_get_current_job();
+  if (currjob) {
+    log_debug("Executing within a job, in nginx threadpool flow\n");
+    KEYLESS_CTX *keyless_ctx = malloc(sizeof(KEYLESS_CTX));
+    keyless_ctx->type = type;
+    keyless_ctx->keyvault = keyvault;
+    keyless_ctx->keyname = keyname;
+    keyless_ctx->access_token = accessToken;
+    keyless_ctx->alg = alg;
+    keyless_ctx->input_buffer = hashText;
+    keyless_ctx->input_buffer_size = hashTextSize;
+    //ASYNC_WAIT_CTX_set_keyless_ctx(ASYNC_get_wait_ctx(currjob), keyless_ctx);
+    ENGINE* engine = ENGINE_by_id(engine_id);
+    ENGINE_set_ex_data(engine, 0, AkvSignAsync);
+    ENGINE_set_ex_data(engine, 1, keyless_ctx);
+    ASYNC_pause_job();
+    log_debug("Job woken up in nginx threadpool flow\n");
+    signatureText->memory = keyless_ctx->output_buffer;
+    signatureText->size = keyless_ctx->output_buffer_size;
+    result = 1;
+    goto cleanup;
+  }
+  else {
+  CURL *curl_handle;
+  CURLcode res;
+  json_object *json = NULL;
   size_t outputLen = 0;
 
   //to find the output length
@@ -443,8 +534,6 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   const char *post_body = json_object_to_json_string(json);
   log_info( "json: \n%s", json_object_to_json_string_ext(json, JSON_C_TO_STRING_SPACED));
 
-  ASYNC_JOB *currjob;
-  currjob = ASYNC_get_current_job();
   if (currjob && do_async_fd) 
   {
     log_debug("Executing within a job\n");
@@ -467,7 +556,10 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
     keyless_ctx->alg = alg;
     keyless_ctx->input_buffer = hashText;
     keyless_ctx->input_buffer_size = hashTextSize;
-    ASYNC_WAIT_CTX_set_keyless_ctx(ASYNC_get_wait_ctx(currjob), keyless_ctx);
+    //ASYNC_WAIT_CTX_set_keyless_ctx(ASYNC_get_wait_ctx(currjob), keyless_ctx);
+    ENGINE* engine = ENGINE_by_id(engine_id);
+    ENGINE_set_ex_data(engine, 0, AkvSignAsync);
+    ENGINE_set_ex_data(engine, 1, keyless_ctx);
     ASYNC_pause_job();
     log_debug("Job woken up in nginx threadpool flow\n");
     signature.memory = keyless_ctx->output_buffer;
@@ -476,9 +568,21 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   else {
     log_debug("Not executing within a job\n");
     //building up the curl_handle call (url, headers, tokens, values (POST))
-    if (curl_handle == NULL) {
+    /*pthread_mutex_lock(&curl_handle_mutex);
+    if (curl_handles_size == 0) 
+    {
       curl_handle = curl_easy_init();
     }
+    else
+    {
+      curl_handle = curl_handles_array[curl_handles_size-1];
+      curl_handles_size--;
+    }
+    pthread_mutex_unlock(&curl_handle_mutex);*/
+    
+    curl_handle = curl_easy_init();
+    curl_easy_setopt(curl_handle, CURLOPT_SHARE, share);
+    curl_easy_setopt(curl_handle, CURLOPT_MAXCONNECTS, 35L);
     curl_easy_setopt(curl_handle, CURLOPT_URL, keyVaultUrl);
     struct curl_slist *headers = NULL;
     headers = curl_slist_append(headers, "Accept: application/json");
@@ -492,7 +596,15 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
     curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, post_body);
 
     res = curl_easy_perform(curl_handle);
-    //curl_easy_cleanup(curl_handle);
+    curl_easy_cleanup(curl_handle);
+
+    /*pthread_mutex_lock(&curl_handle_mutex);
+    if (curl_handles_size < 10) 
+    {
+      curl_handles_array[curl_handles_size] = curl_handle;
+      curl_handles_size++;
+    }
+    pthread_mutex_unlock(&curl_handle_mutex);*/
 
     if (res != CURLE_OK)
     {
@@ -528,6 +640,7 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
     log_info("signature text size: %d", signatureText->size);
     signatureText->memory = decodeResult;
     signatureText->size = outputLen;
+    log_info("final signature text size: %d", signatureText->size);
     result = 1;
     goto cleanup;
   }
@@ -536,7 +649,7 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
     log_error( "decode error: did not decode properly\n");
     goto cleanup;
   }
-
+  }
 cleanup:
   if (encodeResult)
     free(encodeResult);
