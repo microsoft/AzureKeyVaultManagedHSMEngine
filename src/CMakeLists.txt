@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 
+#SET(CMAKE_C_FLAGS_DEBUG "-O0")
+#SET(CMAKE_C_FLAGS "-O0")
+
 # set the project name
 project(e_akv)
 
@@ -22,8 +25,9 @@ add_library(eakv SHARED $<TARGET_OBJECTS:eakv_obj>)
 set_target_properties(eakv
   PROPERTIES OUTPUT_NAME e_akv PREFIX "" SUFFIX ".so"
   )
-find_library(SSL_LIB libssl.so REQUIRED)
-find_library(CRYPTO_LIB libcrypto.so REQUIRED)
+include_directories(/home/azureuser/repos/roxy/dependencies/include)
+find_library(SSL_LIB libssl.so REQUIRED PATHS /home/azureuser/repos/roxy/dependencies/lib NO_DEFAULT_PATH)
+find_library(CRYPTO_LIB libcrypto.so REQUIRED PATHS /home/azureuser/repos/roxy/dependencies/lib NO_DEFAULT_PATH)
 find_library(CURL_LIB libcurl.so REQUIRED)
 find_library(JSONC_LIB libjson-c.so REQUIRED)
 target_link_libraries(eakv
@@ -32,4 +36,6 @@ target_link_libraries(eakv
   ${CURL_LIB}
   ${JSONC_LIB}
   )
-install(TARGETS eakv DESTINATION "/usr/lib/x86_64-linux-gnu/engines-1.1")
+#install(TARGETS eakv DESTINATION "/usr/lib/x86_64-linux-gnu/engines-1.1")
+install(TARGETS eakv DESTINATION "/home/azureuser/repos/roxy/dependencies/lib/engines-1.1")
+

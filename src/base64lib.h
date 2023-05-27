@@ -7,7 +7,7 @@
  * @param bufcoded Length of the data to encode
  * @return Length of the encoded string
  */
-int base64_encode_len(int len);
+int base64_encode_len_keyless(int len);
 
 /**
  * @brief Base64url encoding 
@@ -16,6 +16,6 @@ int base64_encode_len(int len);
  * @param string Input data to encode
  * @param len Length of the data to encode
  */
-void base64_encode(char *encoded, const char *string, int len);
+void base64_encode_keyless(char *encoded, const char *string, int len);
 
 #endif /* BASE64LIB_H */

@@ -6,6 +6,7 @@ make
 echo ---------------- Copying e_akv engine
 ENGINESDIR=`openssl version -a | grep ENGINESDIR | awk '{print $2}' | tr -d '"'`
 sudo cp e_akv.so $ENGINESDIR/e_akv.so
+#sudo cp e_akv.so /home/azureuser/repos/roxy/dependencies/lib/engines-1.1/e_akv.so
 
 echo ---------------- Testing e_akv engine
 openssl engine -vvv -t e_akv

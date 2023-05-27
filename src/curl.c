@@ -8,6 +8,188 @@
 
 #include "log.h"
 #include "pch.h"
+#include <openssl/async.h>
+//#include "/home/azureuser/repos/roxy/dependencies/include/openssl/async.h"
+#include <unistd.h>
+#define _GNU_SOURCE             /* See feature_test_macros(7) */
+#include <sys/mman.h>
+#include <fcntl.h>
+//#include <sched.h>
+
+
+const char *engine_id = "e_akv";
+bool do_async_fd = false;
+
+/*CURL *curl_handles_array[64];
+int curl_handles_size = 0;
+pthread_mutex_t curl_handle_mutex;
+void CurlMutexInitialize(void) __attribute__((constructor));
+
+void CurlMutexInitialize(void) {
+  pthread_mutex_init(&curl_handle_mutex, NULL);
+}*/
+
+CURLSH *share;
+pthread_mutex_t curl_share_mutex;
+static void curl_share_lock(CURL *handle, curl_lock_data data,
+                    curl_lock_access laccess, void *useptr)
+{
+  (void)handle;
+  (void)data;
+  (void)laccess;
+  (void)useptr;
+  if (data == CURL_LOCK_DATA_CONNECT)
+  {
+    pthread_mutex_lock(&curl_share_mutex);
+  }
+}
+ 
+static void curl_share_unlock(CURL *handle, curl_lock_data data, void *useptr)
+{
+  (void)handle;
+  (void)useptr;
+  if (data == CURL_LOCK_DATA_CONNECT)
+  {
+    pthread_mutex_unlock(&curl_share_mutex);
+  }
+}
+
+void CurlShareInitialize(void) __attribute__((constructor));
+void CurlShareInitialize(void) {
+  share = curl_share_init();
+  curl_share_setopt(share, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT);
+  curl_share_setopt(share, CURLSHOPT_LOCKFUNC, curl_share_lock);
+  curl_share_setopt(share, CURLSHOPT_UNLOCKFUNC, curl_share_unlock);
+  pthread_mutex_init(&curl_share_mutex, NULL);
+}
+
+static void fd_cleanup(ASYNC_WAIT_CTX *ctx, const void *key,
+                           OSSL_ASYNC_FD readfd, void *custom)
+{
+    if (close(readfd) != 0) {
+        log_debug("Failed to close readfd: %d - error: %d\n", readfd, errno);
+    }
+}
+
+int setup_async_event_notification(volatile ASYNC_JOB *job, char* buf)
+{
+    ASYNC_WAIT_CTX *waitctx;
+    OSSL_ASYNC_FD memfd;
+    void *custom = NULL;
+
+    if ((waitctx = ASYNC_get_wait_ctx((ASYNC_JOB *)job)) == NULL) {
+        log_debug("Could not obtain wait context for job\n");
+        return 0;
+    }
+
+    if (ASYNC_WAIT_CTX_get_fd(waitctx, engine_id, &memfd,
+                              &custom) == 0) {
+        //efd = eventfd(0, EFD_NONBLOCK);
+        memfd = memfd_create("test", 0);
+        if (memfd == -1) {
+            log_debug("Failed to get memfd = %d\n", errno);
+            return 0;
+        }
+        if (write(memfd, buf, strlen(buf)) == -1)
+        {
+          if (errno != EAGAIN) {
+            log_debug("Failed to write to fd: %d - error: %d\n", memfd, errno);
+          } 
+        }
+        else {
+          log_debug("memfd is %d\n", memfd);
+          void *ptr = mmap(NULL, strlen(buf), PROT_READ | PROT_WRITE, MAP_SHARED, memfd, 0);
+          log_debug("Read from memfd %s", (char*)ptr);
+        }
+
+        if (ASYNC_WAIT_CTX_set_wait_fd(waitctx, engine_id, memfd,
+                                       buf, fd_cleanup) == 0) {
+            log_debug("failed to set the fd in the ASYNC_WAIT_CTX\n");
+            fd_cleanup(waitctx, engine_id, memfd, NULL);
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int pause_job(volatile ASYNC_JOB *job, void* userp)
+{
+    ASYNC_WAIT_CTX *waitctx;
+    int ret = 0;
+    OSSL_ASYNC_FD readfd;
+    void *custom = NULL;
+    uint64_t buf = 0;
+    char* response;
+
+    if ((waitctx = ASYNC_get_wait_ctx((ASYNC_JOB *)job)) == NULL) {
+        log_debug("waitctx == NULL\n");
+        return ret;
+    }
+    log_debug("Pausing job\n");
+    if (ASYNC_pause_job() == 0) {
+        log_debug("Failed to pause the job\n");
+        return ret;
+    }
+    else {
+        log_debug("Paused job\n");
+    }
+    log_debug("In pause job function, resumed\n");
+    if ((ret = ASYNC_WAIT_CTX_get_fd(waitctx, engine_id, &readfd,
+                                     &custom)) > 0) {
+        /*if (read(readfd, &buf, sizeof(uint64_t)) == -1) {
+            if (errno != EAGAIN) {
+                log_debug("Failed to read from fd: %d - error: %d\n", readfd, errno);
+            } 
+            return 0;
+        }*/
+        log_debug("memfd is %d\n", readfd);
+        void *ptr = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, readfd, 0);
+        response = (char*)ptr;
+        log_debug("Read from memfd after resuming job %s\n", response);
+    }
+    
+    // Parsing response from AKV/MHSM
+    //char* cl_start = strstr(response, "Content-Length: ") + 16;
+    char* cl_start = strstr(response, "content-length: ") + 16;
+    if (cl_start == NULL) {
+      log_debug("Content Length is not found in response\n");
+      return 0;
+    }
+    int cl = 0;
+    while (isdigit(cl_start[0])) {
+      cl = 10*cl + (int)cl_start[0] - 48;  // 48 is ASCII code for '0'
+      cl_start++;
+    }
+    log_debug("Content length is %d\n", cl);
+    char* response_start = strstr(cl_start, "\r\n\r\n") + 4;
+    WriteMemoryCallback(response_start, cl, 1, userp);
+    log_debug("Response is %s\n", ((MemoryStruct *)userp)->memory);
+    //close(readfd);
+    return ret;
+}
+
+int wake_job(volatile ASYNC_JOB *job)
+{
+    ASYNC_WAIT_CTX *waitctx;
+    int ret = 0;
+    OSSL_ASYNC_FD efd;
+    void *custom = NULL;
+    // Arbitary value '1' to write down the pipe to trigger event 
+    uint64_t buf = 1;
+
+    if ((waitctx = ASYNC_get_wait_ctx((ASYNC_JOB *)job)) == NULL) {
+        log_debug("waitctx == NULL\n");
+        return ret;
+    }
+
+    if ((ret = ASYNC_WAIT_CTX_get_fd(waitctx, engine_id, &efd,
+                                     &custom)) > 0) {
+        if (write(efd, &buf, sizeof(uint64_t)) == -1) {
+            log_debug("Failed to write to fd: %d - error: %d\n", efd, errno);
+        }
+    }
+    return ret;
+}
 
 #ifndef _WIN32
 int strcat_s(char *restrict dest, int destsz, const char *restrict src)
@@ -19,6 +201,7 @@ int strcat_s(char *restrict dest, int destsz, const char *restrict src)
 
 static void vaultErrorLog(json_object *parsed_json)
 {
+    log_debug("In vaultErrorLog \n");
     struct json_object *errorText;
     if (json_object_object_get_ex(parsed_json, "error", &errorText))
     {
@@ -32,6 +215,7 @@ static void vaultErrorLog(json_object *parsed_json)
 //hex to ascii helper function
 char *HexStr(const char *data, size_t len)
 {
+  log_debug("In HexStr \n");
   if (data == NULL || len == 0)
   {
     return NULL;
@@ -54,6 +238,7 @@ char *HexStr(const char *data, size_t len)
 
 size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
 {
+  log_debug("In WriteMemoryCallback \n");
   size_t realsize = size * nmemb;
   MemoryStruct *mem = (MemoryStruct *)userp;
 
@@ -74,46 +259,49 @@ size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *user
 
 int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
 {
-#ifdef _WIN32
-  // Allow AZURE CLI Access token override by environment variable "AZURE_CLI_ACCESS_TOKEN"
-  size_t azureCliAccessTokenSize;
-  getenv_s(&azureCliAccessTokenSize, NULL, 0, "AZURE_CLI_ACCESS_TOKEN");
-  if (azureCliAccessTokenSize != 0)
-  {
-    Log(LogLevel_Info, "Environment variable AZURE_CLI_ACCESS_TOKEN defined [%zu]\n", azureCliAccessTokenSize);
-    accessToken->memory  = (char *)malloc(azureCliAccessTokenSize * sizeof(char));
-    if (!accessToken->memory)
-    {
-      Log(LogLevel_Error, "Environment variable AZURE_CLI_ACCESS_TOKEN defined, but failed to allocate memory for accessToken->memory!\n");
-      return 0;
-    }
+  log_debug("In GetAccessTokenFromIMDS \n");
 
-    getenv_s(&azureCliAccessTokenSize, accessToken->memory, azureCliAccessTokenSize, "AZURE_CLI_ACCESS_TOKEN");
-    accessToken->size = azureCliAccessTokenSize;
-    return 1;
-  }
-#else
-  char *azureCliToken = getenv("AZURE_CLI_ACCESS_TOKEN");
+	#ifdef _WIN32	
+  // Allow AZURE CLI Access token override by environment variable "AZURE_CLI_ACCESS_TOKEN"	
+  size_t azureCliAccessTokenSize;	
+  getenv_s(&azureCliAccessTokenSize, NULL, 0, "AZURE_CLI_ACCESS_TOKEN");	
+  if (azureCliAccessTokenSize != 0)	
+  {	
+    Log(LogLevel_Info, "Environment variable AZURE_CLI_ACCESS_TOKEN defined [%zu]\n", azureCliAccessTokenSize);	
+    accessToken->memory  = (char *)malloc(azureCliAccessTokenSize * sizeof(char));	
+    if (!accessToken->memory)	
+    {	
+      Log(LogLevel_Error, "Environment variable AZURE_CLI_ACCESS_TOKEN defined, but failed to allocate memory for accessToken->memory!\n");	
+      return 0;	
+    }	
+    getenv_s(&azureCliAccessTokenSize, accessToken->memory, azureCliAccessTokenSize, "AZURE_CLI_ACCESS_TOKEN");	
+    accessToken->size = azureCliAccessTokenSize;	
+    return 1;	
+  }	
+#else	
+  //char *azureCliToken = getenv("AZURE_CLI_ACCESS_TOKEN");
+  const char *azureCliToken = "";
   size_t azureCliAccessTokenSize;
   if (azureCliToken)
   {
-    azureCliAccessTokenSize = strlen(azureCliToken);
-    Log(LogLevel_Info, "Environment variable AZURE_CLI_ACCESS_TOKEN defined [%zu]\n", azureCliAccessTokenSize);
-    accessToken->memory  = (char *)malloc((azureCliAccessTokenSize+1) * sizeof(char));
-    if (!accessToken->memory)
-    {
-      Log(LogLevel_Error, "Environment variable AZURE_CLI_ACCESS_TOKEN defined, but failed to allocate memory for accessToken->memory!\n");
-      return 0;
-    }
-
-    memcpy(accessToken->memory, azureCliToken, azureCliAccessTokenSize);
-    accessToken->memory[azureCliAccessTokenSize] = '\0';
-    accessToken->size = azureCliAccessTokenSize;
-    return 1;
-  }
+    log_debug("azureCliToken is not null\n");
+    azureCliAccessTokenSize = strlen(azureCliToken);	
+    Log(LogLevel_Info, "Environment variable AZURE_CLI_ACCESS_TOKEN defined [%zu]\n", azureCliAccessTokenSize);	
+    accessToken->memory  = (char *)malloc((azureCliAccessTokenSize+1) * sizeof(char));	
+    if (!accessToken->memory)	
+    {	
+      Log(LogLevel_Error, "Environment variable AZURE_CLI_ACCESS_TOKEN defined, but failed to allocate memory for accessToken->memory!\n");	
+      return 0;	
+    }	
+    memcpy(accessToken->memory, azureCliToken, azureCliAccessTokenSize);	
+    accessToken->memory[azureCliAccessTokenSize] = '\0';	
+    accessToken->size = azureCliAccessTokenSize;	
+    log_debug("Access token fetched from env\n");
+    return 1;	
+  }	
 #endif
 
-
+  log_debug("Access token not fetched from env\n");
   CURL *curl_handle;
   CURLcode res;
 
@@ -219,11 +407,34 @@ int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
   return 1;
 }
 
+struct keyless_ctx_st {
+    char *type;
+    char *keyvault;
+    char *keyname;
+    char *access_token;
+    char *alg;
+    unsigned char *input_buffer;
+    size_t input_buffer_size;
+    unsigned char *output_buffer;
+    size_t output_buffer_size;
+};
+typedef struct keyless_ctx_st KEYLESS_CTX;
+
+void AkvSignAsync(void *data)
+{
+  KEYLESS_CTX* keyless_ctx = (KEYLESS_CTX*)data;
+  MemoryStruct signatureText;
+  //MemoryStruct accessToken;
+  //accessToken.memory = keyless_ctx->access_token;
+  AkvSign(keyless_ctx->type, keyless_ctx->keyvault, keyless_ctx->keyname, keyless_ctx->access_token, keyless_ctx->alg, keyless_ctx->input_buffer, keyless_ctx->input_buffer_size, &signatureText);
+  keyless_ctx->output_buffer = signatureText.memory;
+  keyless_ctx->output_buffer_size = signatureText.size;
+}
+
 int AkvSign(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *hashText, size_t hashTextSize, MemoryStruct *signatureText)
 {
-  CURL *curl_handle;
-  CURLcode res;
-  json_object *json = NULL;
+  log_debug("In AkvSign \n");
+  
   int result = 0;
   struct json_object *parsed_json = NULL;
   char *encodeResult = NULL;
@@ -232,16 +443,44 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   signature.memory = NULL;
   signature.size = 0;
 
+  ASYNC_JOB *currjob;
+  currjob = ASYNC_get_current_job();
+  if (currjob) {
+    log_debug("Executing within a job, in nginx threadpool flow\n");
+    KEYLESS_CTX *keyless_ctx = malloc(sizeof(KEYLESS_CTX));
+    keyless_ctx->type = type;
+    keyless_ctx->keyvault = keyvault;
+    keyless_ctx->keyname = keyname;
+    keyless_ctx->access_token = accessToken;
+    keyless_ctx->alg = alg;
+    keyless_ctx->input_buffer = hashText;
+    keyless_ctx->input_buffer_size = hashTextSize;
+    //ASYNC_WAIT_CTX_set_keyless_ctx(ASYNC_get_wait_ctx(currjob), keyless_ctx);
+    ENGINE* engine = ENGINE_by_id(engine_id);
+    ENGINE_set_ex_data(engine, 0, AkvSignAsync);
+    ENGINE_set_ex_data(engine, 1, keyless_ctx);
+    ASYNC_pause_job();
+    log_debug("Job woken up in nginx threadpool flow\n");
+    signatureText->memory = keyless_ctx->output_buffer;
+    signatureText->size = keyless_ctx->output_buffer_size;
+    result = 1;
+    goto cleanup;
+  }
+  else {
+  CURL *curl_handle;
+  CURLcode res;
+  json_object *json = NULL;
   size_t outputLen = 0;
 
   //to find the output length
-  outputLen = base64_encode_len(hashTextSize);
+  outputLen = base64_encode_len_keyless(hashTextSize);
   // encode the hashtext
   encodeResult = malloc(outputLen+1);
   for(int i = 0; i < outputLen+1; i++){
     encodeResult[i] = '\0';
   }
-  base64_encode(encodeResult, hashText, hashTextSize);
+
+  base64_encode_keyless(encodeResult, hashText, hashTextSize);
 
   //prints to check the results/passed values
   log_info("Hashtext size (from parameters): %d", hashTextSize);
@@ -279,12 +518,6 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
     goto cleanup;
   }
 
-  //building up the curl_handle call (url, headers, tokens, values (POST))
-  curl_handle = curl_easy_init();
-  curl_easy_setopt(curl_handle, CURLOPT_URL, keyVaultUrl);
-  struct curl_slist *headers = NULL;
-  headers = curl_slist_append(headers, "Accept: application/json");
-  headers = curl_slist_append(headers, "Content-Type: application/json");
   char authHeader[4 * 1024] = {0};
   const char *bearer = "Authorization: Bearer ";
   strcat_s(authHeader, sizeof authHeader, bearer);
@@ -294,28 +527,91 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
 
   signature.memory = malloc(1);
   signature.size = 0;
-  headers = curl_slist_append(headers, authHeader);
-  curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headers);
-  curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-  curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)(&signature));
-  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
 
   json = json_object_new_object();
   json_object_object_add(json, "alg", json_object_new_string(alg));
   json_object_object_add(json, "value", json_object_new_string(encodeResult));
-  curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "POST");
-  curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, json_object_to_json_string(json));
-
+  const char *post_body = json_object_to_json_string(json);
   log_info( "json: \n%s", json_object_to_json_string_ext(json, JSON_C_TO_STRING_SPACED));
-  res = curl_easy_perform(curl_handle);
-  curl_easy_cleanup(curl_handle);
 
-  if (res != CURLE_OK)
+  if (currjob && do_async_fd) 
   {
-    log_error( "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
-    goto cleanup;
+    log_debug("Executing within a job\n");
+    const char *post_request_format = "POST /keys/%s/sign HTTP/1.1\r\nHost: afd-keyless-test-wus.managedhsm.azure.net\r\nAccept: application/json\r\nConnection: keep-alive, Keep-Alive\r\nKeep-Alive: timeout=5, max=100\r\nContent-Type: application/json\r\nContent-Length: %d\r\nAuthorization: Bearer %s\r\n\r\n%s\r\n\r\n\r\n";
+    //const char *post_request_format = "POST /keys/%s/sign?api-version=7.2 HTTP/1.1\r\nHost: t-cbrugal-kv.vault.azure.net\r\nAccept: application/json\r\nConnection: keep-alive, Keep-Alive\r\nKeep-Alive: timeout=5, max=100\r\nContent-Type: application/json\r\nContent-Length: %d\r\nAuthorization: Bearer %s\r\n\r\n%s\r\n\r\n\r\n";
+    int buf_size = strlen(post_request_format)+strlen(keyname)+strlen(accessToken->memory)+strlen(post_body);
+    char *buf = malloc(buf_size);
+    sprintf(buf, post_request_format, keyname, strlen(post_body), accessToken->memory, post_body);
+    log_debug("%s\n", buf);
+    setup_async_event_notification(currjob, buf);
+    pause_job(currjob, &signature);
   }
+  else if (currjob) {
+    log_debug("Executing within a job, in nginx threadpool flow\n");
+    KEYLESS_CTX *keyless_ctx = malloc(sizeof(KEYLESS_CTX));
+    keyless_ctx->type = type;
+    keyless_ctx->keyvault = &keyVaultUrl;
+    keyless_ctx->keyname = keyname;
+    keyless_ctx->access_token = &authHeader;
+    keyless_ctx->alg = alg;
+    keyless_ctx->input_buffer = hashText;
+    keyless_ctx->input_buffer_size = hashTextSize;
+    //ASYNC_WAIT_CTX_set_keyless_ctx(ASYNC_get_wait_ctx(currjob), keyless_ctx);
+    ENGINE* engine = ENGINE_by_id(engine_id);
+    ENGINE_set_ex_data(engine, 0, AkvSignAsync);
+    ENGINE_set_ex_data(engine, 1, keyless_ctx);
+    ASYNC_pause_job();
+    log_debug("Job woken up in nginx threadpool flow\n");
+    signature.memory = keyless_ctx->output_buffer;
+    signature.size = keyless_ctx->output_buffer_size;
+  }
+  else {
+    log_debug("Not executing within a job\n");
+    //building up the curl_handle call (url, headers, tokens, values (POST))
+    /*pthread_mutex_lock(&curl_handle_mutex);
+    if (curl_handles_size == 0) 
+    {
+      curl_handle = curl_easy_init();
+    }
+    else
+    {
+      curl_handle = curl_handles_array[curl_handles_size-1];
+      curl_handles_size--;
+    }
+    pthread_mutex_unlock(&curl_handle_mutex);*/
+    
+    curl_handle = curl_easy_init();
+    curl_easy_setopt(curl_handle, CURLOPT_SHARE, share);
+    curl_easy_setopt(curl_handle, CURLOPT_MAXCONNECTS, 35L);
+    curl_easy_setopt(curl_handle, CURLOPT_URL, keyVaultUrl);
+    struct curl_slist *headers = NULL;
+    headers = curl_slist_append(headers, "Accept: application/json");
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+    headers = curl_slist_append(headers, authHeader);
+    curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+    curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)(&signature));
+    curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+    curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "POST");
+    curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, post_body);
 
+    res = curl_easy_perform(curl_handle);
+    curl_easy_cleanup(curl_handle);
+
+    /*pthread_mutex_lock(&curl_handle_mutex);
+    if (curl_handles_size < 10) 
+    {
+      curl_handles_array[curl_handles_size] = curl_handle;
+      curl_handles_size++;
+    }
+    pthread_mutex_unlock(&curl_handle_mutex);*/
+
+    if (res != CURLE_OK)
+    {
+      log_error( "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+      goto cleanup;
+    }
+  }
   parsed_json = json_tokener_parse(signature.memory);
 
   struct json_object *signedText;
@@ -344,6 +640,7 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
     log_info("signature text size: %d", signatureText->size);
     signatureText->memory = decodeResult;
     signatureText->size = outputLen;
+    log_info("final signature text size: %d", signatureText->size);
     result = 1;
     goto cleanup;
   }
@@ -352,12 +649,12 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
     log_error( "decode error: did not decode properly\n");
     goto cleanup;
   }
-
+  }
 cleanup:
   if (encodeResult)
     free(encodeResult);
 
-  if (signature.memory)
+  if (signature.memory && !currjob)
     free(signature.memory);
 
   if (parsed_json)
@@ -368,6 +665,7 @@ cleanup:
 
 static EVP_PKEY *getPKey(const unsigned char *n, const size_t nSize, const unsigned char *e, const size_t eSize)
 {
+  log_debug("In getPKey \n");
   RSA *rsa = RSA_new();
   EVP_PKEY *pk = EVP_PKEY_new();
 
@@ -390,6 +688,7 @@ static EVP_PKEY *getPKey(const unsigned char *n, const size_t nSize, const unsig
 
 static EVP_PKEY *getECPKey(int nid_curve, const unsigned char *x, const size_t xSize, const unsigned char *y, const size_t ySize)
 {
+  log_debug("In getECPKey \n");
   EC_KEY *ec_key = EC_KEY_new_by_curve_name(nid_curve);
   EC_KEY_set_asn1_flag(ec_key, OPENSSL_EC_NAMED_CURVE);
   EC_KEY_set_conv_form(ec_key, POINT_CONVERSION_COMPRESSED);
@@ -417,6 +716,7 @@ static EVP_PKEY *getECPKey(int nid_curve, const unsigned char *x, const size_t x
 
 EVP_PKEY *AkvGetKey(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken)
 {
+  log_debug("In AkvGetKey \n");
   CURL *curl_handle;
   CURLcode res;
   EVP_PKEY *retPKey = NULL;
@@ -657,6 +957,7 @@ cleanup:
 
 int AkvDecrypt(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *ciperText, size_t ciperTextSize, MemoryStruct *decryptedText)
 {
+  log_debug("In AkvDecrypt \n");
   CURL *curl_handle;
   CURLcode res;
   int result = 0;
@@ -787,6 +1088,7 @@ cleanup:
 
 int AkvEncrypt(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *clearText, size_t clearTextSize, MemoryStruct *encryptedText)
 {
+  log_debug("In AkvEncrypt \n");
   CURL *curl_handle;
   CURLcode res;
   int result = 0;
