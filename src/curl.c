@@ -271,14 +271,19 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   struct curl_slist *headers = NULL;
   headers = curl_slist_append(headers, "Accept: application/json");
   headers = curl_slist_append(headers, "Content-Type: application/json");
-  char authHeader[4 * 1024] = {0};
-  const char *bearer = "Authorization: Bearer ";
-  strcat_s(authHeader, sizeof authHeader, bearer);
-  strcat_s(authHeader, sizeof authHeader, accessToken->memory);
+
+  size_t bearer_size = snprintf(NULL, 0, "Authorization: Bearer %s", accessToken->memory) + 1;
+  char* bearer = malloc(bearer_size);
+  if (!bearer) {
+    Log(LogLevel_Error, "Failed to allocate memory for holding the authentication token.\n");
+    goto cleanup;
+  }
+  snprintf(bearer, bearer_size, "Authorization: Bearer %s", accessToken->memory);
+  headers = curl_slist_append(headers, bearer);
+  free(bearer);
 
   signature.memory = malloc(1);
   signature.size = 0;
-  headers = curl_slist_append(headers, authHeader);
   curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headers);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)(&signature));
@@ -449,12 +454,17 @@ EVP_PKEY *AkvGetKey(const char *type, const char *keyvault, const char *keyname,
   struct curl_slist *headers = NULL;
   headers = curl_slist_append(headers, "Accept: application/json");
   headers = curl_slist_append(headers, "Content-Type: application/json");
-  char authHeader[4 * 1024] = {0};
-  const char *bearer = "Authorization: Bearer ";
-  strcat_s(authHeader, sizeof authHeader, bearer);
-  strcat_s(authHeader, sizeof authHeader, accessToken->memory);
 
-  headers = curl_slist_append(headers, authHeader);
+  size_t bearer_size = snprintf(NULL, 0, "Authorization: Bearer %s", accessToken->memory) + 1;
+  char* bearer = malloc(bearer_size);
+  if (!bearer) {
+    Log(LogLevel_Error, "Failed to allocate memory for holding the authentication token.\n");
+    goto cleanup;
+  }
+  snprintf(bearer, bearer_size, "Authorization: Bearer %s", accessToken->memory);
+  headers = curl_slist_append(headers, bearer);
+  free(bearer);
+
   curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headers);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)(&keyInfo));
@@ -465,6 +475,7 @@ EVP_PKEY *AkvGetKey(const char *type, const char *keyvault, const char *keyname,
 
   res = curl_easy_perform(curl_handle);
   curl_easy_cleanup(curl_handle);
+
 
   if (res != CURLE_OK)
   {
@@ -679,12 +690,17 @@ int AkvDecrypt(const char *type, const char *keyvault, const char *keyname, cons
   struct curl_slist *headers = NULL;
   headers = curl_slist_append(headers, "Accept: application/json");
   headers = curl_slist_append(headers, "Content-Type: application/json");
-  char authHeader[4 * 1024] = {0};
-  const char *bearer = "Authorization: Bearer ";
-  strcat_s(authHeader, sizeof authHeader, bearer);
-  strcat_s(authHeader, sizeof authHeader, accessToken->memory);
 
-  headers = curl_slist_append(headers, authHeader);
+  size_t bearer_size = snprintf(NULL, 0, "Authorization: Bearer %s", accessToken->memory) + 1;
+  char* bearer = malloc(bearer_size);
+  if (!bearer) {
+    Log(LogLevel_Error, "Failed to allocate memory for holding the authentication token.\n");
+    goto cleanup;
+  }
+  snprintf(bearer, bearer_size, "Authorization: Bearer %s", accessToken->memory);
+  headers = curl_slist_append(headers, bearer);
+  free(bearer);
+
   curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headers);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)(&decryption));
@@ -809,12 +825,17 @@ int AkvEncrypt(const char *type, const char *keyvault, const char *keyname, cons
   struct curl_slist *headers = NULL;
   headers = curl_slist_append(headers, "Accept: application/json");
   headers = curl_slist_append(headers, "Content-Type: application/json");
-  char authHeader[4 * 1024] = {0};
-  const char *bearer = "Authorization: Bearer ";
-  strcat_s(authHeader, sizeof authHeader, bearer);
-  strcat_s(authHeader, sizeof authHeader, accessToken->memory);
 
-  headers = curl_slist_append(headers, authHeader);
+  size_t bearer_size = snprintf(NULL, 0, "Authorization: Bearer %s", accessToken->memory) + 1;
+  char* bearer = malloc(bearer_size);
+  if (!bearer) {
+    Log(LogLevel_Error, "Failed to allocate memory for holding the authentication token.\n");
+    goto cleanup;
+  }
+  snprintf(bearer, bearer_size, "Authorization: Bearer %s", accessToken->memory);
+  headers = curl_slist_append(headers, bearer);
+  free(bearer);
+
   curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headers);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)(&encryption));
