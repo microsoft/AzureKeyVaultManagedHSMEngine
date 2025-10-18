@@ -34,8 +34,28 @@ void WriteLog(
         }
     }
 
+    char levelChar = '?';
+    switch (level)
+    {
+    case LogLevel_Error:
+        levelChar = 'e';
+        break;
+    case LogLevel_Info:
+        levelChar = 'i';
+        break;
+    case LogLevel_Debug:
+        levelChar = 'd';
+        break;
+    case LogLevel_Trace:
+        levelChar = 't';
+        break;
+    default:
+        levelChar = '?';
+        break;
+    }
+
     fprintf(stderr, "[%c] %s %s(%d) ",
-            level == LogLevel_Error ? 'e' : level == LogLevel_Info ? 'i' : 'd',
+            levelChar,
             function,
             shortFilename,
             line);

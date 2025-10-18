@@ -39,6 +39,7 @@
 #define LogLevel_Error 0
 #define LogLevel_Info 1
 #define LogLevel_Debug 2
+#define LogLevel_Trace 3
 
 extern int LOG_LEVEL;
 

@@ -8,12 +8,27 @@
 #include <openssl/rsa.h>
 #include <openssl/ecdsa.h>
 
+/*
+ * Signature implementation that bridges OpenSSL requests to Azure Key Vault.
+ * Flow overview:
+ *   1. OpenSSL CLI (e.g. `openssl dgst -sign ... -provider akv_provider`) fetches
+ *      the AKV signature implementation through our dispatch table.
+ *   2. OpenSSL passes the selected key URI plus signature parameters into
+ *      akv_signature_*_init, which captures the key metadata and desired hash.
+ *   3. For signing, OpenSSL streams message data into digest helpers; once the
+ *      hash is ready we call AkvSign over REST using the key metadata and hash.
+ *   4. The AKV response is normalized (DER/RAW) and returned to OpenSSL so the
+ *      CLI writes the signature to disk. For verify, we skip REST and use the
+ *      cached public key locally via EVP to confirm signatures.
+ */
+
 typedef enum akv_sig_keytype_e
 {
     AKV_SIG_KEYTYPE_RSA,
     AKV_SIG_KEYTYPE_EC
 } AKV_SIG_KEYTYPE;
 
+/* Tracks per-operation state including hashes, padding, and the bound key. */
 typedef struct akv_signature_ctx_st
 {
     AKV_PROVIDER_CTX *provctx;
@@ -27,6 +42,7 @@ typedef struct akv_signature_ctx_st
     int pss_saltlen;
 } AKV_SIGNATURE_CTX;
 
+/* Reset any cached digest state to keep contexts reusable across calls. */
 static void akv_signature_reset_digest(AKV_SIGNATURE_CTX *ctx)
 {
     if (ctx->mdctx != NULL)
@@ -88,6 +104,7 @@ static int akv_signature_set_mgf1_digest(AKV_SIGNATURE_CTX *ctx, const char *mdn
     return 1;
 }
 
+/* When callers stream a raw digest we have to infer which hash Azure expects. */
 static int akv_signature_ensure_digest_from_size(AKV_SIGNATURE_CTX *ctx, size_t digest_len)
 {
     if (ctx->md != NULL)
@@ -112,6 +129,7 @@ static int akv_signature_ensure_digest_from_size(AKV_SIGNATURE_CTX *ctx, size_t 
     }
 }
 
+/* Azure enforces RSA-PSS salt length rules; reject incompatible requests early. */
 static int akv_signature_validate_pss(const AKV_SIGNATURE_CTX *ctx, size_t digest_len)
 {
     if (ctx->keytype != AKV_SIG_KEYTYPE_RSA)
@@ -133,6 +151,7 @@ static int akv_signature_validate_pss(const AKV_SIGNATURE_CTX *ctx, size_t diges
     return ctx->pss_saltlen == (int)digest_len;
 }
 
+/* Translate local digest + keytype into the Managed HSM signing algorithm name. */
 static const char *akv_signature_algorithm(const AKV_SIGNATURE_CTX *ctx)
 {
     int md_nid = NID_undef;
@@ -200,6 +219,7 @@ static const char *akv_signature_algorithm(const AKV_SIGNATURE_CTX *ctx)
     return NULL;
 }
 
+/* Shared constructor so RSA and EC flows stay aligned. */
 static AKV_SIGNATURE_CTX *akv_signature_newctx_common(void *provctx, AKV_SIG_KEYTYPE keytype)
 {
     AKV_SIGNATURE_CTX *ctx = (AKV_SIGNATURE_CTX *)calloc(1, sizeof(AKV_SIGNATURE_CTX));
@@ -295,6 +315,7 @@ static void *akv_signature_dupctx(void *vctx)
     return dup;
 }
 
+/* Apply digest, padding, and MGF selections that arrive via OSSL params. */
 static int akv_signature_apply_common_params(AKV_SIGNATURE_CTX *ctx, const OSSL_PARAM params[])
 {
     const OSSL_PARAM *p = NULL;
@@ -413,6 +434,7 @@ static int akv_signature_apply_common_params(AKV_SIGNATURE_CTX *ctx, const OSSL_
     return 1;
 }
 
+/* Capture the key and shared parameters used by both sign and verify inits. */
 static int akv_signature_init_common(AKV_SIGNATURE_CTX *ctx, void *vkey, const OSSL_PARAM params[], int operation)
 {
     if (ctx == NULL || vkey == NULL)
@@ -451,6 +473,7 @@ static size_t akv_signature_expected_size(const AKV_SIGNATURE_CTX *ctx)
     return (size_t)EVP_PKEY_get_size(ctx->key->public_key);
 }
 
+/* Convert Managed HSM ECDSA output (DER or raw) into the format OpenSSL requested. */
 static int akv_signature_format_ecdsa_signature(const AKV_SIGNATURE_CTX *ctx, unsigned char *sig, size_t *siglen, const unsigned char *raw, size_t raw_len)
 {
     int ok = 0;
@@ -535,6 +558,7 @@ end:
     return ok;
 }
 
+/* Normalize the signature blob returned by Azure into OpenSSL expectations. */
 static int akv_signature_copy_result(AKV_SIGNATURE_CTX *ctx, unsigned char *sig, size_t *siglen, const MemoryStruct *signature)
 {
     if (sig == NULL || siglen == NULL || signature == NULL)
@@ -556,6 +580,7 @@ static int akv_signature_copy_result(AKV_SIGNATURE_CTX *ctx, unsigned char *sig,
     return akv_signature_format_ecdsa_signature(ctx, sig, siglen, signature->memory, signature->size);
 }
 
+/* Execute the remote sign call against Azure and translate the response. */
 static int akv_signature_remote_sign(AKV_SIGNATURE_CTX *ctx, unsigned char *sig, size_t *siglen, const unsigned char *digest, size_t digest_len)
 {
     MemoryStruct token = {0};
@@ -649,6 +674,7 @@ static int akv_signature_sign(void *vctx, unsigned char *sig, size_t *siglen, si
     return akv_signature_remote_sign(ctx, sig, siglen, tbs, tbslen);
 }
 
+/* Use the cached public key to verify locally and avoid round-trips to Azure. */
 static int akv_signature_verify(void *vctx, const unsigned char *sig, size_t siglen, const unsigned char *tbs, size_t tbslen)
 {
     AKV_SIGNATURE_CTX *ctx = (AKV_SIGNATURE_CTX *)vctx;
@@ -721,6 +747,7 @@ end:
     return ok;
 }
 
+/* Helper for digest-sign and digest-verify entry points so they share setup. */
 static int akv_signature_digest_init(AKV_SIGNATURE_CTX *ctx, void *vkey, const OSSL_PARAM params[], int operation, const char *mdname)
 {
     if (!akv_signature_init_common(ctx, vkey, params, operation))
@@ -949,6 +976,25 @@ static const OSSL_PARAM *akv_signature_settable_ctx_md_params(void *provctx)
     return NULL;
 }
 
+/* OpenSSL expects MD param hooks in the dispatch table even if we do not expose custom parameters. */
+static int akv_signature_get_ctx_md_params(void *vctx, OSSL_PARAM params[])
+{
+    Log(LogLevel_Trace, "akv_signature_get_ctx_md_params ctx=%p params=%p", vctx, (void *)params);
+    (void)vctx;
+    (void)params;
+    Log(LogLevel_Debug, "akv_signature_get_ctx_md_params -> 1");
+    return 1;
+}
+
+static int akv_signature_set_ctx_md_params(void *vctx, const OSSL_PARAM params[])
+{
+    Log(LogLevel_Trace, "akv_signature_set_ctx_md_params ctx=%p params=%p", vctx, (const void *)params);
+    (void)vctx;
+    (void)params;
+    Log(LogLevel_Debug, "akv_signature_set_ctx_md_params -> 1");
+    return 1;
+}
+
 const OSSL_DISPATCH akv_rsa_signature_functions[] = {
     {OSSL_FUNC_SIGNATURE_NEWCTX, (void (*)(void))akv_rsa_signature_newctx},
     {OSSL_FUNC_SIGNATURE_FREECTX, (void (*)(void))akv_signature_freectx},
@@ -968,7 +1014,9 @@ const OSSL_DISPATCH akv_rsa_signature_functions[] = {
     {OSSL_FUNC_SIGNATURE_GETTABLE_CTX_PARAMS, (void (*)(void))akv_signature_gettable_ctx_params},
     {OSSL_FUNC_SIGNATURE_SET_CTX_PARAMS, (void (*)(void))akv_signature_set_ctx_params},
     {OSSL_FUNC_SIGNATURE_SETTABLE_CTX_PARAMS, (void (*)(void))akv_signature_settable_ctx_params},
+    {OSSL_FUNC_SIGNATURE_GET_CTX_MD_PARAMS, (void (*)(void))akv_signature_get_ctx_md_params},
     {OSSL_FUNC_SIGNATURE_GETTABLE_CTX_MD_PARAMS, (void (*)(void))akv_signature_gettable_ctx_md_params},
+    {OSSL_FUNC_SIGNATURE_SET_CTX_MD_PARAMS, (void (*)(void))akv_signature_set_ctx_md_params},
     {OSSL_FUNC_SIGNATURE_SETTABLE_CTX_MD_PARAMS, (void (*)(void))akv_signature_settable_ctx_md_params},
     {0, NULL}};
 
@@ -991,6 +1039,8 @@ const OSSL_DISPATCH akv_ecdsa_signature_functions[] = {
     {OSSL_FUNC_SIGNATURE_GETTABLE_CTX_PARAMS, (void (*)(void))akv_signature_gettable_ctx_params},
     {OSSL_FUNC_SIGNATURE_SET_CTX_PARAMS, (void (*)(void))akv_signature_set_ctx_params},
     {OSSL_FUNC_SIGNATURE_SETTABLE_CTX_PARAMS, (void (*)(void))akv_signature_settable_ctx_params},
+    {OSSL_FUNC_SIGNATURE_GET_CTX_MD_PARAMS, (void (*)(void))akv_signature_get_ctx_md_params},
     {OSSL_FUNC_SIGNATURE_GETTABLE_CTX_MD_PARAMS, (void (*)(void))akv_signature_gettable_ctx_md_params},
+    {OSSL_FUNC_SIGNATURE_SET_CTX_MD_PARAMS, (void (*)(void))akv_signature_set_ctx_md_params},
     {OSSL_FUNC_SIGNATURE_SETTABLE_CTX_MD_PARAMS, (void (*)(void))akv_signature_settable_ctx_md_params},
     {0, NULL}};
