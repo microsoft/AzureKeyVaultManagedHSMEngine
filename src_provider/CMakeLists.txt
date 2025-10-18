@@ -4,6 +4,9 @@ project(akv_provider C)
 
 set(akv_provider_sources
     akv_provider.c
+    akv_keymgmt.c
+    akv_signature.c
+    akv_cipher.c
     akv_logging.c
     base64.c
     curl.c

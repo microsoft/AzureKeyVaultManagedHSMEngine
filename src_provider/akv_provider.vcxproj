@@ -52,10 +52,14 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="akv_provider_shared.h" />
+    <ClInclude Include="akv_provider_internal.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="akv_cipher.c" />
+    <ClCompile Include="akv_keymgmt.c" />
     <ClCompile Include="akv_logging.c" />
     <ClCompile Include="akv_provider.c" />
+    <ClCompile Include="akv_signature.c" />
     <ClCompile Include="base64.c" />
     <ClCompile Include="curl.c" />
   </ItemGroup>
