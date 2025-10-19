@@ -70,11 +70,11 @@ typedef struct MemoryStruct_st MemoryStruct;
 
 char *HexStr(const char *data, size_t len);
 size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp);
-int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken);
-int AkvSign(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *hashText, size_t hashTextSize, MemoryStruct *signatureText);
-int AkvDecrypt(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *ciperText, size_t ciperTextSize, MemoryStruct *decryptedText);
-int AkvEncrypt(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *clearText, size_t clearTextSize, MemoryStruct *encryptedText);
-EVP_PKEY *AkvGetKey(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken);
+int GetAccessTokenFromEnv(MemoryStruct *accessToken);
+int AkvSign(const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *hashText, size_t hashTextSize, MemoryStruct *signatureText);
+int AkvDecrypt(const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *ciperText, size_t ciperTextSize, MemoryStruct *decryptedText);
+int AkvEncrypt(const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *clearText, size_t clearTextSize, MemoryStruct *encryptedText);
+EVP_PKEY *AkvGetKey(const char *keyvault, const char *keyname, const MemoryStruct *accessToken);
 void base64urlEncode(const unsigned char *input, size_t inputLen, unsigned char *output, size_t *outputLen);
 int base64urlDecode(const unsigned char *input, size_t inputLen, unsigned char *output, size_t *outputLen);
 

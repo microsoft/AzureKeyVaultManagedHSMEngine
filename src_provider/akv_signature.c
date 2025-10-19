@@ -607,14 +607,16 @@ static int akv_signature_remote_sign(AKV_SIGNATURE_CTX *ctx, unsigned char *sig,
         goto end;
     }
 
-    if (!GetAccessTokenFromIMDS(ctx->key->keyvault_type, &token))
+    if (!GetAccessTokenFromEnv(&token))
     {
-        Log(LogLevel_Error, "Failed to acquire access token for key vault type %s", ctx->key->keyvault_type);
+        Log(LogLevel_Error,
+            "Failed to acquire access token for managedhsm://%s/%s",
+            ctx->key != NULL && ctx->key->keyvault_name != NULL ? ctx->key->keyvault_name : "(null)",
+            ctx->key != NULL && ctx->key->key_name != NULL ? ctx->key->key_name : "(null)");
         goto end;
     }
 
-    if (!AkvSign(ctx->key->keyvault_type,
-                 ctx->key->keyvault_name,
+    if (!AkvSign(ctx->key->keyvault_name,
                  ctx->key->key_name,
                  &token,
                  algorithm,

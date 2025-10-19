@@ -289,14 +289,13 @@ static int akv_cipher_remote_encrypt(AKV_CIPHER_CTX *ctx, unsigned char *out, si
         goto end;
     }
 
-    if (!GetAccessTokenFromIMDS(ctx->key->keyvault_type, &token))
+    if (!GetAccessTokenFromEnv(&token))
     {
         Log(LogLevel_Error, "Failed to acquire access token for encryption");
         goto end;
     }
 
-    if (!AkvEncrypt(ctx->key->keyvault_type,
-                    ctx->key->keyvault_name,
+    if (!AkvEncrypt(ctx->key->keyvault_name,
                     ctx->key->key_name,
                     &token,
                     algorithm,
@@ -344,14 +343,13 @@ static int akv_cipher_remote_decrypt(AKV_CIPHER_CTX *ctx, unsigned char *out, si
         goto end;
     }
 
-    if (!GetAccessTokenFromIMDS(ctx->key->keyvault_type, &token))
+    if (!GetAccessTokenFromEnv(&token))
     {
         Log(LogLevel_Error, "Failed to acquire access token for decryption");
         goto end;
     }
 
-    if (!AkvDecrypt(ctx->key->keyvault_type,
-                    ctx->key->keyvault_name,
+    if (!AkvDecrypt(ctx->key->keyvault_name,
                     ctx->key->key_name,
                     &token,
                     algorithm,

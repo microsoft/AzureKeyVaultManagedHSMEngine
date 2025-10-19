@@ -80,7 +80,6 @@ void akv_key_free(AKV_KEY *key)
         key->public_key = NULL;
     }
 
-    free(key->keyvault_type);
     free(key->keyvault_name);
     free(key->key_name);
     free(key->key_version);
@@ -89,12 +88,11 @@ void akv_key_free(AKV_KEY *key)
     Log(LogLevel_Debug, "akv_key_free complete");
 }
 
-int akv_key_set_metadata(AKV_KEY *key, const char *type, const char *vault, const char *name, const char *version)
+int akv_key_set_metadata(AKV_KEY *key, const char *vault, const char *name, const char *version)
 {
     Log(LogLevel_Trace,
-        "akv_key_set_metadata key=%p type=%s vault=%s name=%s version=%s",
+        "akv_key_set_metadata key=%p vault=%s name=%s version=%s",
         (void *)key,
-        type != NULL ? type : "(null)",
         vault != NULL ? vault : "(null)",
         name != NULL ? name : "(null)",
         version != NULL ? version : "(null)");
@@ -104,11 +102,6 @@ int akv_key_set_metadata(AKV_KEY *key, const char *type, const char *vault, cons
         return 0;
     }
 
-    if (!akv_dup_string(&key->keyvault_type, type))
-    {
-        Log(LogLevel_Debug, "akv_key_set_metadata -> 0 (type copy failed)");
-        return 0;
-    }
     if (!akv_dup_string(&key->keyvault_name, vault))
     {
         Log(LogLevel_Debug, "akv_key_set_metadata -> 0 (vault copy failed)");
@@ -126,8 +119,7 @@ int akv_key_set_metadata(AKV_KEY *key, const char *type, const char *vault, cons
     }
 
     Log(LogLevel_Debug,
-        "akv_key_set_metadata cached id type=%s vault=%s name=%s version=%s",
-        key->keyvault_type != NULL ? key->keyvault_type : "(null)",
+        "akv_key_set_metadata cached id vault=%s name=%s version=%s",
         key->keyvault_name != NULL ? key->keyvault_name : "(null)",
         key->key_name != NULL ? key->key_name : "(null)",
         key->key_version != NULL ? key->key_version : "(null)");
@@ -157,7 +149,6 @@ static int akv_key_has_private(const AKV_KEY *key)
 {
     Log(LogLevel_Trace, "akv_key_has_private key=%p", (const void *)key);
     int result = key != NULL &&
-                 key->keyvault_type != NULL &&
                  key->keyvault_name != NULL &&
                  key->key_name != NULL;
     Log(LogLevel_Debug, "akv_key_has_private -> %d", result);
@@ -261,14 +252,7 @@ static int akv_keymgmt_match(const void *vkey1, const void *vkey2, int selection
             return 0;
         }
 
-        if (key1->keyvault_type == NULL || key2->keyvault_type == NULL)
-        {
-            Log(LogLevel_Debug, "akv_keymgmt_match vault type missing (sel=%d)", selection);
-            return 0;
-        }
-
-        if (strcasecmp(key1->keyvault_type, key2->keyvault_type) != 0 ||
-            strcasecmp(key1->keyvault_name, key2->keyvault_name) != 0 ||
+        if (strcasecmp(key1->keyvault_name, key2->keyvault_name) != 0 ||
             strcasecmp(key1->key_name, key2->key_name) != 0)
         {
             Log(LogLevel_Debug, "akv_keymgmt_match vault identity mismatch (sel=%d)", selection);

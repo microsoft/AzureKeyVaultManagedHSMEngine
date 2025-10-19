@@ -17,7 +17,6 @@ typedef struct akv_key_st
 {
     AKV_PROVIDER_CTX *provctx;
     EVP_PKEY *public_key;
-    char *keyvault_type;
     char *keyvault_name;
     char *key_name;
     char *key_version;
@@ -26,7 +25,7 @@ typedef struct akv_key_st
 /* Key management helpers */
 AKV_KEY *akv_key_new(AKV_PROVIDER_CTX *provctx);
 void akv_key_free(AKV_KEY *key);
-int akv_key_set_metadata(AKV_KEY *key, const char *type, const char *vault, const char *name, const char *version);
+int akv_key_set_metadata(AKV_KEY *key, const char *vault, const char *name, const char *version);
 void akv_key_set_public(AKV_KEY *key, EVP_PKEY *pkey);
 
 /* Dispatch tables exposed to the provider */

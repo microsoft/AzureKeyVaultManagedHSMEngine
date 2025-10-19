@@ -69,153 +69,48 @@ size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *user
   return realsize;
 }
 
-int GetAccessTokenFromIMDS(const char *type, MemoryStruct *accessToken)
+#define AZURE_CLI_ACCESS_TOKEN_MAX (8 * 1024)
+
+// Materialize AZURE_CLI_ACCESS_TOKEN into freshly allocated storage.
+// getenv returns a pointer backed by the process environment block; copy it immediately so callers
+// own a stable buffer (which they must later free) and enforce a predictable size cap.
+int GetAccessTokenFromEnv(MemoryStruct *accessToken)
 {
-#ifdef _WIN32
-  size_t azureCliAccessTokenSize;
-  getenv_s(&azureCliAccessTokenSize, NULL, 0, "AZURE_CLI_ACCESS_TOKEN");
-  if (azureCliAccessTokenSize != 0)
-  {
-    Log(LogLevel_Info, "Environment variable AZURE_CLI_ACCESS_TOKEN defined [%zu]\n", azureCliAccessTokenSize);
-    accessToken->memory  = (char *)malloc(azureCliAccessTokenSize * sizeof(char));
-    if (!accessToken->memory)
-    {
-      Log(LogLevel_Error, "Environment variable AZURE_CLI_ACCESS_TOKEN defined, but failed to allocate memory for accessToken->memory!\n");
-      return 0;
-    }
-
-    getenv_s(&azureCliAccessTokenSize, accessToken->memory, azureCliAccessTokenSize, "AZURE_CLI_ACCESS_TOKEN");
-    accessToken->size = azureCliAccessTokenSize;
-    return 1;
-  }
-#else
-  char *azureCliToken = getenv("AZURE_CLI_ACCESS_TOKEN");
-  size_t azureCliAccessTokenSize;
-  if (azureCliToken)
-  {
-    azureCliAccessTokenSize = strlen(azureCliToken);
-    Log(LogLevel_Info, "Environment variable AZURE_CLI_ACCESS_TOKEN defined [%zu]\n", azureCliAccessTokenSize);
-    accessToken->memory  = (char *)malloc(azureCliAccessTokenSize * sizeof(char) + 1);
-    if (!accessToken->memory)
-    {
-      Log(LogLevel_Error, "Environment variable AZURE_CLI_ACCESS_TOKEN defined, but failed to allocate memory for accessToken->memory!\n");
-      return 0;
-    }
-
-    memcpy(accessToken->memory, azureCliToken, azureCliAccessTokenSize);
-    accessToken->memory[azureCliAccessTokenSize] = '\0';
-    accessToken->size = azureCliAccessTokenSize + 1;
-    return 1;
-  }
-#endif
-
-
-  CURL *curl_handle;
-  CURLcode res;
-
-  accessToken->memory = malloc(1);
+  accessToken->memory = NULL;
   accessToken->size = 0;
 
-  char *IDMSEnv = NULL;
-  size_t requiredSize;
-
-#ifdef _WIN32
-  getenv_s(&requiredSize, NULL, 0, "IDENTITY_ENDPOINT");
-  if (requiredSize != 0)
+  const char *azureCliToken = getenv("AZURE_CLI_ACCESS_TOKEN");
+  if (!azureCliToken || azureCliToken[0] == '\0')
   {
-    Log(LogLevel_Error, "IDENTITY_ENDPOINT defined [%zu]\n", requiredSize);
-    IDMSEnv = (char *)malloc(requiredSize * sizeof(char));
-    if (!IDMSEnv)
-    {
-      Log(LogLevel_Error, "Failed to allocate memory!\n");
-      return 0;
-    }
-
-    getenv_s(&requiredSize, IDMSEnv, requiredSize, "IDENTITY_ENDPOINT");
-  }
-#else
-  IDMSEnv = getenv("IDENTITY_ENDPOINT");
-#endif
-
-  char idmsUrl[4 * 1024] = {0};
-  if (IDMSEnv)
-  {
-    Log(LogLevel_Info, "Use overrided IDMS url : %s\n", IDMSEnv);
-    strcat_s(idmsUrl, sizeof idmsUrl, IDMSEnv);
-    strcat_s(idmsUrl, sizeof idmsUrl, "?api-version=2018-02-01");
-#ifdef _WIN32
-    free(IDMSEnv);
-#endif
-  }
-  else
-  {
-    strcat_s(idmsUrl, sizeof idmsUrl, "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01");
-  }
-
-  if (strcasecmp(type, "vault") == 0)
-  {
-    strcat_s(idmsUrl, sizeof idmsUrl, "&resource=https://vault.azure.net");
-  }
-  else if (strcasecmp(type, "managedHsm") == 0)
-  {
-    strcat_s(idmsUrl, sizeof idmsUrl, "&resource=https://managedhsm.azure.net");
-  }
-  else
-  {
-    Log(LogLevel_Error, "AKV type must be either 'managedhsm' or 'vault'!\n");
+    Log(LogLevel_Error, "Environment variable AZURE_CLI_ACCESS_TOKEN is not defined or empty.\n");
     return 0;
   }
 
-  curl_handle = curl_easy_init();
-  curl_easy_setopt(curl_handle, CURLOPT_URL, idmsUrl);
-  struct curl_slist *headers = NULL;
-  headers = curl_slist_append(headers, "Content-Type: application/json");
-  headers = curl_slist_append(headers, "Metadata: true");
-  curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headers);
-
-  curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-  curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)accessToken);
-  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
-
-  res = curl_easy_perform(curl_handle);
-  curl_easy_cleanup(curl_handle);
-
-  if (res != CURLE_OK)
+  size_t azureCliAccessTokenSize = strlen(azureCliToken);
+  if (azureCliAccessTokenSize + 1 > AZURE_CLI_ACCESS_TOKEN_MAX)
   {
-    Log(LogLevel_Error, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
-    free(accessToken->memory);
-    accessToken->memory = NULL;
+    Log(LogLevel_Error,
+        "Environment variable AZURE_CLI_ACCESS_TOKEN exceeds supported size (%zu/%zu bytes).\n",
+        azureCliAccessTokenSize + 1,
+        (size_t)AZURE_CLI_ACCESS_TOKEN_MAX);
+    return 0;
+  }
+
+  accessToken->memory = (char *)malloc(azureCliAccessTokenSize + 1);
+  if (!accessToken->memory)
+  {
+    Log(LogLevel_Error, "Failed to allocate memory for the access token.\n");
     accessToken->size = 0;
     return 0;
   }
 
-  struct json_object *parsed_json;
-  struct json_object *atoken;
-  parsed_json = json_tokener_parse(accessToken->memory);
-
-  if (!json_object_object_get_ex(parsed_json, "access_token", &atoken)) {
-    Log(LogLevel_Error, "An access_token field was not found in the IDMS endpoint response. Is a managed identity available?\n");
-    vaultErrorLog(parsed_json);
-    free(accessToken->memory);
-    accessToken->memory = NULL;
-    accessToken->size = 0;
-    return 0;
-  }
-
-  const char *accessTokenStr = json_object_get_string(atoken);
-  const size_t accessTokenStrSize = strlen(accessTokenStr);
-  char *access = (char *)malloc(accessTokenStrSize + 1);
-  memcpy(access, accessTokenStr, accessTokenStrSize);
-  access[accessTokenStrSize] = '\0';
-
-  free(accessToken->memory);
-  accessToken->memory = access;
-  accessToken->size = accessTokenStrSize + 1;
-  json_object_put(parsed_json);
+  memcpy(accessToken->memory, azureCliToken, azureCliAccessTokenSize);
+  accessToken->memory[azureCliAccessTokenSize] = '\0';
+  accessToken->size = azureCliAccessTokenSize + 1;
   return 1;
 }
 
-int AkvSign(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *hashText, size_t hashTextSize, MemoryStruct *signatureText)
+int AkvSign(const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *hashText, size_t hashTextSize, MemoryStruct *signatureText)
 {
   CURL *curl_handle;
   CURLcode res;
@@ -240,29 +135,11 @@ int AkvSign(const char *type, const char *keyvault, const char *keyname, const M
   base64urlEncode(hashText, hashTextSize, encodeResult, &outputLen);
 
   char keyVaultUrl[4 * 1024] = {0};
-  if (strcasecmp(type, "managedHsm") == 0)
-  {
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "https://");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyvault);
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, ".managedhsm.azure.net/keys/");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyname);
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "/sign");
-  }
-  else if (strcasecmp(type, "vault") == 0)
-  {
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "https://");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyvault);
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, ".vault.azure.net/keys/");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyname);
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "/sign");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "?");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, ApiVersion);
-  }
-  else
-  {
-    Log(LogLevel_Error, "AKV type must be either 'managedhsm' or 'vault'!\n");
-    goto cleanup;
-  }
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, "https://");
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyvault);
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, ".managedhsm.azure.net/keys/");
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyname);
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, "/sign");
 
   curl_handle = curl_easy_init();
   curl_easy_setopt(curl_handle, CURLOPT_URL, keyVaultUrl);
@@ -421,7 +298,7 @@ static EVP_PKEY *getECPKey(const char *group_name, const unsigned char *x, const
   EVP_PKEY_CTX_free(ctx);
   return pk;
 }
-EVP_PKEY *AkvGetKey(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken)
+EVP_PKEY *AkvGetKey(const char *keyvault, const char *keyname, const MemoryStruct *accessToken)
 {
   CURL *curl_handle;
   CURLcode res;
@@ -447,27 +324,10 @@ EVP_PKEY *AkvGetKey(const char *type, const char *keyvault, const char *keyname,
   keyInfo.size = 0;
 
   char keyVaultUrl[4 * 1024] = {0};
-  if (strcasecmp(type, "managedHsm") == 0)
-  {
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "https://");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyvault);
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, ".managedhsm.azure.net/keys/");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyname);
-  }
-  else if (strcasecmp(type, "vault") == 0)
-  {
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "https://");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyvault);
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, ".vault.azure.net/keys/");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyname);
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "?");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, ApiVersion);
-  }
-  else
-  {
-    Log(LogLevel_Error, "AKV type must be either 'managedhsm' or 'vault'!\n");
-    goto cleanup;
-  }
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, "https://");
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyvault);
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, ".managedhsm.azure.net/keys/");
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyname);
 
   curl_handle = curl_easy_init();
 
@@ -656,7 +516,7 @@ cleanup:
   return retPKey;
 }
 
-int AkvDecrypt(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *ciperText, size_t ciperTextSize, MemoryStruct *decryptedText)
+int AkvDecrypt(const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *ciperText, size_t ciperTextSize, MemoryStruct *decryptedText)
 {
   CURL *curl_handle;
   CURLcode res;
@@ -670,29 +530,11 @@ int AkvDecrypt(const char *type, const char *keyvault, const char *keyname, cons
   decryption.size = 0;
 
   char keyVaultUrl[4 * 1024] = {0};
-  if (strcasecmp(type, "managedHsm") == 0)
-  {
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "https://");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyvault);
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, ".managedhsm.azure.net/keys/");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyname);
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "/decrypt");
-  }
-  else if (strcasecmp(type, "vault") == 0)
-  {
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "https://");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyvault);
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, ".vault.azure.net/keys/");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyname);
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "/decrypt");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "?");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, ApiVersion);
-  }
-  else
-  {
-    Log(LogLevel_Error, "AKV type must be either 'managedhsm' or 'vault'!\n");
-    goto cleanup;
-  }
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, "https://");
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyvault);
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, ".managedhsm.azure.net/keys/");
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyname);
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, "/decrypt");
 
   curl_handle = curl_easy_init();
 
@@ -780,7 +622,7 @@ cleanup:
   return result;
 }
 
-int AkvEncrypt(const char *type, const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *clearText, size_t clearTextSize, MemoryStruct *encryptedText)
+int AkvEncrypt(const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *clearText, size_t clearTextSize, MemoryStruct *encryptedText)
 {
   CURL *curl_handle;
   CURLcode res;
@@ -794,29 +636,11 @@ int AkvEncrypt(const char *type, const char *keyvault, const char *keyname, cons
   encryption.size = 0;
 
   char keyVaultUrl[4 * 1024] = {0};
-  if (strcasecmp(type, "managedHsm") == 0)
-  {
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "https://");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyvault);
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, ".managedhsm.azure.net/keys/");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyname);
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "/encrypt");
-  }
-  else if (strcasecmp(type, "vault") == 0)
-  {
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "https://");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyvault);
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, ".vault.azure.net/keys/");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyname);
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "/encrypt");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, "?");
-    strcat_s(keyVaultUrl, sizeof keyVaultUrl, ApiVersion);
-  }
-  else
-  {
-    Log(LogLevel_Error, "AKV type must be either 'managedhsm' or 'vault'!\n");
-    goto cleanup;
-  }
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, "https://");
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyvault);
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, ".managedhsm.azure.net/keys/");
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyname);
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, "/encrypt");
 
   curl_handle = curl_easy_init();
 

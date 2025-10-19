@@ -1,6 +1,18 @@
 # Azure Key Vault Provider Plan
 
-## Get the access token
+## Get Openssl settings
+```
+openssl version -a
+```
+Looking for OPENSSLDIR and MODULESDIR, for example
+```
+OPENSSLDIR: "C:\OpenSSL\ssl"
+MODULESDIR: "C:\OpenSSL\lib\ossl-modules"
+```
+The openssl.cnf will be stored in OPENSSLDIR
+The provider DLL will be deployed to MODULESDIR
+
+## Get the access token for Azure managed HSM
 use the following powershell
 ```
 $s=(az account get-access-token --output json --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47 --resource https://managedhsm.azure.net)
@@ -13,6 +25,21 @@ run `src_provider/build_with_vsdev.bat`
 ## Deploy
 run `copy .\x64\Release\akv_provider.dll C:\OpenSSL\lib\ossl-modules`
 
+## Initialize the openssl.cnf
+```
+[openssl_init]
+providers = provider_sect
+
+[provider_sect]
+default = default_sect
+akv_provider = akv_provider_sect
+
+[default_sect]
+activate = 1
+[akv_provider_sect]
+activate = 1
+```
+
 ## Check if provider is activated
 run `openssl list -providers`
 
@@ -23,20 +50,20 @@ Ensure the Managed HSM contains the pre-provisioned keys: `myrsakey` (RSA 2048 s
 After algorithms are registered, verify they appear via `openssl list -signature-algorithms -provider akv_provider` and the equivalent decrypt listings.
 
 ## Signing Flow
-- Export `myrsakey` or `ecckey` via the provider once URI support exists (e.g. `openssl pkey -provider akv_provider -provider_path <stage-dir> -in "akv:keyvault_type=managedHsm,keyvault_name=ManagedHSMOpenSSLEngine,key_name=myrsakey,alg=RS256" -pubout -out myrsakey_pub.pem`). Repeat for `ecckey` with `alg=ES256`.
-- RSA signing: `openssl dgst -sha256 -sign "akv:keyvault_type=managedHsm,keyvault_name=ManagedHSMOpenSSLEngine,key_name=myrsakey,alg=RS256" -provider akv_provider -provider_path <stage-dir> -out rs256.sig input.bin`. Verify with the exported public key: `openssl dgst -sha256 -verify myrsakey_pub.pem -signature rs256.sig input.bin`.
-- ECC signing: `openssl dgst -sha256 -sign "akv:keyvault_type=managedHsm,keyvault_name=ManagedHSMOpenSSLEngine,key_name=ecckey,alg=ES256" -provider akv_provider -provider_path <stage-dir> -out es256.sig input.bin`. Verify with the exported EC public key: `openssl dgst -sha256 -verify ecckey_pub.pem -signature es256.sig input.bin`.
+- Export `myrsakey` or `ecckey` via the provider once URI support exists (e.g. `openssl pkey -provider akv_provider -in "managedhsm:ManagedHSMOpenSSLEngine:myrsakey" -pubout -out myrsakey_pub.pem`). Repeat for `ecckey` with `managedhsm:ManagedHSMOpenSSLEngine:ecckey`.
+- RSA signing: `openssl dgst -sha256 -sign "managedhsm:ManagedHSMOpenSSLEngine:myrsakey" -provider akv_provider -provider_path <stage-dir> -out rs256.sig input.bin`. Verify with the exported public key: `openssl dgst -sha256 -verify myrsakey_pub.pem -signature rs256.sig input.bin`.
+- ECC signing: `openssl dgst -sha256 -sign "managedhsm:ManagedHSMOpenSSLEngine:ecckey" -provider akv_provider -provider_path <stage-dir> -out es256.sig input.bin`. Verify with the exported EC public key: `openssl dgst -sha256 -verify ecckey_pub.pem -signature es256.sig input.bin`.
 - Negative test: request an unsupported hash/algorithm pairing (e.g. ES384 with `myrsakey`) and confirm a helpful error surfaces.
 
 ## Decrypt Flow
 - Encrypt sample plaintext locally with `myrsakey_pub.pem`: `openssl pkeyutl -encrypt -pubin -inkey myrsakey_pub.pem -in plain.txt -out rsa_cipher.bin`.
-- Decrypt through AKV: `openssl pkeyutl -decrypt -inkey "akv:keyvault_type=managedHsm,keyvault_name=ManagedHSMOpenSSLEngine,key_name=myrsakey,alg=RSA-OAEP" -provider akv_provider -provider_path <stage-dir> -in rsa_cipher.bin -out rsa_roundtrip.txt`.
+- Decrypt through AKV: `openssl pkeyutl -decrypt -inkey "managedhsm:ManagedHSMOpenSSLEngine:myrsakey" -provider akv_provider -provider_path <stage-dir> -in rsa_cipher.bin -out rsa_roundtrip.txt`.
 - Compare `plain.txt` and `rsa_roundtrip.txt` to confirm success; add cases for oversized payloads or disabled algorithms to validate error handling.
 
 ## AES Wrap Flow
 - Generate a 32-byte local key to wrap: `openssl rand 32 > local.key`.
-- Wrap using `myaeskey`: `openssl pkeyutl -wrap -inkey "akv:keyvault_type=managedHsm,keyvault_name=ManagedHSMOpenSSLEngine,key_name=myaeskey,alg=A256KW" -provider akv_provider -provider_path <stage-dir> -in local.key -out local.key.wrap`.
-- Unwrap with the same key: `openssl pkeyutl -unwrap -inkey "akv:keyvault_type=managedHsm,keyvault_name=ManagedHSMOpenSSLEngine,key_name=myaeskey,alg=A256KW" -provider akv_provider -provider_path <stage-dir> -in local.key.wrap -out local.key.unwrapped`.
+- Wrap using `myaeskey`: `openssl pkeyutl -wrap -inkey "managedhsm:ManagedHSMOpenSSLEngine:myaeskey" -provider akv_provider -provider_path <stage-dir> -in local.key -out local.key.wrap`.
+- Unwrap with the same key: `openssl pkeyutl -unwrap -inkey "managedhsm:ManagedHSMOpenSSLEngine:myaeskey" -provider akv_provider -provider_path <stage-dir> -in local.key.wrap -out local.key.unwrapped`.
 - Compare `local.key` and `local.key.unwrapped`; tamper with the wrapped blob to ensure unwrap fails cleanly.
 
 ## Automation

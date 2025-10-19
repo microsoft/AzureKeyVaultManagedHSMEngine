@@ -10,7 +10,6 @@
 typedef struct akv_store_ctx_st
 {
     AKV_PROVIDER_CTX *provctx;
-    char *keyvault_type;
     char *keyvault_name;
     char *key_name;
     char *key_version;
@@ -32,7 +31,6 @@ static void akv_store_ctx_free(AKV_STORE_CTX *ctx)
         return;
     }
 
-    free(ctx->keyvault_type);
     free(ctx->keyvault_name);
     free(ctx->key_name);
     free(ctx->key_version);
@@ -47,58 +45,28 @@ static void akv_log_curl_get_key_url(const AKV_STORE_CTX *ctx)
 
     Log(LogLevel_Trace, "akv_log_curl_get_key_url ctx=%p", (const void *)ctx);
 
-    if (ctx == NULL || ctx->keyvault_type == NULL || ctx->keyvault_name == NULL || ctx->key_name == NULL)
+    if (ctx == NULL || ctx->keyvault_name == NULL || ctx->key_name == NULL)
     {
         Log(LogLevel_Debug, "akv_log_curl_get_key_url skipped (incomplete metadata)");
         return;
     }
 
-    if (strcasecmp(ctx->keyvault_type, "managedHsm") == 0)
+    if (ctx->key_version != NULL && ctx->key_version[0] != '\0')
     {
-        if (ctx->key_version != NULL && ctx->key_version[0] != '\0')
-        {
-            written = snprintf(url,
-                               sizeof(url),
-                               "https://%s.managedhsm.azure.net/keys/%s/%s",
-                               ctx->keyvault_name,
-                               ctx->key_name,
-                               ctx->key_version);
-        }
-        else
-        {
-            written = snprintf(url,
-                               sizeof(url),
-                               "https://%s.managedhsm.azure.net/keys/%s",
-                               ctx->keyvault_name,
-                               ctx->key_name);
-        }
-    }
-    else if (strcasecmp(ctx->keyvault_type, "vault") == 0)
-    {
-        if (ctx->key_version != NULL && ctx->key_version[0] != '\0')
-        {
-            written = snprintf(url,
-                               sizeof(url),
-                               "https://%s.vault.azure.net/keys/%s/%s?%s",
-                               ctx->keyvault_name,
-                               ctx->key_name,
-                               ctx->key_version,
-                               ApiVersion);
-        }
-        else
-        {
-            written = snprintf(url,
-                               sizeof(url),
-                               "https://%s.vault.azure.net/keys/%s?%s",
-                               ctx->keyvault_name,
-                               ctx->key_name,
-                               ApiVersion);
-        }
+        written = snprintf(url,
+                           sizeof(url),
+                           "https://%s.managedhsm.azure.net/keys/%s/%s",
+                           ctx->keyvault_name,
+                           ctx->key_name,
+                           ctx->key_version);
     }
     else
     {
-        Log(LogLevel_Debug, "akv_log_curl_get_key_url skipped (unknown keyvault_type=%s)", ctx->keyvault_type);
-        return;
+        written = snprintf(url,
+                           sizeof(url),
+                           "https://%s.managedhsm.azure.net/keys/%s",
+                           ctx->keyvault_name,
+                           ctx->key_name);
     }
 
     if (written < 0 || (size_t)written >= sizeof(url))
@@ -208,28 +176,27 @@ static int akv_set_string(char **dst, const char *src)
     return 1;
 }
 
-static int akv_parse_uri_keyvalue(const char *uri, char **type, char **vault, char **name, char **version)
+static int akv_parse_uri_keyvalue(const char *uri, char **vault, char **name, char **version)
 {
     const char *cursor;
     char *work = NULL;
     char *token;
     int ok = 0;
+    int type_validated = 0;
 
     Log(LogLevel_Trace,
-        "akv_parse_uri_keyvalue uri=%s type_ptr=%p vault_ptr=%p name_ptr=%p version_ptr=%p",
+        "akv_parse_uri_keyvalue uri=%s vault_ptr=%p name_ptr=%p version_ptr=%p",
         uri != NULL ? uri : "(null)",
-        (void *)type,
         (void *)vault,
         (void *)name,
         (void *)version);
 
-    if (type == NULL || vault == NULL || name == NULL || version == NULL)
+    if (vault == NULL || name == NULL || version == NULL)
     {
         Log(LogLevel_Debug, "akv_parse_uri_keyvalue -> 0 (null out param)");
         return 0;
     }
 
-    *type = NULL;
     *vault = NULL;
     *name = NULL;
     *version = NULL;
@@ -267,11 +234,12 @@ static int akv_parse_uri_keyvalue(const char *uri, char **type, char **vault, ch
             ++equals;
             if (strcasecmp(token, "keyvault_type") == 0 || strcasecmp(token, "type") == 0)
             {
-                if (!akv_set_string(type, equals))
+                if (equals == NULL || *equals == '\0' || strcasecmp(equals, "managedhsm") != 0)
                 {
-                    Log(LogLevel_Debug, "akv_parse_uri_keyvalue -> 0 (set type failed)");
+                    Log(LogLevel_Debug, "akv_parse_uri_keyvalue -> 0 (unsupported keyvault type)");
                     goto cleanup;
                 }
+                type_validated = 1;
             }
             else if (strcasecmp(token, "keyvault_name") == 0 || strcasecmp(token, "vault") == 0)
             {
@@ -305,7 +273,13 @@ static int akv_parse_uri_keyvalue(const char *uri, char **type, char **vault, ch
         token = next + 1;
     }
 
-    ok = (*type != NULL && *vault != NULL && *name != NULL) ? 1 : 0;
+    if (!type_validated)
+    {
+        /* Treat missing type as managedhsm by default for legacy URIs without an explicit token. */
+        type_validated = 1;
+    }
+
+    ok = (type_validated && *vault != NULL && *name != NULL) ? 1 : 0;
     if (!ok)
     {
         Log(LogLevel_Debug, "akv_parse_uri_keyvalue missing required fields");
@@ -313,8 +287,7 @@ static int akv_parse_uri_keyvalue(const char *uri, char **type, char **vault, ch
     else
     {
         Log(LogLevel_Debug,
-            "akv_parse_uri_keyvalue parsed type=%s vault=%s name=%s version=%s",
-            *type != NULL ? *type : "(null)",
+            "akv_parse_uri_keyvalue parsed vault=%s name=%s version=%s",
             *vault != NULL ? *vault : "(null)",
             *name != NULL ? *name : "(null)",
             *version != NULL ? *version : "(null)");
@@ -328,11 +301,9 @@ cleanup:
     }
     if (!ok)
     {
-        free(*type);
         free(*vault);
         free(*name);
         free(*version);
-        *type = NULL;
         *vault = NULL;
         *name = NULL;
         *version = NULL;
@@ -341,7 +312,7 @@ cleanup:
     return ok;
 }
 
-static int akv_parse_uri_simple(const char *uri, char **type, char **vault, char **name)
+static int akv_parse_uri_simple(const char *uri, char **vault, char **name)
 {
     const char *cursor;
     const char *sep;
@@ -349,13 +320,12 @@ static int akv_parse_uri_simple(const char *uri, char **type, char **vault, char
     int ok = 0;
 
     Log(LogLevel_Trace,
-        "akv_parse_uri_simple uri=%s type_ptr=%p vault_ptr=%p name_ptr=%p",
+        "akv_parse_uri_simple uri=%s vault_ptr=%p name_ptr=%p",
         uri != NULL ? uri : "(null)",
-        (void *)type,
         (void *)vault,
         (void *)name);
 
-    if (type == NULL || vault == NULL || name == NULL)
+    if (vault == NULL || name == NULL)
     {
         Log(LogLevel_Debug, "akv_parse_uri_simple -> 0 (null out param)");
         return 0;
@@ -376,21 +346,12 @@ static int akv_parse_uri_simple(const char *uri, char **type, char **vault, char
     }
 
     vault_len = (size_t)(sep - cursor);
-    *type = NULL;
     *vault = NULL;
     *name = NULL;
-
-    if (!akv_dup_string(type, "managedHsm"))
-    {
-        Log(LogLevel_Debug, "akv_parse_uri_simple -> 0 (dup type failed)");
-        goto cleanup;
-    }
 
     *vault = (char *)malloc(vault_len + 1);
     if (*vault == NULL)
     {
-        free(*type);
-        *type = NULL;
         Log(LogLevel_Debug, "akv_parse_uri_simple -> 0 (alloc vault failed)");
         goto cleanup;
     }
@@ -400,8 +361,6 @@ static int akv_parse_uri_simple(const char *uri, char **type, char **vault, char
     cursor = sep + 1;
     if (!akv_dup_string(name, cursor))
     {
-        free(*type);
-        *type = NULL;
         free(*vault);
         *vault = NULL;
         Log(LogLevel_Debug, "akv_parse_uri_simple -> 0 (dup name failed)");
@@ -410,18 +369,15 @@ static int akv_parse_uri_simple(const char *uri, char **type, char **vault, char
 
     ok = 1;
     Log(LogLevel_Debug,
-        "akv_parse_uri_simple parsed type=%s vault=%s name=%s",
-        *type != NULL ? *type : "(null)",
+        "akv_parse_uri_simple parsed vault=%s name=%s",
         *vault != NULL ? *vault : "(null)",
         *name != NULL ? *name : "(null)");
 
 cleanup:
     if (!ok)
     {
-        free(*type);
         free(*vault);
         free(*name);
-        *type = NULL;
         *vault = NULL;
         *name = NULL;
     }
@@ -444,9 +400,9 @@ static void *akv_store_open(void *provctx, const char *uri)
 
     ctx->provctx = (AKV_PROVIDER_CTX *)provctx;
 
-    if (!akv_parse_uri_keyvalue(uri, &ctx->keyvault_type, &ctx->keyvault_name, &ctx->key_name, &ctx->key_version))
+    if (!akv_parse_uri_keyvalue(uri, &ctx->keyvault_name, &ctx->key_name, &ctx->key_version))
     {
-        if (!akv_parse_uri_simple(uri, &ctx->keyvault_type, &ctx->keyvault_name, &ctx->key_name))
+        if (!akv_parse_uri_simple(uri, &ctx->keyvault_name, &ctx->key_name))
         {
             akv_store_ctx_free(ctx);
             Log(LogLevel_Debug, "akv_store_open -> NULL (parsing failed)");
@@ -456,9 +412,8 @@ static void *akv_store_open(void *provctx, const char *uri)
 
     ctx->exhausted = 0;
     Log(LogLevel_Debug,
-        "akv_store_open -> %p (type=%s vault=%s name=%s version=%s)",
+        "akv_store_open -> %p (vault=%s name=%s version=%s)",
         (void *)ctx,
-        ctx->keyvault_type != NULL ? ctx->keyvault_type : "(null)",
         ctx->keyvault_name != NULL ? ctx->keyvault_name : "(null)",
         ctx->key_name != NULL ? ctx->key_name : "(null)",
         ctx->key_version != NULL ? ctx->key_version : "(null)");
@@ -522,16 +477,18 @@ static int akv_store_load(void *loaderctx, OSSL_CALLBACK *object_cb, void *objec
         return 0;
     }
 
-    if (!GetAccessTokenFromIMDS(ctx->keyvault_type, &token))
+    if (!GetAccessTokenFromEnv(&token))
     {
-        Log(LogLevel_Error, "Failed to obtain access token for %s", ctx->keyvault_type);
-        Log(LogLevel_Debug, "akv_store_load -> 0 (GetAccessTokenFromIMDS failed)");
+        Log(LogLevel_Error, "Failed to obtain access token for managedhsm://%s/%s",
+            ctx->keyvault_name != NULL ? ctx->keyvault_name : "(null)",
+            ctx->key_name != NULL ? ctx->key_name : "(null)");
+        Log(LogLevel_Debug, "akv_store_load -> 0 (GetAccessTokenFromEnv failed)");
         goto cleanup;
     }
 
     akv_log_curl_get_key_url(ctx);
 
-    key = AkvGetKey(ctx->keyvault_type, ctx->keyvault_name, ctx->key_name, &token);
+    key = AkvGetKey(ctx->keyvault_name, ctx->key_name, &token);
     if (key == NULL)
     {
         Log(LogLevel_Error, "Failed to retrieve key material for %s", ctx->key_name);
@@ -547,7 +504,7 @@ static int akv_store_load(void *loaderctx, OSSL_CALLBACK *object_cb, void *objec
         goto cleanup;
     }
 
-    if (!akv_key_set_metadata(akv_key, ctx->keyvault_type, ctx->keyvault_name, ctx->key_name, ctx->key_version))
+    if (!akv_key_set_metadata(akv_key, ctx->keyvault_name, ctx->key_name, ctx->key_version))
     {
         Log(LogLevel_Error, "Failed to set key metadata for %s", ctx->key_name);
         Log(LogLevel_Debug, "akv_store_load -> 0 (akv_key_set_metadata failed)");
@@ -637,8 +594,7 @@ static const OSSL_DISPATCH akv_store_functions[] = {
     {0, NULL}};
 
 static const OSSL_ALGORITHM akv_store_algs[] = {
-    {"akv", "provider=akv_provider", akv_store_functions, "Azure Key Vault store"},
-    {"managedhsm", "provider=akv_provider", akv_store_functions, "Azure Key Vault store (managedHsm alias)"},
+    {"managedhsm", "provider=akv_provider", akv_store_functions, "Azure Managed HSM store"},
     {NULL, NULL, NULL, NULL}};
 
 static const OSSL_ALGORITHM akv_keymgmt_algs[] = {
