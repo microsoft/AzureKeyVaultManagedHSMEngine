@@ -1,2 +1,9 @@
 x64/
 akv_provider/
+*.log
+*.tmp
+*.pem
+*.cnf
+*.sig
+*.bin
+*.bak
