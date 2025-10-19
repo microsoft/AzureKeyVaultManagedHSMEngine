@@ -20,7 +20,7 @@ run `openssl list -providers`
 Ensure the Managed HSM contains the pre-provisioned keys: `myrsakey` (RSA 2048 sign/decrypt), `myaeskey` (AES-256 wrap/unwrap), and `ecckey` (P-256 sign). Run `az keyvault key list --id https://ManagedHSMOpenSSLEngine.managedhsm.azure.net/` and confirm each key reports `enabled: true`.
 
 ## Smoke Checks
-After algorithms are registered, verify they appear via `openssl list -signature-algorithms -provider akv_provider ...` and the equivalent decrypt listings.
+After algorithms are registered, verify they appear via `openssl list -signature-algorithms -provider akv_provider` and the equivalent decrypt listings.
 
 ## Signing Flow
 - Export `myrsakey` or `ecckey` via the provider once URI support exists (e.g. `openssl pkey -provider akv_provider -provider_path <stage-dir> -in "akv:keyvault_type=managedHsm,keyvault_name=ManagedHSMOpenSSLEngine,key_name=myrsakey,alg=RS256" -pubout -out myrsakey_pub.pem`). Repeat for `ecckey` with `alg=ES256`.

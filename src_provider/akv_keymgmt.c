@@ -493,7 +493,16 @@ static int akv_keymgmt_import_common(AKV_KEY *key, const char *algorithm, int se
         return 0;
     }
 
-    ctx = EVP_PKEY_CTX_new_from_name(NULL, algorithm, NULL);
+    /*
+     * Force the core to use a built-in provider (default/base) so we do not
+     * recurse back into our own keymgmt implementation when materialising
+     * temporary EVP_PKEY objects for export/import plumbing.
+     */
+    ctx = EVP_PKEY_CTX_new_from_name(NULL, algorithm, "provider=default");
+    if (ctx == NULL)
+    {
+        ctx = EVP_PKEY_CTX_new_from_name(NULL, algorithm, "provider=base");
+    }
     if (ctx == NULL)
     {
         Log(LogLevel_Error, "akv_keymgmt_import_common failed to create ctx for %s", algorithm);

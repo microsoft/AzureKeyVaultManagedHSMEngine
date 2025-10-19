@@ -4,6 +4,7 @@
 #include "akv_provider_shared.h"
 
 int LOG_LEVEL = LogLevel_Info;
+static FILE *log_file = NULL;
 
 void WriteLog(
     int level,
@@ -13,6 +14,11 @@ void WriteLog(
     const char *format,
     ...)
 {
+    char message[1024];
+    char formatted[1280];
+    size_t formatted_len = 0;
+    FILE *stderr_target = stderr;
+
     if (level > LOG_LEVEL)
     {
         return;
@@ -54,17 +60,68 @@ void WriteLog(
         break;
     }
 
-    fprintf(stderr, "[%c] %s %s(%d) ",
-            levelChar,
-            function,
-            shortFilename,
-            line);
-    vfprintf(stderr, format, arglist);
+    vsnprintf(message, sizeof(message), format, arglist);
     va_end(arglist);
-    fprintf(stderr, "\n");
+
+    snprintf(formatted,
+             sizeof(formatted),
+             "[%c] %s %s(%d) %s\n",
+             levelChar,
+             function,
+             shortFilename,
+             line,
+             message);
+
+    formatted[sizeof(formatted) - 1] = '\0';
+    formatted_len = strlen(formatted);
+
+    fwrite(formatted, 1, formatted_len, stderr_target);
+    fflush(stderr_target);
+
+    if (log_file != NULL)
+    {
+        fwrite(formatted, 1, formatted_len, log_file);
+        fflush(log_file);
+    }
 }
 
 void akv_provider_set_log_level(int level)
 {
     LOG_LEVEL = level;
+}
+
+int akv_provider_set_log_file(const char *path)
+{
+    if (log_file != NULL)
+    {
+        fclose(log_file);
+        log_file = NULL;
+    }
+
+    if (path == NULL || *path == '\0')
+    {
+        return 1;
+    }
+
+    {
+        FILE *handle = NULL;
+        if (fopen_s(&handle, path, "a") != 0 || handle == NULL)
+        {
+            fprintf(stderr, "[!] akv_provider_set_log_file failed to open %s\n", path);
+            return 0;
+        }
+        log_file = handle;
+    }
+
+    setvbuf(log_file, NULL, _IONBF, 0);
+    return 1;
+}
+
+void akv_provider_close_log_file(void)
+{
+    if (log_file != NULL)
+    {
+        fclose(log_file);
+        log_file = NULL;
+    }
 }

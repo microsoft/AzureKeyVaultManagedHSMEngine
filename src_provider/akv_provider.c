@@ -40,6 +40,76 @@ static void akv_store_ctx_free(AKV_STORE_CTX *ctx)
     Log(LogLevel_Debug, "akv_store_ctx_free complete");
 }
 
+static void akv_log_curl_get_key_url(const AKV_STORE_CTX *ctx)
+{
+    char url[1024] = {0};
+    int written = 0;
+
+    Log(LogLevel_Trace, "akv_log_curl_get_key_url ctx=%p", (const void *)ctx);
+
+    if (ctx == NULL || ctx->keyvault_type == NULL || ctx->keyvault_name == NULL || ctx->key_name == NULL)
+    {
+        Log(LogLevel_Debug, "akv_log_curl_get_key_url skipped (incomplete metadata)");
+        return;
+    }
+
+    if (strcasecmp(ctx->keyvault_type, "managedHsm") == 0)
+    {
+        if (ctx->key_version != NULL && ctx->key_version[0] != '\0')
+        {
+            written = snprintf(url,
+                               sizeof(url),
+                               "https://%s.managedhsm.azure.net/keys/%s/%s",
+                               ctx->keyvault_name,
+                               ctx->key_name,
+                               ctx->key_version);
+        }
+        else
+        {
+            written = snprintf(url,
+                               sizeof(url),
+                               "https://%s.managedhsm.azure.net/keys/%s",
+                               ctx->keyvault_name,
+                               ctx->key_name);
+        }
+    }
+    else if (strcasecmp(ctx->keyvault_type, "vault") == 0)
+    {
+        if (ctx->key_version != NULL && ctx->key_version[0] != '\0')
+        {
+            written = snprintf(url,
+                               sizeof(url),
+                               "https://%s.vault.azure.net/keys/%s/%s?%s",
+                               ctx->keyvault_name,
+                               ctx->key_name,
+                               ctx->key_version,
+                               ApiVersion);
+        }
+        else
+        {
+            written = snprintf(url,
+                               sizeof(url),
+                               "https://%s.vault.azure.net/keys/%s?%s",
+                               ctx->keyvault_name,
+                               ctx->key_name,
+                               ApiVersion);
+        }
+    }
+    else
+    {
+        Log(LogLevel_Debug, "akv_log_curl_get_key_url skipped (unknown keyvault_type=%s)", ctx->keyvault_type);
+        return;
+    }
+
+    if (written < 0 || (size_t)written >= sizeof(url))
+    {
+        Log(LogLevel_Debug, "akv_log_curl_get_key_url skipped (url truncated)");
+        return;
+    }
+
+    Log(LogLevel_Info, "curl.c AkvGetKey URL: %s", url);
+}
+
 static int akv_casecmpn(const char *lhs, const char *rhs, size_t count)
 {
     int result = 0;
@@ -459,6 +529,8 @@ static int akv_store_load(void *loaderctx, OSSL_CALLBACK *object_cb, void *objec
         goto cleanup;
     }
 
+    akv_log_curl_get_key_url(ctx);
+
     key = AkvGetKey(ctx->keyvault_type, ctx->keyvault_name, ctx->key_name, &token);
     if (key == NULL)
     {
@@ -565,7 +637,8 @@ static const OSSL_DISPATCH akv_store_functions[] = {
     {0, NULL}};
 
 static const OSSL_ALGORITHM akv_store_algs[] = {
-    {"akv,managedhsm", "provider=akv_provider", akv_store_functions, "Azure Key Vault store"},
+    {"akv", "provider=akv_provider", akv_store_functions, "Azure Key Vault store"},
+    {"managedhsm", "provider=akv_provider", akv_store_functions, "Azure Key Vault store (managedHsm alias)"},
     {NULL, NULL, NULL, NULL}};
 
 static const OSSL_ALGORITHM akv_keymgmt_algs[] = {
@@ -683,6 +756,7 @@ static void akv_teardown(void *provctx)
 {
     AKV_PROVIDER_CTX *ctx = (AKV_PROVIDER_CTX *)provctx;
     Log(LogLevel_Trace, "akv_teardown provctx=%p", provctx);
+    akv_provider_close_log_file();
     free(ctx);
     Log(LogLevel_Debug, "akv_teardown complete");
 }
@@ -723,6 +797,31 @@ AKV_PROVIDER_EXPORT int OSSL_provider_init(const OSSL_CORE_HANDLE *handle, const
     }
 
     ctx->core = handle;
+
+    {
+        const char *env = getenv("AKV_LOG_LEVEL");
+        if (env != NULL)
+        {
+            int level = atoi(env);
+            akv_provider_set_log_level(level);
+            Log(LogLevel_Info, "AKV log level set to %d via environment", level);
+        }
+    }
+
+    {
+        const char *path = getenv("AKV_LOG_FILE");
+        if (path != NULL && path[0] != '\0')
+        {
+            if (akv_provider_set_log_file(path))
+            {
+                Log(LogLevel_Info, "AKV log file set to %s via environment", path);
+            }
+            else
+            {
+                Log(LogLevel_Error, "Failed to open AKV log file at %s", path);
+            }
+        }
+    }
 
     *provctx = ctx;
     *out = akv_dispatch_table;

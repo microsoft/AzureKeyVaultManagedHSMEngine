@@ -79,5 +79,7 @@ void base64urlEncode(const unsigned char *input, size_t inputLen, unsigned char 
 int base64urlDecode(const unsigned char *input, size_t inputLen, unsigned char *output, size_t *outputLen);
 
 void akv_provider_set_log_level(int level);
+int akv_provider_set_log_file(const char *path);
+void akv_provider_close_log_file(void);
 
 #endif /* AKV_PROVIDER_SHARED_H */

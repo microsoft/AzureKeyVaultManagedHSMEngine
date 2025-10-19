@@ -352,7 +352,11 @@ cleanup:
 static EVP_PKEY *getPKey(const unsigned char *n, const size_t nSize, const unsigned char *e, const size_t eSize)
 {
   EVP_PKEY *pk = NULL;
-  EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(NULL, "RSA", NULL);
+  EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(NULL, "RSA", "provider=default");
+  if (ctx == NULL)
+  {
+    ctx = EVP_PKEY_CTX_new_from_name(NULL, "RSA", "provider=base");
+  }
   if (!ctx)
   {
     Log(LogLevel_Error, "Failed to create RSA EVP context\n");
@@ -384,7 +388,11 @@ static EVP_PKEY *getPKey(const unsigned char *n, const size_t nSize, const unsig
 static EVP_PKEY *getECPKey(const char *group_name, const unsigned char *x, const size_t xSize, const unsigned char *y, const size_t ySize)
 {
   EVP_PKEY *pk = NULL;
-  EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(NULL, "EC", NULL);
+  EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(NULL, "EC", "provider=default");
+  if (ctx == NULL)
+  {
+    ctx = EVP_PKEY_CTX_new_from_name(NULL, "EC", "provider=base");
+  }
   if (!ctx)
   {
     Log(LogLevel_Error, "Failed to create EC EVP context\n");
