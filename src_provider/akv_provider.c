@@ -760,13 +760,15 @@ AKV_PROVIDER_EXPORT int OSSL_provider_init(const OSSL_CORE_HANDLE *handle, const
 
     ctx->core = handle;
 
+    int log_level_override = 0;
+    int log_level_override_set = 0;
+
     {
         const char *env = getenv("AKV_LOG_LEVEL");
         if (env != NULL)
         {
-            int level = atoi(env);
-            akv_provider_set_log_level(level);
-            Log(LogLevel_Info, "AKV log level set to %d via environment", level);
+            log_level_override = atoi(env);
+            log_level_override_set = 1;
         }
     }
 
@@ -783,6 +785,12 @@ AKV_PROVIDER_EXPORT int OSSL_provider_init(const OSSL_CORE_HANDLE *handle, const
                 Log(LogLevel_Error, "Failed to open AKV log file at %s", path);
             }
         }
+    }
+
+    if (log_level_override_set)
+    {
+        akv_provider_set_log_level(log_level_override);
+        Log(LogLevel_Info, "AKV log level set to %d via environment", log_level_override);
     }
 
     *provctx = ctx;

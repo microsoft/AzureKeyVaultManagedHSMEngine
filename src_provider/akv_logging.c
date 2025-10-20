@@ -52,7 +52,6 @@ void WriteLog(
     char message[1024];
     char formatted[1312];
     size_t formatted_len = 0;
-    FILE *stderr_target = stderr;
 
     if (level > LOG_LEVEL)
     {
@@ -116,14 +115,9 @@ void WriteLog(
     formatted[sizeof(formatted) - 1] = '\0';
     formatted_len = strlen(formatted);
 
-    fwrite(formatted, 1, formatted_len, stderr_target);
-    fflush(stderr_target);
-
-    if (log_file != NULL)
-    {
-        fwrite(formatted, 1, formatted_len, log_file);
-        fflush(log_file);
-    }
+    FILE *output_sink = (log_file != NULL) ? log_file : stderr;
+    fwrite(formatted, 1, formatted_len, output_sink);
+    fflush(output_sink);
 }
 
 void akv_provider_set_log_level(int level)

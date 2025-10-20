@@ -29,6 +29,14 @@
 #include <curl/curl.h>
 #include <json-c/json.h>
 
+#if !defined(AKV_NATIVE_LITTLE_ENDIAN)
+#if defined(_WIN32) || (defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)) || (defined(_BYTE_ORDER) && (_BYTE_ORDER == _LITTLE_ENDIAN))
+#define AKV_NATIVE_LITTLE_ENDIAN 1
+#else
+#define AKV_NATIVE_LITTLE_ENDIAN 0
+#endif
+#endif
+
 #ifdef _WIN32
 #define strcasecmp _stricmp
 #define AKV_PROVIDER_EXPORT __declspec(dllexport)

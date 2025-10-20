@@ -337,24 +337,27 @@ static EVP_PKEY *getPKey(const unsigned char *n, const size_t nSize, const unsig
     goto end;
   }
 
-  for (size_t i = 0; i < nSize; ++i)
+  /*
+   * OSSL_PARAM integer buffers are interpreted in native endianness (see
+   * https://www.openssl.org/docs/man3.0/man3/OSSL_PARAM.html#Supported-types),
+   * so convert the big-endian JSON payload into little-endian form on hosts
+   * where that is required before calling EVP_PKEY_fromdata.
+   */
+  if (AKV_NATIVE_LITTLE_ENDIAN)
   {
-    n_le[i] = n[nSize - 1 - i];
-  }
-  for (size_t i = 0; i < eSize; ++i)
-  {
-    e_le[i] = e[eSize - 1 - i];
-  }
-
-  {
-    char *hex = HexStr((const char *)n, nSize > 32 ? 32 : nSize);
-    if (hex != NULL)
+    for (size_t i = 0; i < nSize; ++i)
     {
-      Log(LogLevel_Debug,
-          "getPKey input RSA modulus (hex prefix) %s...",
-          hex);
-      free(hex);
+      n_le[i] = n[nSize - 1 - i];
     }
+    for (size_t i = 0; i < eSize; ++i)
+    {
+      e_le[i] = e[eSize - 1 - i];
+    }
+  }
+  else
+  {
+    memcpy(n_le, n, nSize);
+    memcpy(e_le, e, eSize);
   }
 
   OSSL_PARAM params[3];
@@ -366,22 +369,6 @@ static EVP_PKEY *getPKey(const unsigned char *n, const size_t nSize, const unsig
   {
     Log(LogLevel_Error, "EVP_PKEY_fromdata failed to materialize RSA key\n");
     pk = NULL;
-  }
-  else
-  {
-    BIGNUM *bn = NULL;
-    if (EVP_PKEY_get_bn_param(pk, OSSL_PKEY_PARAM_RSA_N, &bn))
-    {
-      char *hex = BN_bn2hex(bn);
-      if (hex != NULL)
-      {
-        Log(LogLevel_Debug,
-            "getPKey materialized RSA modulus (hex prefix) %.64s...",
-            hex);
-        OPENSSL_free(hex);
-      }
-      BN_free(bn);
-    }
   }
 
 end:
@@ -631,12 +618,6 @@ EVP_PKEY *AkvGetKey(const char *keyvault, const char *keyname, const MemoryStruc
     json_object_object_get_ex(keyMaterial, "e", &jKeyE);
     const char *nValue = json_object_get_string(jKeyN);
     const char *eValue = json_object_get_string(jKeyE);
-  Log(LogLevel_Debug,
-    "AkvGetKey RSA modulus (b64) %s",
-    nValue != NULL ? nValue : "(null)");
-  Log(LogLevel_Debug,
-    "AkvGetKey RSA exponent (b64) %s",
-    eValue != NULL ? eValue : "(null)");
     size_t outputLen = 0;
     int decodeErr = base64urlDecode((const unsigned char *)nValue, strlen(nValue), NULL, &outputLen);
 
@@ -652,18 +633,6 @@ EVP_PKEY *AkvGetKey(const char *keyvault, const char *keyname, const MemoryStruc
       goto cleanup;
     }
 
-  if (pkeyN != NULL)
-  {
-    char *nHex = HexStr((const char *)pkeyN, pkeyNSize > 32 ? 32 : pkeyNSize);
-    if (nHex != NULL)
-    {
-      Log(LogLevel_Debug,
-        "AkvGetKey RSA modulus (hex prefix) %s...",
-        nHex);
-      free(nHex);
-    }
-  }
-
     outputLen = 0;
     decodeErr = base64urlDecode((const unsigned char *)eValue, strlen(eValue), NULL, &outputLen);
     if (!decodeErr && outputLen > 0)
@@ -677,16 +646,6 @@ EVP_PKEY *AkvGetKey(const char *keyvault, const char *keyname, const MemoryStruc
       Log(LogLevel_Error, "decode E error %d\n", decodeErr);
       goto cleanup;
     }
-
-  if (pkeyE != NULL)
-  {
-    char *eHex = HexStr((const char *)pkeyE, pkeyESize);
-    if (eHex != NULL)
-    {
-      Log(LogLevel_Debug, "AkvGetKey RSA exponent (hex) %s", eHex);
-      free(eHex);
-    }
-  }
 
     retPKey = getPKey(pkeyN, pkeyNSize, pkeyE, pkeyESize);
   }
