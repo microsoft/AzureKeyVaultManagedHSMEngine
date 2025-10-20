@@ -139,7 +139,8 @@ static int akv_signature_validate_pss(const AKV_SIGNATURE_CTX *ctx, size_t diges
 
     if (ctx->padding != RSA_PKCS1_PSS_PADDING)
     {
-        return 1;
+        Log(LogLevel_Error, "Azure Managed HSM requires RSA-PSS padding");
+        return 0;
     }
 
     if (ctx->pss_saltlen == RSA_PSS_SALTLEN_DIGEST || ctx->pss_saltlen == RSA_PSS_SALTLEN_AUTO || ctx->pss_saltlen == RSA_PSS_SALTLEN_MAX || ctx->pss_saltlen == RSA_PSS_SALTLEN_AUTO_DIGEST_MAX)
@@ -176,28 +177,19 @@ static const char *akv_signature_algorithm(const AKV_SIGNATURE_CTX *ctx)
             switch (md_nid)
             {
             case NID_sha256:
-                return "RS256";
+                return "PS256";
             case NID_sha384:
-                return "RS384";
+                return "PS384";
             case NID_sha512:
-                return "RS512";
+                return "PS512";
             default:
                 return NULL;
             }
         }
         else
         {
-            switch (md_nid)
-            {
-            case NID_sha256:
-                return "RS256";
-            case NID_sha384:
-                return "RS384";
-            case NID_sha512:
-                return "RS512";
-            default:
-                return NULL;
-            }
+            Log(LogLevel_Error, "RSA signing must use PSS padding");
+            return NULL;
         }
         break;
     case AKV_SIG_KEYTYPE_EC:
@@ -230,8 +222,8 @@ static AKV_SIGNATURE_CTX *akv_signature_newctx_common(void *provctx, AKV_SIG_KEY
 
     ctx->provctx = (AKV_PROVIDER_CTX *)provctx;
     ctx->keytype = keytype;
-    ctx->pss_saltlen = RSA_PSS_SALTLEN_AUTO;
-    ctx->padding = (keytype == AKV_SIG_KEYTYPE_RSA) ? RSA_PKCS1_PADDING : 0;
+    ctx->pss_saltlen = RSA_PSS_SALTLEN_DIGEST;
+    ctx->padding = (keytype == AKV_SIG_KEYTYPE_RSA) ? RSA_PKCS1_PSS_PADDING : 0;
     return ctx;
 }
 
@@ -369,6 +361,11 @@ static int akv_signature_apply_common_params(AKV_SIGNATURE_CTX *ctx, const OSSL_
             }
             else
             {
+                return 0;
+            }
+            if (pad != RSA_PKCS1_PSS_PADDING)
+            {
+                Log(LogLevel_Error, "RSA signing must use PSS padding");
                 return 0;
             }
             ctx->padding = pad;

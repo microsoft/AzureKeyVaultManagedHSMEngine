@@ -181,8 +181,22 @@ int AkvSign(const char *keyvault, const char *keyname, const MemoryStruct *acces
     goto cleanup;
   }
 
-  encodeResult = (unsigned char *)malloc(outputLen);
+  encodeResult = (unsigned char *)malloc(outputLen + 1);
+  if (encodeResult == NULL)
+  {
+    Log(LogLevel_Error, "Failed to allocate %zu bytes for encoded digest\n", outputLen + 1);
+    goto cleanup;
+  }
+
   base64urlEncode(hashText, hashTextSize, encodeResult, &outputLen);
+  encodeResult[outputLen] = '\0';
+
+  Log(LogLevel_Debug,
+      "AkvSign key=%s alg=%s digestLen=%zu digestB64=%s",
+      keyname != NULL ? keyname : "(null)",
+      alg != NULL ? alg : "(null)",
+      hashTextSize,
+      (const char *)encodeResult);
 
   char keyVaultUrl[4 * 1024] = {0};
   strcat_s(keyVaultUrl, sizeof keyVaultUrl, "https://");
@@ -191,7 +205,14 @@ int AkvSign(const char *keyvault, const char *keyname, const MemoryStruct *acces
   strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyname);
   strcat_s(keyVaultUrl, sizeof keyVaultUrl, "/sign");
 
+  Log(LogLevel_Info, "curl.c AkvSign URL: %s", keyVaultUrl);
+
   curl_handle = curl_easy_init();
+  if (curl_handle == NULL)
+  {
+    Log(LogLevel_Error, "curl_easy_init failed for AkvSign\n");
+    goto cleanup;
+  }
   curl_easy_setopt(curl_handle, CURLOPT_URL, keyVaultUrl);
   struct curl_slist *headers = NULL;
   headers = curl_slist_append(headers, "Accept: application/json");
@@ -216,7 +237,9 @@ int AkvSign(const char *keyvault, const char *keyname, const MemoryStruct *acces
 
   json = json_object_new_object();
   json_object_object_add(json, "alg", json_object_new_string(alg));
-  json_object_object_add(json, "value", json_object_new_string(encodeResult));
+  json_object_object_add(json, "value", json_object_new_string((const char *)encodeResult));
+
+  Log(LogLevel_Trace, "AkvSign request payload: %s", json_object_to_json_string_ext(json, JSON_C_TO_STRING_PLAIN));
 
   curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "POST");
   curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, json_object_to_json_string(json));
@@ -247,7 +270,7 @@ int AkvSign(const char *keyvault, const char *keyname, const MemoryStruct *acces
   int decodeErr = base64urlDecode((const unsigned char *)value, valueSize, NULL, &outputLen);
   if (!decodeErr && outputLen > 0)
   {
-    unsigned char *decodeResult = (unsigned char *)malloc(outputLen);
+  unsigned char *decodeResult = (unsigned char *)malloc(outputLen);
     base64urlDecode((const unsigned char *)value, strlen(value), decodeResult, &outputLen);
     signatureText->memory = decodeResult;
     signatureText->size = outputLen;
@@ -650,10 +673,16 @@ int AkvDecrypt(const char *keyvault, const char *keyname, const MemoryStruct *ac
     goto cleanup;
   }
 
-  unsigned char *encodedCiperText = (unsigned char *)malloc(outputLen);
+  unsigned char *encodedCiperText = (unsigned char *)malloc(outputLen + 1);
+  if (encodedCiperText == NULL)
+  {
+    Log(LogLevel_Error, "Failed to allocate %zu bytes for encoded cipher text\n", outputLen + 1);
+    goto cleanup;
+  }
   base64urlEncode(ciperText, ciperTextSize, encodedCiperText, &outputLen);
+  encodedCiperText[outputLen] = '\0';
   json_object_object_add(request_json, "alg", json_object_new_string(alg));
-  json_object_object_add(request_json, "value", json_object_new_string(encodedCiperText));
+  json_object_object_add(request_json, "value", json_object_new_string((const char *)encodedCiperText));
   free(encodedCiperText);
 
   curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "POST");
@@ -756,10 +785,16 @@ int AkvEncrypt(const char *keyvault, const char *keyname, const MemoryStruct *ac
     goto cleanup;
   }
 
-  unsigned char *encodedClearText = (unsigned char *)malloc(outputLen);
+  unsigned char *encodedClearText = (unsigned char *)malloc(outputLen + 1);
+  if (encodedClearText == NULL)
+  {
+    Log(LogLevel_Error, "Failed to allocate %zu bytes for encoded cleartext\n", outputLen + 1);
+    goto cleanup;
+  }
   base64urlEncode(clearText, clearTextSize, encodedClearText, &outputLen);
+  encodedClearText[outputLen] = '\0';
   json_object_object_add(request_json, "alg", json_object_new_string(alg));
-  json_object_object_add(request_json, "value", json_object_new_string(encodedClearText));
+  json_object_object_add(request_json, "value", json_object_new_string((const char *)encodedClearText));
   free(encodedClearText);
 
   curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "POST");
