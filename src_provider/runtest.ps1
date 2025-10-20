@@ -1,6 +1,21 @@
 Write-Host '=== Azure Managed HSM signing tests ==='
 $ErrorActionPreference = 'Stop'
 
+$scriptCommandPath = if ($PSCommandPath) { $PSCommandPath } else { $MyInvocation.MyCommand.Path }
+$usingProfile = $true
+foreach ($arg in [System.Environment]::GetCommandLineArgs()) {
+	if ($arg -ieq '-noprofile' -or $arg -ieq '/noprofile') {
+		$usingProfile = $false
+		break
+	}
+}
+if ($usingProfile -and $scriptCommandPath) {
+	$recommendedCommand = "pwsh -NoProfile -ExecutionPolicy Bypass -File `"$scriptCommandPath`""
+	Write-Host "This script must run without PowerShell profiles. Re-run using: $recommendedCommand"
+	Pop-Location 2>$null
+	return
+}
+
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $scriptRoot) {
 	$scriptRoot = Get-Location
@@ -70,9 +85,45 @@ try {
 		if ($LASTEXITCODE -ne 0) {
 			throw "az keyvault key verify failed for $Algorithm (exit $LASTEXITCODE)"
 		}
-		if (-not $result.value.isValid) {
+
+		$cliIsValid = $null
+		if ($null -ne $result) {
+			if ($result.PSObject.Properties.Name -contains 'isValid') {
+				$cliIsValid = [bool]$result.isValid
+			}
+			elseif ($result.PSObject.Properties.Name -contains 'value' -and $null -ne $result.value) {
+				$cliIsValid = [bool]$result.value.isValid
+			}
+		}
+
+		if ($cliIsValid -ne $true) {
 			throw "az keyvault key verify returned false for $Algorithm"
 		}
+	}
+
+	function Convert-DerEcdsaSignatureToP1363 {
+		param(
+			[byte[]]$DerSignature,
+			[int]$ComponentSizeBytes
+		)
+
+		$asnReader = [System.Formats.Asn1.AsnReader]::new($DerSignature, [System.Formats.Asn1.AsnEncodingRules]::DER)
+		$sequence = $asnReader.ReadSequence()
+		$rBytes = $sequence.ReadIntegerBytes().ToArray()
+		$sBytes = $sequence.ReadIntegerBytes().ToArray()
+		$sequence.ThrowIfNotEmpty()
+		$asnReader.ThrowIfNotEmpty()
+
+		$signature = New-Object byte[] ($ComponentSizeBytes * 2)
+		$rCopyLength = [Math]::Min($ComponentSizeBytes, $rBytes.Length)
+		$sCopyLength = [Math]::Min($ComponentSizeBytes, $sBytes.Length)
+		if ($rCopyLength -gt 0) {
+			[Array]::Copy($rBytes, $rBytes.Length - $rCopyLength, $signature, $ComponentSizeBytes - $rCopyLength, $rCopyLength)
+		}
+		if ($sCopyLength -gt 0) {
+			[Array]::Copy($sBytes, $sBytes.Length - $sCopyLength, $signature, ($ComponentSizeBytes * 2) - $sCopyLength, $sCopyLength)
+		}
+		return $signature
 	}
 
 	$inputBytes = [IO.File]::ReadAllBytes('input.bin')
@@ -94,17 +145,18 @@ try {
 		'-sigopt', 'rsa_padding_mode:pss',
 		'-sigopt', 'rsa_pss_saltlen:digest',
 		'-sigopt', 'rsa_mgf1_md:sha256',
-		'-out', 'rs256.sig',
+		'-out', 'ps256.sig',
 		'input.bin'
 	)
-	$rsaSignatureBytes = [IO.File]::ReadAllBytes('rs256.sig')
+	$rsaSignatureBytes = [IO.File]::ReadAllBytes('ps256.sig')
 
-	Invoke-OpenSslCommand @('dgst', '-sha256', '-verify', 'myrsakey_pub.pem', '-signature', 'rs256.sig', '-sigopt', 'rsa_padding_mode:pss', '-sigopt', 'rsa_pss_saltlen:digest', '-sigopt', 'rsa_mgf1_md:sha256', 'input.bin')
+	Invoke-OpenSslCommand @('dgst', '-sha256', '-verify', 'myrsakey_pub.pem', '-signature', 'ps256.sig', '-sigopt', 'rsa_padding_mode:pss', '-sigopt', 'rsa_pss_saltlen:digest', '-sigopt', 'rsa_mgf1_md:sha256', 'input.bin')
 	Invoke-AzVerification -KeyId $rsaKeyId -Algorithm 'PS256' -DigestBytes $digestBytes -SignatureBytes $rsaSignatureBytes
 
 	Write-Host '--- EC ES256 signing roundtrip ---'
 	Invoke-OpenSslCommand @('dgst', '-sha256', '-sign', $ecProviderPath, '-provider', 'akv_provider', '-out', 'es256.sig', 'input.bin')
-	$ecSignatureBytes = [IO.File]::ReadAllBytes('es256.sig')
+	$ecSignatureDer = [IO.File]::ReadAllBytes('es256.sig')
+	$ecSignatureBytes = Convert-DerEcdsaSignatureToP1363 -DerSignature $ecSignatureDer -ComponentSizeBytes 32
 
 	Invoke-OpenSslCommand @('dgst', '-sha256', '-verify', 'ecckey_pub.pem', '-signature', 'es256.sig', 'input.bin')
 	Invoke-AzVerification -KeyId $ecKeyId -Algorithm 'ES256' -DigestBytes $digestBytes -SignatureBytes $ecSignatureBytes
