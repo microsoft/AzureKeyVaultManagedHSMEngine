@@ -424,6 +424,40 @@ static int akv_keymgmt_export(void *vkey, int selection, OSSL_CALLBACK *cb, void
         return 0;
     }
 
+    if ((selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0)
+    {
+        OSSL_PARAM *nParam = OSSL_PARAM_locate(params, OSSL_PKEY_PARAM_RSA_N);
+        if (nParam != NULL)
+        {
+            BIGNUM *n = NULL;
+            if (OSSL_PARAM_get_BN(nParam, &n))
+            {
+                char *hex = BN_bn2hex(n);
+                if (hex != NULL)
+                {
+                    Log(LogLevel_Debug, "akv_keymgmt_export RSA modulus (hex prefix) %.64s...", hex);
+                    OPENSSL_free(hex);
+                }
+                BN_free(n);
+            }
+        }
+        OSSL_PARAM *eParam = OSSL_PARAM_locate(params, OSSL_PKEY_PARAM_RSA_E);
+        if (eParam != NULL)
+        {
+            BIGNUM *e = NULL;
+            if (OSSL_PARAM_get_BN(eParam, &e))
+            {
+                char *hex = BN_bn2hex(e);
+                if (hex != NULL)
+                {
+                    Log(LogLevel_Debug, "akv_keymgmt_export RSA exponent (hex) %s", hex);
+                    OPENSSL_free(hex);
+                }
+                BN_free(e);
+            }
+        }
+    }
+
     ok = cb(params, cbarg);
     OSSL_PARAM_free(params);
     Log(LogLevel_Debug, "akv_keymgmt_export -> %d", ok);

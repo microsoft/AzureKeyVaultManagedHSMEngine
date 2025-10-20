@@ -73,14 +73,14 @@ Run `openssl list -signature-algorithms -provider akv_provider`
 	$digest = [Convert]::ToBase64String($digestBytes)
 	az keyvault key verify --id "https://ManagedHSMOpenSSLEngine.managedhsm.azure.net/keys/myrsakey" --algorithm PS256 --digest $digest --signature $signature
 	```
-- Local verification (temporary workaround until provider export bug is fixed): build a PEM from the HSM modulus, `python build_pem.py`, then run `openssl dgst -sha256 -verify myrsakey_pub_az.pem -signature rs256.sig -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:digest -sigopt rsa_mgf1_md:sha256 input.bin`.
+- Local verification: `openssl dgst -sha256 -verify myrsakey_pub.pem -signature rs256.sig -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:digest -sigopt rsa_mgf1_md:sha256 input.bin`.
 - ECC signing with `ecckey`: sign `openssl dgst -sha256 -sign "managedhsm:ManagedHSMOpenSSLEngine:ecckey" -provider akv_provider -out es256.sig input.bin`. Verify with the exported EC public key: `openssl dgst -sha256 -verify ecckey_pub.pem -signature es256.sig input.bin`.
 - Negative test: request an unsupported hash/algorithm pairing (e.g. ES384 with `myrsakey`) and confirm a helpful error surfaces.
 
 ### Current Findings
 - RSA signatures require RSA-PSS padding; provider defaults enforce this.
 - Azure Managed HSM verifies PS256 signatures successfully via `az keyvault key verify`.
-- Local OpenSSL verification fails with `myrsakey_pub.pem` due to incorrect modulus decoding during provider export; reconstructing the PEM from the HSM modulus (`myrsakey_pub_az.pem`) works.
+- Local OpenSSL verification succeeds with the provider-exported PEM (`myrsakey_pub.pem`).
 
 ## Decrypt Flow
 - Encrypt sample plaintext locally with `myrsakey_pub.pem`: `openssl pkeyutl -encrypt -pubin -inkey myrsakey_pub.pem -in plain.txt -out rsa_cipher.bin`.

@@ -74,7 +74,6 @@ char *HexStr(const char *data, size_t len)
   {
     return NULL;
   }
-
   static char hexmap[] =
       {'0', '1', '2', '3', '4', '5', '6', '7',
        '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
@@ -302,7 +301,17 @@ cleanup:
 static EVP_PKEY *getPKey(const unsigned char *n, const size_t nSize, const unsigned char *e, const size_t eSize)
 {
   EVP_PKEY *pk = NULL;
-  EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(NULL, "RSA", "provider=default");
+  EVP_PKEY_CTX *ctx = NULL;
+  unsigned char *n_le = NULL;
+  unsigned char *e_le = NULL;
+
+  if (n == NULL || nSize == 0 || e == NULL || eSize == 0)
+  {
+    Log(LogLevel_Error, "getPKey missing RSA public components\n");
+    return NULL;
+  }
+
+  ctx = EVP_PKEY_CTX_new_from_name(NULL, "RSA", "provider=default");
   if (ctx == NULL)
   {
     ctx = EVP_PKEY_CTX_new_from_name(NULL, "RSA", "provider=base");
@@ -320,9 +329,37 @@ static EVP_PKEY *getPKey(const unsigned char *n, const size_t nSize, const unsig
     return NULL;
   }
 
+  n_le = (unsigned char *)malloc(nSize);
+  e_le = (unsigned char *)malloc(eSize);
+  if (n_le == NULL || e_le == NULL)
+  {
+    Log(LogLevel_Error, "getPKey failed to allocate buffers for RSA parameters\n");
+    goto end;
+  }
+
+  for (size_t i = 0; i < nSize; ++i)
+  {
+    n_le[i] = n[nSize - 1 - i];
+  }
+  for (size_t i = 0; i < eSize; ++i)
+  {
+    e_le[i] = e[eSize - 1 - i];
+  }
+
+  {
+    char *hex = HexStr((const char *)n, nSize > 32 ? 32 : nSize);
+    if (hex != NULL)
+    {
+      Log(LogLevel_Debug,
+          "getPKey input RSA modulus (hex prefix) %s...",
+          hex);
+      free(hex);
+    }
+  }
+
   OSSL_PARAM params[3];
-  params[0] = OSSL_PARAM_construct_BN(OSSL_PKEY_PARAM_RSA_N, (unsigned char *)n, nSize);
-  params[1] = OSSL_PARAM_construct_BN(OSSL_PKEY_PARAM_RSA_E, (unsigned char *)e, eSize);
+  params[0] = OSSL_PARAM_construct_BN(OSSL_PKEY_PARAM_RSA_N, n_le, nSize);
+  params[1] = OSSL_PARAM_construct_BN(OSSL_PKEY_PARAM_RSA_E, e_le, eSize);
   params[2] = OSSL_PARAM_construct_end();
 
   if (EVP_PKEY_fromdata(ctx, &pk, EVP_PKEY_PUBLIC_KEY, params) <= 0)
@@ -330,7 +367,32 @@ static EVP_PKEY *getPKey(const unsigned char *n, const size_t nSize, const unsig
     Log(LogLevel_Error, "EVP_PKEY_fromdata failed to materialize RSA key\n");
     pk = NULL;
   }
+  else
+  {
+    BIGNUM *bn = NULL;
+    if (EVP_PKEY_get_bn_param(pk, OSSL_PKEY_PARAM_RSA_N, &bn))
+    {
+      char *hex = BN_bn2hex(bn);
+      if (hex != NULL)
+      {
+        Log(LogLevel_Debug,
+            "getPKey materialized RSA modulus (hex prefix) %.64s...",
+            hex);
+        OPENSSL_free(hex);
+      }
+      BN_free(bn);
+    }
+  }
 
+end:
+  if (n_le != NULL)
+  {
+    free(n_le);
+  }
+  if (e_le != NULL)
+  {
+    free(e_le);
+  }
   EVP_PKEY_CTX_free(ctx);
   return pk;
 }
@@ -569,6 +631,12 @@ EVP_PKEY *AkvGetKey(const char *keyvault, const char *keyname, const MemoryStruc
     json_object_object_get_ex(keyMaterial, "e", &jKeyE);
     const char *nValue = json_object_get_string(jKeyN);
     const char *eValue = json_object_get_string(jKeyE);
+  Log(LogLevel_Debug,
+    "AkvGetKey RSA modulus (b64) %s",
+    nValue != NULL ? nValue : "(null)");
+  Log(LogLevel_Debug,
+    "AkvGetKey RSA exponent (b64) %s",
+    eValue != NULL ? eValue : "(null)");
     size_t outputLen = 0;
     int decodeErr = base64urlDecode((const unsigned char *)nValue, strlen(nValue), NULL, &outputLen);
 
@@ -584,6 +652,18 @@ EVP_PKEY *AkvGetKey(const char *keyvault, const char *keyname, const MemoryStruc
       goto cleanup;
     }
 
+  if (pkeyN != NULL)
+  {
+    char *nHex = HexStr((const char *)pkeyN, pkeyNSize > 32 ? 32 : pkeyNSize);
+    if (nHex != NULL)
+    {
+      Log(LogLevel_Debug,
+        "AkvGetKey RSA modulus (hex prefix) %s...",
+        nHex);
+      free(nHex);
+    }
+  }
+
     outputLen = 0;
     decodeErr = base64urlDecode((const unsigned char *)eValue, strlen(eValue), NULL, &outputLen);
     if (!decodeErr && outputLen > 0)
@@ -597,6 +677,16 @@ EVP_PKEY *AkvGetKey(const char *keyvault, const char *keyname, const MemoryStruc
       Log(LogLevel_Error, "decode E error %d\n", decodeErr);
       goto cleanup;
     }
+
+  if (pkeyE != NULL)
+  {
+    char *eHex = HexStr((const char *)pkeyE, pkeyESize);
+    if (eHex != NULL)
+    {
+      Log(LogLevel_Debug, "AkvGetKey RSA exponent (hex) %s", eHex);
+      free(eHex);
+    }
+  }
 
     retPKey = getPKey(pkeyN, pkeyNSize, pkeyE, pkeyESize);
   }
