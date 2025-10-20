@@ -58,13 +58,13 @@ Run `openssl list -signature-algorithms -provider akv_provider`
 ## Signing Testing
 - RSA Export `myrsakey` public key, run `openssl pkey -provider akv_provider -in "managedhsm:ManagedHSMOpenSSLEngine:myrsakey" -pubout -out myrsakey_pub.pem`
 - ECC Export `Ecckey` public key, run `openssl pkey -provider akv_provider -in "managedhsm:ManagedHSMOpenSSLEngine:ecckey" -pubout -out ecckey_pub.pem`
-- RSA signing with `myrsakey`: sign `openssl dgst -sha256 -sign "managedhsm:ManagedHSMOpenSSLEngine:myrsakey" -provider akv_provider -out rs256.sig input.bin`. Verify with the exported public key: `openssl dgst -sha256 -verify myrsakey_pub.pem -signature rs256.sig input.bin`.
+- RSA signing with `myrsakey`: sign `openssl dgst -sha256 -sign  "managedhsm:ManagedHSMOpenSSLEngine:myrsakey" -provider akv_provider -out rs256.sig input.bin`. Verify with the exported public key: `openssl dgst -sha256 -verify myrsakey_pub.pem -signature rs256.sig input.bin`.
 - ECC signing with `ecckey`: sign `openssl dgst -sha256 -sign "managedhsm:ManagedHSMOpenSSLEngine:ecckey" -provider akv_provider -out es256.sig input.bin`. Verify with the exported EC public key: `openssl dgst -sha256 -verify ecckey_pub.pem -signature es256.sig input.bin`.
 - Negative test: request an unsupported hash/algorithm pairing (e.g. ES384 with `myrsakey`) and confirm a helpful error surfaces.
 
 ## Decrypt Flow
 - Encrypt sample plaintext locally with `myrsakey_pub.pem`: `openssl pkeyutl -encrypt -pubin -inkey myrsakey_pub.pem -in plain.txt -out rsa_cipher.bin`.
-- Decrypt through AKV: `openssl pkeyutl -decrypt -inkey "managedhsm:ManagedHSMOpenSSLEngine:myrsakey" -provider akv_provider -provider_path <stage-dir> -in rsa_cipher.bin -out rsa_roundtrip.txt`.
+- Decrypt through AKV: `openssl pkeyutl -decrypt -inkey "managedhsm:ManagedHSMOpenSSLEngine:myrsakey" -provider akv_provider -in rsa_cipher.bin -out rsa_roundtrip.txt`.
 - Compare `plain.txt` and `rsa_roundtrip.txt` to confirm success; add cases for oversized payloads or disabled algorithms to validate error handling.
 
 ## AES Wrap Flow

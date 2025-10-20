@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <openssl/err.h>
+
 #include "akv_provider_shared.h"
 
 #ifndef _WIN32
@@ -20,11 +22,49 @@ static void vaultErrorLog(json_object *parsed_json)
     struct json_object *errorText;
     if (json_object_object_get_ex(parsed_json, "error", &errorText))
     {
-      Log(LogLevel_Error, "Vault error %s\n", json_object_to_json_string_ext(errorText, JSON_C_TO_STRING_PLAIN));
+      struct json_object *code_obj = NULL;
+      struct json_object *message_obj = NULL;
+      const char *code = NULL;
+      const char *message = NULL;
+
+      json_object_object_get_ex(errorText, "code", &code_obj);
+      json_object_object_get_ex(errorText, "message", &message_obj);
+
+      if (code_obj != NULL)
+      {
+        code = json_object_get_string(code_obj);
+      }
+      if (message_obj != NULL)
+      {
+        message = json_object_get_string(message_obj);
+      }
+
+      const char *error_details = json_object_to_json_string_ext(errorText, JSON_C_TO_STRING_PLAIN);
+      Log(LogLevel_Error, "Vault error %s\n", error_details);
+
+  if (code != NULL && strcasecmp(code, "Unauthorized") == 0)
+      {
+        ERR_raise_data(ERR_LIB_PROV,
+                       ERR_R_INTERNAL_ERROR,
+                       "Azure Key Vault rejected AZURE_CLI_ACCESS_TOKEN (code=%s, message=%s)",
+                       code,
+                       message != NULL ? message : "(no message)");
+      }
+      else
+      {
+        ERR_raise_data(ERR_LIB_PROV,
+                       ERR_R_INTERNAL_ERROR,
+                       "Azure Key Vault request failed (code=%s, message=%s)",
+                       code != NULL ? code : "unknown",
+                       message != NULL ? message : error_details);
+      }
     }
     else
     {
       Log(LogLevel_Error, "Vault error - unknown.\n");
+      ERR_raise_data(ERR_LIB_PROV,
+                     ERR_R_INTERNAL_ERROR,
+                     "Azure Key Vault returned an unknown error payload");
     }
 }
 
@@ -83,6 +123,9 @@ int GetAccessTokenFromEnv(MemoryStruct *accessToken)
   if (!azureCliToken || azureCliToken[0] == '\0')
   {
     Log(LogLevel_Error, "Environment variable AZURE_CLI_ACCESS_TOKEN is not defined or empty.\n");
+    ERR_raise_data(ERR_LIB_PROV,
+                   ERR_R_PASSED_NULL_PARAMETER,
+                   "Set AZURE_CLI_ACCESS_TOKEN before invoking Azure Key Vault operations");
     return 0;
   }
 
@@ -93,6 +136,10 @@ int GetAccessTokenFromEnv(MemoryStruct *accessToken)
         "Environment variable AZURE_CLI_ACCESS_TOKEN exceeds supported size (%zu/%zu bytes).\n",
         azureCliAccessTokenSize + 1,
         (size_t)AZURE_CLI_ACCESS_TOKEN_MAX);
+    ERR_raise_data(ERR_LIB_PROV,
+                   ERR_R_INTERNAL_ERROR,
+                   "AZURE_CLI_ACCESS_TOKEN is too large (%zu bytes)",
+                   azureCliAccessTokenSize + 1);
     return 0;
   }
 
@@ -101,6 +148,9 @@ int GetAccessTokenFromEnv(MemoryStruct *accessToken)
   {
     Log(LogLevel_Error, "Failed to allocate memory for the access token.\n");
     accessToken->size = 0;
+    ERR_raise_data(ERR_LIB_PROV,
+                   ERR_R_MALLOC_FAILURE,
+                   "Failed to allocate memory while copying AZURE_CLI_ACCESS_TOKEN");
     return 0;
   }
 

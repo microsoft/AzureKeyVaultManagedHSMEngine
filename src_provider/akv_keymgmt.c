@@ -408,6 +408,15 @@ static int akv_keymgmt_export(void *vkey, int selection, OSSL_CALLBACK *cb, void
         return 0;
     }
 
+    if ((selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0)
+    {
+        /* Prevent other providers from attempting to consume private key material we cannot supply. */
+        Log(LogLevel_Debug,
+            "akv_keymgmt_export -> 0 (private material not exportable: sel=0x%x)",
+            selection);
+        return 0;
+    }
+
     if (EVP_PKEY_todata(key->public_key, selection, &params) <= 0)
     {
         Log(LogLevel_Error, "akv_keymgmt_export failed to map key to params (sel=%d)", selection);
@@ -474,6 +483,16 @@ static int akv_keymgmt_import_common(AKV_KEY *key, const char *algorithm, int se
     if (key == NULL)
     {
         Log(LogLevel_Debug, "akv_keymgmt_import_common -> 0 (null key)");
+        return 0;
+    }
+
+    if ((selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0 &&
+        (selection & ~OSSL_KEYMGMT_SELECT_PUBLIC_KEY) == 0 &&
+        !akv_key_has_private(key))
+    {
+        /* Reject unmanaged public-only imports so the default provider handles them. */
+        Log(LogLevel_Debug,
+            "akv_keymgmt_import_common -> 0 (public import without metadata)");
         return 0;
     }
 

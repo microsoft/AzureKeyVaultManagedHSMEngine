@@ -560,6 +560,12 @@ cleanup:
         akv_key_free(akv_key);
     }
 
+    if (cb_result == 0 && ctx != NULL)
+    {
+        /* Stop the loader from retrying endlessly after a fatal fetch error. */
+        ctx->exhausted = 1;
+    }
+
     Log(LogLevel_Debug, "akv_store_load -> %d", cb_result);
     return cb_result;
 }
