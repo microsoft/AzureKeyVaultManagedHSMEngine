@@ -283,11 +283,39 @@ static EVP_PKEY *getECPKey(const char *group_name, const unsigned char *x, const
     return NULL;
   }
 
-  OSSL_PARAM params[4];
+  unsigned char *encoded_point = NULL;
+  size_t encoded_len = 0;
+
+  if (x == NULL || y == NULL || xSize == 0 || ySize == 0)
+  {
+    Log(LogLevel_Error, "getECPKey missing coordinate data for group %s\n", group_name != NULL ? group_name : "(null)");
+    goto end;
+  }
+
+  if (xSize != ySize)
+  {
+    Log(LogLevel_Error, "getECPKey coordinate size mismatch for group %s (x=%zu y=%zu)\n", group_name != NULL ? group_name : "(null)", xSize, ySize);
+    goto end;
+  }
+
+  encoded_len = xSize + ySize + 1;
+  encoded_point = (unsigned char *)malloc(encoded_len);
+  if (encoded_point == NULL)
+  {
+    Log(LogLevel_Error, "getECPKey failed to allocate %zu-byte encoded point\n", encoded_len);
+    goto end;
+  }
+
+  encoded_point[0] = 0x04; /* Uncompressed form */
+  memcpy(encoded_point + 1, x, xSize);
+  memcpy(encoded_point + 1 + xSize, y, ySize);
+
+  OSSL_PARAM params[5];
   params[0] = OSSL_PARAM_construct_utf8_string(OSSL_PKEY_PARAM_GROUP_NAME, (char *)group_name, 0);
   params[1] = OSSL_PARAM_construct_BN(OSSL_PKEY_PARAM_EC_PUB_X, (unsigned char *)x, xSize);
   params[2] = OSSL_PARAM_construct_BN(OSSL_PKEY_PARAM_EC_PUB_Y, (unsigned char *)y, ySize);
-  params[3] = OSSL_PARAM_construct_end();
+  params[3] = OSSL_PARAM_construct_octet_string(OSSL_PKEY_PARAM_PUB_KEY, encoded_point, encoded_len);
+  params[4] = OSSL_PARAM_construct_end();
 
   if (EVP_PKEY_fromdata(ctx, &pk, EVP_PKEY_PUBLIC_KEY, params) <= 0)
   {
@@ -295,7 +323,12 @@ static EVP_PKEY *getECPKey(const char *group_name, const unsigned char *x, const
     pk = NULL;
   }
 
+end:
   EVP_PKEY_CTX_free(ctx);
+  if (encoded_point != NULL)
+  {
+    free(encoded_point);
+  }
   return pk;
 }
 EVP_PKEY *AkvGetKey(const char *keyvault, const char *keyname, const MemoryStruct *accessToken)

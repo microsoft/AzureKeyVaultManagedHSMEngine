@@ -1,4 +1,10 @@
-# Azure Key Vault Provider Plan
+# Azure Key Vault Provider Test Plan
+## main steps
+1. Build the provider
+2. Deploy the provider
+3. Get the access token
+4. Perform smoke testing
+5. perform Signing test for both RSA and ECC key
 
 ## Get Openssl settings
 ```
@@ -46,13 +52,14 @@ run `openssl list -providers`
 ## Managed HSM keys
 Ensure the Managed HSM contains the pre-provisioned keys: `myrsakey` (RSA 2048 sign/decrypt), `myaeskey` (AES-256 wrap/unwrap), and `ecckey` (P-256 sign). Run `az keyvault key list --id https://ManagedHSMOpenSSLEngine.managedhsm.azure.net/` and confirm each key reports `enabled: true`.
 
-## Smoke Checks
-After algorithms are registered, verify they appear via `openssl list -signature-algorithms -provider akv_provider` and the equivalent decrypt listings.
+## Smoke Test
+Run `openssl list -signature-algorithms -provider akv_provider`
 
-## Signing Flow
-- Export `myrsakey` or `ecckey` via the provider once URI support exists (e.g. `openssl pkey -provider akv_provider -in "managedhsm:ManagedHSMOpenSSLEngine:myrsakey" -pubout -out myrsakey_pub.pem`). Repeat for `ecckey` with `managedhsm:ManagedHSMOpenSSLEngine:ecckey`.
-- RSA signing: `openssl dgst -sha256 -sign "managedhsm:ManagedHSMOpenSSLEngine:myrsakey" -provider akv_provider -provider_path <stage-dir> -out rs256.sig input.bin`. Verify with the exported public key: `openssl dgst -sha256 -verify myrsakey_pub.pem -signature rs256.sig input.bin`.
-- ECC signing: `openssl dgst -sha256 -sign "managedhsm:ManagedHSMOpenSSLEngine:ecckey" -provider akv_provider -provider_path <stage-dir> -out es256.sig input.bin`. Verify with the exported EC public key: `openssl dgst -sha256 -verify ecckey_pub.pem -signature es256.sig input.bin`.
+## Signing Testing
+- RSA Export `myrsakey` public key, run `openssl pkey -provider akv_provider -in "managedhsm:ManagedHSMOpenSSLEngine:myrsakey" -pubout -out myrsakey_pub.pem`
+- ECC Export `Ecckey` public key, run `openssl pkey -provider akv_provider -in "managedhsm:ManagedHSMOpenSSLEngine:ecckey" -pubout -out ecckey_pub.pem`
+- RSA signing with `myrsakey`: sign `openssl dgst -sha256 -sign "managedhsm:ManagedHSMOpenSSLEngine:myrsakey" -provider akv_provider -out rs256.sig input.bin`. Verify with the exported public key: `openssl dgst -sha256 -verify myrsakey_pub.pem -signature rs256.sig input.bin`.
+- ECC signing with `ecckey`: sign `openssl dgst -sha256 -sign "managedhsm:ManagedHSMOpenSSLEngine:ecckey" -provider akv_provider -out es256.sig input.bin`. Verify with the exported EC public key: `openssl dgst -sha256 -verify ecckey_pub.pem -signature es256.sig input.bin`.
 - Negative test: request an unsupported hash/algorithm pairing (e.g. ES384 with `myrsakey`) and confirm a helpful error surfaces.
 
 ## Decrypt Flow
