@@ -2,9 +2,44 @@
    Licensed under the MIT License. */
 
 #include "akv_provider_shared.h"
+#include <time.h>
 
 int LOG_LEVEL = LogLevel_Info;
 static FILE *log_file = NULL;
+
+static void GetTimestamp(char *buffer, size_t buffer_len)
+{
+    if (buffer == NULL || buffer_len == 0)
+    {
+        return;
+    }
+
+    buffer[0] = '\0';
+
+    time_t now = time(NULL);
+    if (now == (time_t)-1)
+    {
+        return;
+    }
+
+    struct tm tm_now;
+#if defined(_WIN32)
+    if (localtime_s(&tm_now, &now) != 0)
+    {
+        return;
+    }
+#else
+    if (localtime_r(&now, &tm_now) == NULL)
+    {
+        return;
+    }
+#endif
+
+    if (strftime(buffer, buffer_len, "%Y-%m-%d %H:%M:%S", &tm_now) == 0)
+    {
+        buffer[0] = '\0';
+    }
+}
 
 void WriteLog(
     int level,
@@ -15,7 +50,7 @@ void WriteLog(
     ...)
 {
     char message[1024];
-    char formatted[1280];
+    char formatted[1312];
     size_t formatted_len = 0;
     FILE *stderr_target = stderr;
 
@@ -63,9 +98,15 @@ void WriteLog(
     vsnprintf(message, sizeof(message), format, arglist);
     va_end(arglist);
 
+    char timestamp[32];
+    GetTimestamp(timestamp, sizeof(timestamp));
+
+    const char *timestamp_value = (timestamp[0] != '\0') ? timestamp : "-";
+
     snprintf(formatted,
              sizeof(formatted),
-             "[%c] %s %s(%d) %s\n",
+             "%s [%c] %s %s(%d) %s\n",
+             timestamp_value,
              levelChar,
              function,
              shortFilename,
