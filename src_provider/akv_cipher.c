@@ -39,7 +39,8 @@ static void *akv_cipher_newctx(void *provctx, const char *propq)
 
     ctx->provctx = (AKV_PROVIDER_CTX *)provctx;
     ctx->padding = RSA_PKCS1_OAEP_PADDING;
-    ctx->oaep_md = EVP_MD_fetch(NULL, OSSL_DIGEST_NAME_SHA2_256, NULL);
+    /* Azure decrypt defaults to RSA-OAEP (SHA-1). Align provider so local encrypt/decrypt interop works without extra options. */
+    ctx->oaep_md = EVP_MD_fetch(NULL, OSSL_DIGEST_NAME_SHA1, NULL);
     return ctx;
 }
 

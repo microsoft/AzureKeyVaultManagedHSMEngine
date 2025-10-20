@@ -83,8 +83,8 @@ Run `openssl list -signature-algorithms -provider akv_provider`
 - Local OpenSSL verification succeeds with the provider-exported PEM (`myrsakey_pub.pem`).
 
 ## Decrypt Flow
-- Encrypt sample plaintext locally with `myrsakey_pub.pem`: `openssl pkeyutl -encrypt -pubin -inkey myrsakey_pub.pem -in plain.txt -out rsa_cipher.bin`.
-- Decrypt through AKV: `openssl pkeyutl -decrypt -inkey "managedhsm:ManagedHSMOpenSSLEngine:myrsakey" -provider akv_provider -in rsa_cipher.bin -out rsa_roundtrip.txt`.
+- Encrypt sample plaintext locally with `myrsakey_pub.pem`: `openssl pkeyutl -encrypt -pubin -inkey myrsakey_pub.pem -in plain.txt -out rsa_cipher.bin -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha1 -pkeyopt rsa_mgf1_md:sha1`.
+- Decrypt through AKV: `openssl pkeyutl -decrypt -inkey "managedhsm:ManagedHSMOpenSSLEngine:myrsakey" -provider akv_provider -in rsa_cipher.bin -out rsa_roundtrip.txt`. The provider defaults to Azure's `RSA-OAEP` profile (SHA-1 with matching MGF1), so the encrypt step must specify `rsa_oaep_md:sha1` and `rsa_mgf1_md:sha1` to ensure parameter parity.
 - Compare `plain.txt` and `rsa_roundtrip.txt` to confirm success; add cases for oversized payloads or disabled algorithms to validate error handling.
 
 ## AES Wrap Flow
