@@ -153,6 +153,32 @@ try {
 	Invoke-OpenSslCommand @('dgst', '-sha256', '-verify', 'myrsakey_pub.pem', '-signature', 'ps256.sig', '-sigopt', 'rsa_padding_mode:pss', '-sigopt', 'rsa_pss_saltlen:digest', '-sigopt', 'rsa_mgf1_md:sha256', 'input.bin')
 	Invoke-AzVerification -KeyId $rsaKeyId -Algorithm 'PS256' -DigestBytes $digestBytes -SignatureBytes $rsaSignatureBytes
 
+	Write-Host '--- RSA OAEP decrypt roundtrip ---'
+	Invoke-OpenSslCommand @(
+		'pkeyutl',
+		'-encrypt',
+		'-pubin',
+		'-inkey', 'myrsakey_pub.pem',
+		'-in', 'input.bin',
+		'-out', 'rsa_cipher.bin',
+		'-pkeyopt', 'rsa_padding_mode:oaep',
+		'-pkeyopt', 'rsa_oaep_md:sha1',
+		'-pkeyopt', 'rsa_mgf1_md:sha1'
+	)
+	Invoke-OpenSslCommand @(
+		'pkeyutl',
+		'-decrypt',
+		'-provider', 'akv_provider',
+		'-inkey', $rsaProviderPath,
+		'-in', 'rsa_cipher.bin',
+		'-out', 'rsa_roundtrip.bin'
+	)
+	$roundtripBytes = [IO.File]::ReadAllBytes('rsa_roundtrip.bin')
+	if (-not [System.Linq.Enumerable]::SequenceEqual($inputBytes, $roundtripBytes)) {
+		throw 'RSA decrypt roundtrip mismatch (input.bin vs rsa_roundtrip.bin)'
+	}
+	Write-Host 'RSA decrypt roundtrip matches input.bin.'
+
 	Write-Host '--- EC ES256 signing roundtrip ---'
 	Invoke-OpenSslCommand @('dgst', '-sha256', '-sign', $ecProviderPath, '-provider', 'akv_provider', '-out', 'es256.sig', 'input.bin')
 	$ecSignatureDer = [IO.File]::ReadAllBytes('es256.sig')
