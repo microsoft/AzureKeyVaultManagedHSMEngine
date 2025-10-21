@@ -153,6 +153,21 @@ try {
 	Invoke-OpenSslCommand @('dgst', '-sha256', '-verify', 'myrsakey_pub.pem', '-signature', 'ps256.sig', '-sigopt', 'rsa_padding_mode:pss', '-sigopt', 'rsa_pss_saltlen:digest', '-sigopt', 'rsa_mgf1_md:sha256', 'input.bin')
 	Invoke-AzVerification -KeyId $rsaKeyId -Algorithm 'PS256' -DigestBytes $digestBytes -SignatureBytes $rsaSignatureBytes
 
+	Write-Host '--- RSA RS256 signing roundtrip ---'
+	Invoke-OpenSslCommand @(
+		'dgst',
+		'-sha256',
+		'-sign', $rsaProviderPath,
+		'-provider', 'akv_provider',
+		'-sigopt', 'rsa_padding_mode:pkcs1',
+		'-out', 'rs256.sig',
+		'input.bin'
+	)
+	$rs256SignatureBytes = [IO.File]::ReadAllBytes('rs256.sig')
+
+	Invoke-OpenSslCommand @('dgst', '-sha256', '-verify', 'myrsakey_pub.pem', '-signature', 'rs256.sig', '-sigopt', 'rsa_padding_mode:pkcs1', 'input.bin')
+	Invoke-AzVerification -KeyId $rsaKeyId -Algorithm 'RS256' -DigestBytes $digestBytes -SignatureBytes $rs256SignatureBytes
+
 	Write-Host '--- RSA OAEP decrypt roundtrip ---'
 	Invoke-OpenSslCommand @(
 		'pkeyutl',

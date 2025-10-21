@@ -4,6 +4,7 @@
 #include "akv_provider_internal.h"
 
 #include <limits.h>
+#include <stdio.h>
 
 #include <openssl/rsa.h>
 #include <openssl/ecdsa.h>
@@ -132,15 +133,9 @@ static int akv_signature_ensure_digest_from_size(AKV_SIGNATURE_CTX *ctx, size_t 
 /* Azure enforces RSA-PSS salt length rules; reject incompatible requests early. */
 static int akv_signature_validate_pss(const AKV_SIGNATURE_CTX *ctx, size_t digest_len)
 {
-    if (ctx->keytype != AKV_SIG_KEYTYPE_RSA)
+    if (ctx->keytype != AKV_SIG_KEYTYPE_RSA || ctx->padding != RSA_PKCS1_PSS_PADDING)
     {
         return 1;
-    }
-
-    if (ctx->padding != RSA_PKCS1_PSS_PADDING)
-    {
-        Log(LogLevel_Error, "Azure Managed HSM requires RSA-PSS padding");
-        return 0;
     }
 
     if (ctx->pss_saltlen == RSA_PSS_SALTLEN_DIGEST || ctx->pss_saltlen == RSA_PSS_SALTLEN_AUTO || ctx->pss_saltlen == RSA_PSS_SALTLEN_MAX || ctx->pss_saltlen == RSA_PSS_SALTLEN_AUTO_DIGEST_MAX)
@@ -167,8 +162,9 @@ static const char *akv_signature_algorithm(const AKV_SIGNATURE_CTX *ctx)
     switch (ctx->keytype)
     {
     case AKV_SIG_KEYTYPE_RSA:
-        if (ctx->padding == RSA_PKCS1_PSS_PADDING)
+        switch (ctx->padding)
         {
+        case RSA_PKCS1_PSS_PADDING:
             if (ctx->mgf1_md != NULL && EVP_MD_type(ctx->mgf1_md) != md_nid)
             {
                 return NULL;
@@ -185,10 +181,20 @@ static const char *akv_signature_algorithm(const AKV_SIGNATURE_CTX *ctx)
             default:
                 return NULL;
             }
-        }
-        else
-        {
-            Log(LogLevel_Error, "RSA signing must use PSS padding");
+
+        case RSA_PKCS1_PADDING:
+            switch (md_nid)
+            {
+            case NID_sha256:
+                return "RS256";
+            case NID_sha384:
+                return "RS384";
+            case NID_sha512:
+                return "RS512";
+            default:
+                return NULL;
+            }
+        default:
             return NULL;
         }
         break;
@@ -223,7 +229,7 @@ static AKV_SIGNATURE_CTX *akv_signature_newctx_common(void *provctx, AKV_SIG_KEY
     ctx->provctx = (AKV_PROVIDER_CTX *)provctx;
     ctx->keytype = keytype;
     ctx->pss_saltlen = RSA_PSS_SALTLEN_DIGEST;
-    ctx->padding = (keytype == AKV_SIG_KEYTYPE_RSA) ? RSA_PKCS1_PSS_PADDING : 0;
+    ctx->padding = (keytype == AKV_SIG_KEYTYPE_RSA) ? RSA_PKCS1_PADDING : 0;
     return ctx;
 }
 
@@ -361,11 +367,14 @@ static int akv_signature_apply_common_params(AKV_SIGNATURE_CTX *ctx, const OSSL_
             }
             else
             {
+                Log(LogLevel_Error,
+                    "Unsupported pad mode parameter type (%d) for RSA signature",
+                    p->data_type);
                 return 0;
             }
-            if (pad != RSA_PKCS1_PSS_PADDING)
+            if (pad != RSA_PKCS1_PSS_PADDING && pad != RSA_PKCS1_PADDING)
             {
-                Log(LogLevel_Error, "RSA signing must use PSS padding");
+                Log(LogLevel_Error, "RSA padding mode not supported (mode=%d)", pad);
                 return 0;
             }
             ctx->padding = pad;
@@ -408,6 +417,9 @@ static int akv_signature_apply_common_params(AKV_SIGNATURE_CTX *ctx, const OSSL_
             }
             else
             {
+                Log(LogLevel_Error,
+                    "Unsupported PSS salt length parameter type (%d)",
+                    p->data_type);
                 return 0;
             }
             ctx->pss_saltlen = saltlen;
@@ -423,6 +435,9 @@ static int akv_signature_apply_common_params(AKV_SIGNATURE_CTX *ctx, const OSSL_
             }
             if (!akv_signature_set_mgf1_digest(ctx, mdname))
             {
+                Log(LogLevel_Error,
+                    "Failed to fetch MGF1 digest '%s'",
+                    mdname != NULL ? mdname : "(null)");
                 return 0;
             }
         }
@@ -444,6 +459,7 @@ static int akv_signature_init_common(AKV_SIGNATURE_CTX *ctx, void *vkey, const O
 
     if (!akv_signature_apply_common_params(ctx, params))
     {
+        Log(LogLevel_Error, "Failed to apply signature parameters (operation=%d)", operation);
         return 0;
     }
 
@@ -936,7 +952,33 @@ static int akv_signature_get_ctx_params(void *vctx, OSSL_PARAM params[])
         p = OSSL_PARAM_locate(params, OSSL_SIGNATURE_PARAM_PSS_SALTLEN);
         if (p != NULL)
         {
-            if (!OSSL_PARAM_set_int(p, ctx->pss_saltlen))
+            const char *salt = NULL;
+            char salt_buf[32] = {0};
+
+            switch (ctx->pss_saltlen)
+            {
+            case RSA_PSS_SALTLEN_DIGEST:
+                salt = OSSL_PKEY_RSA_PSS_SALT_LEN_DIGEST;
+                break;
+            case RSA_PSS_SALTLEN_AUTO:
+                salt = OSSL_PKEY_RSA_PSS_SALT_LEN_AUTO;
+                break;
+            case RSA_PSS_SALTLEN_MAX:
+                salt = OSSL_PKEY_RSA_PSS_SALT_LEN_MAX;
+                break;
+            case RSA_PSS_SALTLEN_AUTO_DIGEST_MAX:
+                salt = OSSL_PKEY_RSA_PSS_SALT_LEN_AUTO_DIGEST_MAX;
+                break;
+            default:
+                if (snprintf(salt_buf, sizeof(salt_buf), "%d", ctx->pss_saltlen) < 0)
+                {
+                    return 0;
+                }
+                salt = salt_buf;
+                break;
+            }
+
+            if (!OSSL_PARAM_set_utf8_string(p, salt != NULL ? salt : ""))
             {
                 return 0;
             }

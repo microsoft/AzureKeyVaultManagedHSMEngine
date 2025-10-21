@@ -89,8 +89,8 @@ Run `openssl list -signature-algorithms -provider akv_provider`
 
 ## AES Wrap Flow
 - Generate a 32-byte local key to wrap: `openssl rand 32 > local.key`.
-- Wrap using `myaeskey`: `openssl pkeyutl -wrap -inkey "managedhsm:ManagedHSMOpenSSLEngine:myaeskey" -provider akv_provider -provider_path <stage-dir> -in local.key -out local.key.wrap`.
-- Unwrap with the same key: `openssl pkeyutl -unwrap -inkey "managedhsm:ManagedHSMOpenSSLEngine:myaeskey" -provider akv_provider -provider_path <stage-dir> -in local.key.wrap -out local.key.unwrapped`.
+- Wrap using `myaeskey`: `openssl pkeyutl -wrap -inkey "managedhsm:ManagedHSMOpenSSLEngine:myaeskey" -provider akv_provider  -in local.key -out local.key.wrap`.
+- Unwrap with the same key: `openssl pkeyutl -unwrap -inkey "managedhsm:ManagedHSMOpenSSLEngine:myaeskey" -provider akv_provider  -in local.key.wrap -out local.key.unwrapped`.
 - Compare `local.key` and `local.key.unwrapped`; tamper with the wrapped blob to ensure unwrap fails cleanly.
 
 ## Automation

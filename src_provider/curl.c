@@ -204,7 +204,7 @@ int AkvSign(const char *keyvault, const char *keyname, const MemoryStruct *acces
   strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyname);
   strcat_s(keyVaultUrl, sizeof keyVaultUrl, "/sign");
 
-  Log(LogLevel_Info, "curl.c AkvSign URL: %s", keyVaultUrl);
+  Log(LogLevel_Debug, "curl.c AkvSign URL: %s", keyVaultUrl);
 
   curl_handle = curl_easy_init();
   if (curl_handle == NULL)

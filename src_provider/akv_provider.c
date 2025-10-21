@@ -796,6 +796,6 @@ AKV_PROVIDER_EXPORT int OSSL_provider_init(const OSSL_CORE_HANDLE *handle, const
     *provctx = ctx;
     *out = akv_dispatch_table;
     Log(LogLevel_Debug, "OSSL_provider_init -> 1 (ctx=%p)", (void *)ctx);
-    Log(LogLevel_Info, "Azure Key Vault Provider (MVP) initialized");
+    Log(LogLevel_Debug, "Azure Key Vault Provider (MVP) initialized");
     return 1;
 }
