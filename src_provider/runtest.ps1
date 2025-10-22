@@ -202,7 +202,150 @@ try {
 	Invoke-OpenSslCommand @('dgst', '-sha256', '-verify', 'ecckey_pub.pem', '-signature', 'es256.sig', 'input.bin')
 	Invoke-AzVerification -KeyId $ecKeyId -Algorithm 'ES256' -DigestBytes $digestBytes -SignatureBytes $ecSignatureBytes
 
-	Write-Host 'Azure Managed HSM signing tests completed successfully.'
+	Write-Host ''
+	Write-Host '=== X.509 CSR and Certificate Tests ==='
+	Write-Host ''
+
+	$opensslConfig = 'testOpenssl.cnf'
+	if (-not (Test-Path $opensslConfig)) {
+		Write-Host "Warning: OpenSSL config '$opensslConfig' not found. Using default config for CSR/cert tests."
+		$opensslConfig = $null
+	}
+
+	Write-Host '--- RSA CSR generation and verification ---'
+	$csrPath = 'cert.csr'
+	
+	$reqArgs = @(
+		'req'
+		'-new'
+		'-provider', 'akv_provider'
+		'-key', $rsaProviderPath
+		'-sha256'
+		'-sigopt', 'rsa_padding_mode:pkcs1'
+		'-out', $csrPath
+	)
+	if ($opensslConfig) {
+		$reqArgs = @('req', '-config', $opensslConfig) + $reqArgs[1..($reqArgs.Length - 1)]
+	} else {
+		# Add subject directly if no config file
+		$reqArgs += @('-subj', '/CN=Azure Managed HSM Test/O=Microsoft/C=US')
+	}
+	
+	Invoke-OpenSslCommand $reqArgs
+	
+	Write-Host 'Displaying CSR contents:'
+	Invoke-OpenSslCommand @('req', '-text', '-in', $csrPath, '-noout')
+	
+	Write-Host 'Verifying CSR signature with provider:'
+	Invoke-OpenSslCommand @('req', '-in', $csrPath, '-noout', '-verify', '-provider', 'akv_provider')
+	
+	Write-Host 'CSR verification successful.'
+
+	Write-Host '--- RSA self-signed certificate generation ---'
+	$certPath = 'cert.pem'
+	
+	$certArgs = @(
+		'req'
+		'-new'
+		'-x509'
+		'-provider', 'akv_provider'
+		'-propquery', '?provider=akv_provider'
+		'-key', $rsaProviderPath
+		'-sha256'
+		'-days', '365'
+		'-out', $certPath
+	)
+	if ($opensslConfig) {
+		$certArgs = @('req', '-config', $opensslConfig) + $certArgs[1..($certArgs.Length - 1)]
+	} else {
+		# Add subject directly if no config file
+		$certArgs += @('-subj', '/CN=Azure Managed HSM Self-Signed/O=Microsoft/C=US')
+	}
+	
+	Invoke-OpenSslCommand $certArgs
+	
+	if (Test-Path $certPath) {
+		Write-Host "Self-signed certificate created: $certPath"
+		Get-Item $certPath | Select-Object FullName, Length, LastWriteTime | Format-List
+		
+		Write-Host 'Displaying certificate contents:'
+		Invoke-OpenSslCommand @('x509', '-in', $certPath, '-text', '-noout')
+		
+		Write-Host 'Verifying certificate signature:'
+		Invoke-OpenSslCommand @('verify', '-provider', 'akv_provider', '-CAfile', $certPath, $certPath)
+		
+		Write-Host 'Self-signed certificate verification successful.'
+	} else {
+		throw "Certificate file '$certPath' was not created."
+	}
+
+	Write-Host '--- EC CSR generation and verification ---'
+	$ecCsrPath = 'ec_cert.csr'
+	
+	$ecReqArgs = @(
+		'req'
+		'-new'
+		'-provider', 'akv_provider'
+		'-key', $ecProviderPath
+		'-sha256'
+		'-out', $ecCsrPath
+	)
+	if ($opensslConfig) {
+		$ecReqArgs = @('req', '-config', $opensslConfig) + $ecReqArgs[1..($ecReqArgs.Length - 1)]
+	} else {
+		$ecReqArgs += @('-subj', '/CN=Azure Managed HSM EC Test/O=Microsoft/C=US')
+	}
+	
+	Invoke-OpenSslCommand $ecReqArgs
+	
+	Write-Host 'Displaying EC CSR contents:'
+	Invoke-OpenSslCommand @('req', '-text', '-in', $ecCsrPath, '-noout')
+	
+	Write-Host 'Verifying EC CSR signature with provider:'
+	Invoke-OpenSslCommand @('req', '-in', $ecCsrPath, '-noout', '-verify', '-provider', 'akv_provider')
+	
+	Write-Host 'EC CSR verification successful.'
+
+	Write-Host '--- EC self-signed certificate generation ---'
+	$ecCertPath = 'ec_cert.pem'
+	
+	$ecCertArgs = @(
+		'req'
+		'-new'
+		'-x509'
+		'-provider', 'akv_provider'
+		'-propquery', '?provider=akv_provider'
+		'-key', $ecProviderPath
+		'-sha256'
+		'-days', '365'
+		'-out', $ecCertPath
+	)
+	if ($opensslConfig) {
+		$ecCertArgs = @('req', '-config', $opensslConfig) + $ecCertArgs[1..($ecCertArgs.Length - 1)]
+	} else {
+		$ecCertArgs += @('-subj', '/CN=Azure Managed HSM EC Self-Signed/O=Microsoft/C=US')
+	}
+	
+	Invoke-OpenSslCommand $ecCertArgs
+	
+	if (Test-Path $ecCertPath) {
+		Write-Host "EC self-signed certificate created: $ecCertPath"
+		Get-Item $ecCertPath | Select-Object FullName, Length, LastWriteTime | Format-List
+		
+		Write-Host 'Displaying EC certificate contents:'
+		Invoke-OpenSslCommand @('x509', '-in', $ecCertPath, '-text', '-noout')
+		
+		Write-Host 'Verifying EC certificate signature:'
+		Invoke-OpenSslCommand @('verify', '-provider', 'akv_provider', '-CAfile', $ecCertPath, $ecCertPath)
+		
+		Write-Host 'EC self-signed certificate verification successful.'
+	} else {
+		throw "EC certificate file '$ecCertPath' was not created."
+	}
+
+	Write-Host ''
+	Write-Host '=== All tests completed successfully ==='
+	Write-Host ''
 }
 finally {
 	Pop-Location
