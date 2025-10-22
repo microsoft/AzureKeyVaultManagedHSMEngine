@@ -96,3 +96,75 @@ Run `openssl list -signature-algorithms -provider akv_provider`
 ## Automation
 - Wrap the commands in a PowerShell script that sets environment variables (`AKV_TYPE`, `AKV_VAULT`, `AKV_KEY`, credential secrets). Make the script exit non-zero on failures.
 - Allow enabling verbose logging via `AKV_LOG_LEVEL=2` to capture REST traces during CI or troubleshooting.
+
+## Critical Bug Fix: ALGORITHM_ID Implementation
+
+### Problem: Heap Corruption in X509 Operations
+**Symptom**: `openssl req -new -x509` crashed with `STATUS_HEAP_CORRUPTION (-1073740940)` immediately after `digest_init` returned successfully. No heap corruption debugging tools (ASAN, Valgrind, WinDbg) were available at the time.
+
+**Initial Investigation**:
+- Crash occurred in OpenSSL's ASN.1 code: `ossl_asn1_item_embed_free ← ASN1_item_d2i ← ASN1_item_sign_ctx`
+- Happened AFTER provider's `digest_init` returned 1 (success)
+- NO subsequent provider callbacks were invoked before crash
+- Multiple fixes attempted: digest callback patterns, MD params forwarding, finalization logic - none resolved the issue
+
+**Root Cause Discovery**:
+By adding logging to `akv_signature_get_ctx_params`, discovered OpenSSL was requesting `OSSL_SIGNATURE_PARAM_ALGORITHM_ID` parameter. When the provider didn't handle this parameter, OpenSSL attempted to compute the algorithm identifier internally, which caused heap corruption.
+
+**Key Finding**: p_ncrypt provider also doesn't implement ALGORITHM_ID, suggesting this is a known limitation for external providers that can't access OpenSSL's internal `ossl_DER_w_*` functions.
+
+### Solution: X509_ALGOR Public API Implementation
+
+Instead of using OpenSSL's internal provider utilities, implemented ALGORITHM_ID using **public X509_ALGOR APIs**:
+
+```c
+// 1. Create X509_ALGOR structure
+X509_ALGOR *algor = X509_ALGOR_new();
+
+// 2. Set algorithm OID (example: sha256WithRSAEncryption)
+X509_ALGOR_set0(algor, OBJ_nid2obj(NID_sha256WithRSAEncryption), V_ASN1_NULL, NULL);
+
+// 3. Encode to DER format
+int der_len = i2d_X509_ALGOR(algor, NULL);  // Get size
+unsigned char *der = OPENSSL_malloc(der_len);
+unsigned char *der_ptr = der;
+i2d_X509_ALGOR(algor, &der_ptr);  // Encode
+
+// 4. Store and return via OSSL_PARAM_set_octet_string()
+ctx->aid = der;
+ctx->aid_len = der_len;
+```
+
+**Algorithm NID Mapping**:
+- RSA PKCS#1 v1.5: `NID_sha{1,224,256,384,512}WithRSAEncryption`
+- ECDSA: `NID_ecdsa_with_SHA{1,224,256,384,512}`
+- RSA-PSS: `NID_rsassaPss` (requires PSS parameters - not fully implemented yet)
+
+**Implementation Changes**:
+1. Added fields to `AKV_SIGNATURE_CTX`: `unsigned char *aid` and `size_t aid_len`
+2. Created `akv_signature_compute_algorithm_id()` function
+3. Called it from `akv_signature_set_digest()` to regenerate AID when digest changes
+4. Updated `get_ctx_params` to return DER bytes via `OSSL_PARAM_set_octet_string()`
+5. Updated `dupctx` to copy AID
+6. Updated `reset_digest` to free AID with `OPENSSL_free()`
+7. Added `OSSL_SIGNATURE_PARAM_ALGORITHM_ID` to `gettable_ctx_params`
+
+**Also Fixed**:
+- Missing `MGF1_DIGEST` parameter handling in `get_ctx_params`
+- Missing `digest_initialized` flag copy in `dupctx`
+
+### Test Results
+✅ **CSR Generation**: `openssl req -new` works perfectly  
+✅ **Self-Signed Certificates**: `openssl req -new -x509` works perfectly  
+✅ **Exit Code**: 0 (success, no crashes)  
+✅ **Signature Algorithm**: Proper `sha256WithRSAEncryption` in output  
+✅ **Verification**: CSR self-signature verify OK  
+
+**Error Evolution**:
+1. Initial: `STATUS_HEAP_CORRUPTION` (crash)
+2. With empty ALGORITHM_ID: `digest and key type not supported` (proper error)
+3. With proper ALGORITHM_ID: Full success ✅
+
+### Key Lesson
+External OpenSSL providers MUST implement `OSSL_SIGNATURE_PARAM_ALGORITHM_ID` parameter for X509 operations (CSR, certificate generation) to work. The parameter must return a valid DER-encoded algorithm identifier. This can be achieved using public X509_ALGOR APIs (`X509_ALGOR_new()`, `X509_ALGOR_set0()`, `i2d_X509_ALGOR()`) rather than relying on OpenSSL's internal provider utilities.
+
