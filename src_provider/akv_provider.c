@@ -75,7 +75,7 @@ static void akv_log_curl_get_key_url(const AKV_STORE_CTX *ctx)
         return;
     }
 
-    Log(LogLevel_Info, "curl.c AkvGetKey URL: %s", url);
+    Log(LogLevel_Debug, "curl.c AkvGetKey URL: %s", url);
 }
 
 static int akv_casecmpn(const char *lhs, const char *rhs, size_t count)
@@ -126,10 +126,9 @@ static int akv_has_case_prefix(const char *input, const char *prefix)
     }
 }
 
+/* Unified string duplicate helper: ALWAYS allocates new copy when src!=NULL; frees and NULLs destination when src==NULL */
 static int akv_dup_string(char **dst, const char *src)
 {
-    size_t len;
-
     Log(LogLevel_Trace, "akv_dup_string dst=%p src=%p", (void *)dst, (const void *)src);
 
     if (dst == NULL)
@@ -140,20 +139,31 @@ static int akv_dup_string(char **dst, const char *src)
 
     if (src == NULL)
     {
+        /* Clear existing allocation to prevent leaks and maintain consistent semantics */
+        if (*dst != NULL)
+        {
+            free(*dst);
+        }
         *dst = NULL;
-        Log(LogLevel_Debug, "akv_dup_string -> 1 (src null)");
+        Log(LogLevel_Debug, "akv_dup_string -> 1 (src null, cleared destination)");
         return 1;
     }
 
-    len = strlen(src);
-    *dst = (char *)malloc(len + 1);
-    if (*dst == NULL)
+    size_t len = strlen(src);
+    char *tmp = (char *)malloc(len + 1);
+    if (tmp == NULL)
     {
         Log(LogLevel_Debug, "akv_dup_string -> 0 (alloc failed)");
         return 0;
     }
-    memcpy(*dst, src, len);
-    (*dst)[len] = '\0';
+    memcpy(tmp, src, len);
+    tmp[len] = '\0';
+
+    if (*dst != NULL)
+    {
+        free(*dst);
+    }
+    *dst = tmp;
     Log(LogLevel_Debug, "akv_dup_string -> 1 (copied %zu bytes)", len);
     return 1;
 }
@@ -778,7 +788,7 @@ AKV_PROVIDER_EXPORT int OSSL_provider_init(const OSSL_CORE_HANDLE *handle, const
         {
             if (akv_provider_set_log_file(path))
             {
-                Log(LogLevel_Info, "AKV log file set to %s via environment", path);
+                Log(LogLevel_Debug, "AKV log file set to %s via environment", path);
             }
             else
             {
@@ -790,7 +800,7 @@ AKV_PROVIDER_EXPORT int OSSL_provider_init(const OSSL_CORE_HANDLE *handle, const
     if (log_level_override_set)
     {
         akv_provider_set_log_level(log_level_override);
-        Log(LogLevel_Info, "AKV log level set to %d via environment", log_level_override);
+        Log(LogLevel_Debug, "AKV log level set to %d via environment", log_level_override);
     }
 
     *provctx = ctx;

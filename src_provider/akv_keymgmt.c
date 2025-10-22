@@ -82,7 +82,7 @@ void akv_key_free(AKV_KEY *key)
 
     free(key->keyvault_name);
     free(key->key_name);
-    free(key->key_version);
+    free(key->key_version); /* FIX: ensure key_version is also freed to prevent leaks and stale pointer reuse */
 
     free(key);
     Log(LogLevel_Debug, "akv_key_free complete");
@@ -104,26 +104,21 @@ int akv_key_set_metadata(AKV_KEY *key, const char *vault, const char *name, cons
 
     if (!akv_dup_string(&key->keyvault_name, vault))
     {
-        Log(LogLevel_Debug, "akv_key_set_metadata -> 0 (vault copy failed)");
+        Log(LogLevel_Debug, "akv_key_set_metadata -> 0 (vault dup failed)");
         return 0;
     }
     if (!akv_dup_string(&key->key_name, name))
     {
-        Log(LogLevel_Debug, "akv_key_set_metadata -> 0 (name copy failed)");
+        Log(LogLevel_Debug, "akv_key_set_metadata -> 0 (name dup failed)");
         return 0;
     }
     if (!akv_dup_string(&key->key_version, version))
     {
-        Log(LogLevel_Debug, "akv_key_set_metadata -> 0 (version copy failed)");
+        Log(LogLevel_Debug, "akv_key_set_metadata -> 0 (version dup failed)");
         return 0;
     }
 
-    Log(LogLevel_Debug,
-        "akv_key_set_metadata cached id vault=%s name=%s version=%s",
-        key->keyvault_name != NULL ? key->keyvault_name : "(null)",
-        key->key_name != NULL ? key->key_name : "(null)",
-        key->key_version != NULL ? key->key_version : "(null)");
-
+    Log(LogLevel_Debug, "akv_key_set_metadata -> 1");
     return 1;
 }
 
@@ -132,7 +127,7 @@ void akv_key_set_public(AKV_KEY *key, EVP_PKEY *pkey)
     Log(LogLevel_Trace, "akv_key_set_public key=%p pkey=%p", (void *)key, (void *)pkey);
     if (key == NULL)
     {
-        Log(LogLevel_Debug, "akv_key_set_public ignored (null key)");
+        Log(LogLevel_Debug, "akv_key_set_public skipped (null key)");
         return;
     }
 
@@ -140,9 +135,8 @@ void akv_key_set_public(AKV_KEY *key, EVP_PKEY *pkey)
     {
         EVP_PKEY_free(key->public_key);
     }
-
     key->public_key = pkey;
-    Log(LogLevel_Debug, "akv_key_set_public attached EVP_PKEY %p to key %p", (void *)pkey, (void *)key);
+    Log(LogLevel_Debug, "akv_key_set_public complete");
 }
 
 static int akv_key_has_private(const AKV_KEY *key)
