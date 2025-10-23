@@ -113,8 +113,8 @@ echo Checking and installing required dependencies...
 echo.
 
 REM Use vcpkg manifest mode - install from vcpkg.json
-echo Installing dependencies from vcpkg.json...
-"!VCPKG_EXE!" install --triplet=x64-windows
+echo Installing dependencies from vcpkg.json (static libraries)...
+"!VCPKG_EXE!" install --triplet=x64-windows-static
 if errorlevel 1 (
     echo ERROR: Failed to install dependencies
     echo.
@@ -125,11 +125,11 @@ if errorlevel 1 (
     goto end
 )
 
-REM Set package paths for manifest mode
-set "PKG_OPENSSL=!CD!\vcpkg_installed\x64-windows"
-set "PKG_CURL=!CD!\vcpkg_installed\x64-windows"
-set "PKG_JSON=!CD!\vcpkg_installed\x64-windows"
-set "PKG_ZLIB=!CD!\vcpkg_installed\x64-windows"
+REM Set package paths for manifest mode (static triplet)
+set "PKG_OPENSSL=!CD!\vcpkg_installed\x64-windows-static"
+set "PKG_CURL=!CD!\vcpkg_installed\x64-windows-static"
+set "PKG_JSON=!CD!\vcpkg_installed\x64-windows-static"
+set "PKG_ZLIB=!CD!\vcpkg_installed\x64-windows-static"
 
 echo All dependencies installed successfully
 
@@ -155,10 +155,13 @@ if errorlevel 1 (
     echo ========================================================
     echo Build successful!
     echo ========================================================
-    echo Output: x64\Release\akv_provider.dll
+    echo Output: x64\Release\akv_provider.dll (statically linked)
     echo.
     echo To deploy, copy the DLL to OpenSSL modules directory:
     echo   copy x64\Release\akv_provider.dll C:\OpenSSL\lib\ossl-modules\
+    echo.
+    echo Note: The DLL is statically linked with all dependencies.
+    echo No additional DLLs need to be deployed.
     echo.
 )
 
