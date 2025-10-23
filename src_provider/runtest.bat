@@ -160,7 +160,7 @@ if /i "%1"=="/SKIPVALIDATION" (
 )
 
 echo.
-echo --- Validating Managed HSM and keys (this may take 30-60 seconds^) ---
+echo --- Validating Managed HSM and keys (this may take 20-30 seconds^) ---
 
 REM Check if vault exists and is accessible
 echo Checking access to vault '%AKV_VAULT%'...
