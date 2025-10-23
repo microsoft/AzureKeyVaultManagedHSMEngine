@@ -458,6 +458,45 @@ static int akv_store_set_ctx_params(void *loaderctx, const OSSL_PARAM params[])
     return 1;
 }
 
+/* Forward declaration for AES key type */
+typedef struct akv_aes_key_st
+{
+    AKV_PROVIDER_CTX *provctx;
+    char *keyvault_name;
+    char *key_name;
+    char *key_version;
+    int key_bits;
+} AKV_AES_KEY;
+
+/* Helper: duplicate string for AES keys */
+static int akv_aes_dup_string_local(char **dst, const char *src)
+{
+    char *tmp = NULL;
+
+    if (dst == NULL)
+    {
+        return 0;
+    }
+
+    if (src == NULL)
+    {
+        free(*dst);
+        *dst = NULL;
+        return 1;
+    }
+
+    tmp = (char *)malloc(strlen(src) + 1);
+    if (tmp == NULL)
+    {
+        return 0;
+    }
+
+    memcpy(tmp, src, strlen(src) + 1);
+    free(*dst);
+    *dst = tmp;
+    return 1;
+}
+
 static int akv_store_load(void *loaderctx, OSSL_CALLBACK *object_cb, void *object_cbarg, OSSL_PASSPHRASE_CALLBACK *pw_cb, void *pw_cbarg)
 {
     AKV_STORE_CTX *ctx = (AKV_STORE_CTX *)loaderctx;
@@ -498,6 +537,72 @@ static int akv_store_load(void *loaderctx, OSSL_CALLBACK *object_cb, void *objec
 
     akv_log_curl_get_key_url(ctx);
 
+    /* First, get the key type to determine how to load it */
+    int key_size = 0;
+    const char *key_type_str = AkvGetKeyType(ctx->keyvault_name, ctx->key_name, &token, &key_size);
+    
+    if (key_type_str == NULL)
+    {
+        Log(LogLevel_Error, "Failed to retrieve key type for %s", ctx->key_name);
+        Log(LogLevel_Debug, "akv_store_load -> 0 (AkvGetKeyType failed)");
+        goto cleanup;
+    }
+
+    /* Handle symmetric (AES) keys differently - they don't have public key material to fetch */
+    if (strcasecmp(key_type_str, "oct-HSM") == 0 || strcasecmp(key_type_str, "oct") == 0)
+    {
+        AKV_AES_KEY *aes_key = (AKV_AES_KEY *)calloc(1, sizeof(AKV_AES_KEY));
+        if (aes_key == NULL)
+        {
+            Log(LogLevel_Error, "Failed to allocate AES key container");
+            free((void *)key_type_str);
+            goto cleanup;
+        }
+
+        aes_key->provctx = ctx->provctx;
+        if (!akv_aes_dup_string_local(&aes_key->keyvault_name, ctx->keyvault_name) ||
+            !akv_aes_dup_string_local(&aes_key->key_name, ctx->key_name) ||
+            !akv_aes_dup_string_local(&aes_key->key_version, ctx->key_version))
+        {
+            Log(LogLevel_Error, "Failed to set AES key metadata");
+            free(aes_key->keyvault_name);
+            free(aes_key->key_name);
+            free(aes_key->key_version);
+            free(aes_key);
+            free((void *)key_type_str);
+            goto cleanup;
+        }
+
+        aes_key->key_bits = key_size > 0 ? key_size : 256;
+
+        void *aes_keyref = aes_key;
+        data_type = "AES-256-KW";  /* Default to AES-256-KW */
+        params[0] = OSSL_PARAM_construct_int(OSSL_OBJECT_PARAM_TYPE, &object_type);
+        params[1] = OSSL_PARAM_construct_utf8_string(OSSL_OBJECT_PARAM_DATA_TYPE, (char *)data_type, 0);
+        params[2] = OSSL_PARAM_construct_octet_string(OSSL_OBJECT_PARAM_REFERENCE, &aes_keyref, sizeof(aes_keyref));
+        params[3] = OSSL_PARAM_construct_end();
+
+        if (!object_cb(params, object_cbarg))
+        {
+            Log(LogLevel_Debug, "akv_store_load -> 0 (AES object callback failed)");
+            free(aes_key->keyvault_name);
+            free(aes_key->key_name);
+            free(aes_key->key_version);
+            free(aes_key);
+            free((void *)key_type_str);
+            goto cleanup;
+        }
+
+        ctx->exhausted = 1;
+        cb_result = 1;
+        free((void *)key_type_str);
+        Log(LogLevel_Debug, "akv_store_load delivered AES key reference for %s", ctx->key_name);
+        goto cleanup_success;
+    }
+
+    free((void *)key_type_str);
+
+    /* For asymmetric keys (RSA, EC), fetch the public key material */
     key = AkvGetKey(ctx->keyvault_name, ctx->key_name, &token);
     if (key == NULL)
     {
@@ -556,6 +661,7 @@ static int akv_store_load(void *loaderctx, OSSL_CALLBACK *object_cb, void *objec
     cb_result = 1;
     Log(LogLevel_Debug, "akv_store_load delivered key reference for %s", ctx->key_name);
 
+cleanup_success:
 cleanup:
     if (token.memory != NULL)
     {
@@ -616,6 +722,9 @@ static const OSSL_ALGORITHM akv_store_algs[] = {
 static const OSSL_ALGORITHM akv_keymgmt_algs[] = {
     {"RSA:rsaEncryption", "provider=akv_provider", akv_rsa_keymgmt_functions, "Azure Key Vault RSA key management"},
     {"EC:id-ecPublicKey", "provider=akv_provider", akv_ec_keymgmt_functions, "Azure Key Vault EC key management"},
+    {"AES-128-KW:id-aes128-wrap:AES-128-WRAP:2.16.840.1.101.3.4.1.5", "provider=akv_provider", akv_aes_keymgmt_functions, "Azure Key Vault AES-128 key management"},
+    {"AES-192-KW:id-aes192-wrap:AES-192-WRAP:2.16.840.1.101.3.4.1.25", "provider=akv_provider", akv_aes_keymgmt_functions, "Azure Key Vault AES-192 key management"},
+    {"AES-256-KW:id-aes256-wrap:AES-256-WRAP:2.16.840.1.101.3.4.1.45", "provider=akv_provider", akv_aes_keymgmt_functions, "Azure Key Vault AES-256 key management"},
     {NULL, NULL, NULL, NULL}};
 
 static const OSSL_ALGORITHM akv_signature_algs[] = {
@@ -625,6 +734,9 @@ static const OSSL_ALGORITHM akv_signature_algs[] = {
 
 static const OSSL_ALGORITHM akv_asym_cipher_algs[] = {
     {"RSA:rsaEncryption", "provider=akv_provider", akv_rsa_asym_cipher_functions, "Azure Key Vault RSA asymmetric cipher"},
+    {"AES-128-KW:id-aes128-wrap:AES-128-WRAP", "provider=akv_provider", akv_aes_asym_cipher_functions, "Azure Key Vault AES-128 key wrap"},
+    {"AES-192-KW:id-aes192-wrap:AES-192-WRAP", "provider=akv_provider", akv_aes_asym_cipher_functions, "Azure Key Vault AES-192 key wrap"},
+    {"AES-256-KW:id-aes256-wrap:AES-256-WRAP", "provider=akv_provider", akv_aes_asym_cipher_functions, "Azure Key Vault AES-256 key wrap"},
     {NULL, NULL, NULL, NULL}};
 
 static const OSSL_ALGORITHM *akv_query_operation(void *provctx, int operation_id, int *no_cache)

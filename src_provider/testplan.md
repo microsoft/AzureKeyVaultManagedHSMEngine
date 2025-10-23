@@ -53,9 +53,11 @@ run `openssl list -providers`
 ## Managed HSM keys
 Ensure the Managed HSM contains the pre-provisioned keys: `myrsakey` (RSA 2048 sign/decrypt), `myaeskey` (AES-256 wrap/unwrap), and `ecckey` (P-256 sign). Run `az keyvault key list --id https://ManagedHSMOpenSSLEngine.managedhsm.azure.net/` and confirm each key reports `enabled: true`.
 
-Update key usage if verify/encrypt are missing:
+Update key usage if operations are missing:
 ```
 az keyvault key set-attributes --hsm-name ManagedHSMOpenSSLEngine --name myrsakey --ops sign verify encrypt decrypt
+az keyvault key set-attributes --hsm-name ManagedHSMOpenSSLEngine --name myaeskey --ops wrapKey unwrapKey encrypt decrypt
+az keyvault key set-attributes --hsm-name ManagedHSMOpenSSLEngine --name ecckey --ops sign verify
 ```
 
 ## Smoke Test
@@ -167,4 +169,114 @@ ctx->aid_len = der_len;
 
 ### Key Lesson
 External OpenSSL providers MUST implement `OSSL_SIGNATURE_PARAM_ALGORITHM_ID` parameter for X509 operations (CSR, certificate generation) to work. The parameter must return a valid DER-encoded algorithm identifier. This can be achieved using public X509_ALGOR APIs (`X509_ALGOR_new()`, `X509_ALGOR_set0()`, `i2d_X509_ALGOR()`) rather than relying on OpenSSL's internal provider utilities.
+
+If you want to build a **custom OpenSSL provider** to support remote key management (e.g., Azure Managed HSM) and ensure it works seamlessly with OpenSSL for **signing, decryption, and X.509 certificate operations**, your provider must implement a set of **PARAMS** (parameters) for each algorithm class. These are needed for OpenSSL core integration and to interoperate with applications and commands.
+
+Below is a practical summary based on OpenSSL's provider API and common cryptographic workflows:
+
+---
+
+## 1. **Key Management PARAMS**
+
+Implement for key import/export, generation, and referencing remote keys.
+
+- `OSSL_PKEY_PARAM_ID`  
+  The key identifier, e.g., a URI to the key in Azure HSM.
+- `OSSL_PKEY_PARAM_TYPE`  
+  Type of the key (RSA, EC, etc.).
+- `OSSL_PKEY_PARAM_BITS`  
+  Key size in bits.
+- `OSSL_PKEY_PARAM_SECURITY_BITS`  
+  Security level.
+- `OSSL_PKEY_PARAM_MAX_SIZE`  
+  Maximum size supported.
+- `OSSL_PKEY_PARAM_FRIENDLY_NAME`  
+  Human-readable key name (optional, but useful).
+- `OSSL_PKEY_PARAM_PUB_KEY`  
+  Public key value (if available).
+- `OSSL_PKEY_PARAM_PRIV_KEY`  
+  Usually **not available**, but you may expose access token or reference for remote operations.
+
+## 2. **Signature PARAMS**
+
+Implement for sign/verify operations:
+
+- `OSSL_SIGNATURE_PARAM_DIGEST`  
+  Name of digest algorithm (e.g., "SHA256").
+- `OSSL_SIGNATURE_PARAM_PAD_MODE`  
+  Padding (for RSA: PKCS1, PSS, etc.).
+- `OSSL_SIGNATURE_PARAM_SALT_LEN`  
+  Salt length for PSS.
+- `OSSL_SIGNATURE_PARAM_ALGORITHM_ID`  
+  DER-encoded ASN.1 OID for the signature algorithm.
+- `OSSL_SIGNATURE_PARAM_KEY_ID`  
+  Reference to the key for remote signing.
+
+## 3. **Asymmetric Cipher (Decryption) PARAMS**
+
+Implement for RSA/EC decryption operations:
+
+- `OSSL_ASYM_CIPHER_PARAM_PAD_MODE`  
+  Padding scheme (PKCS1, OAEP).
+- `OSSL_ASYM_CIPHER_PARAM_OAEP_DIGEST`  
+  OAEP digest algorithm.
+- `OSSL_ASYM_CIPHER_PARAM_OAEP_LABEL`  
+  OAEP label (optional).
+- `OSSL_ASYM_CIPHER_PARAM_KEY_ID`  
+  Key identifier for remote decryption.
+
+## 4. **X.509 Certificate Handling**
+
+Provider must support exporting the public key in standard formats (DER/PEM).  
+The provider should expose:
+
+- `OSSL_PKEY_PARAM_PUB_KEY`  
+  Exportable public key.
+- `OSSL_PKEY_PARAM_ID`  
+  Key reference for signature verification.
+
+## 5. **General PARAMS**
+
+- `OSSL_PARAM_KEYMGMT_SELECT_PUBLIC_IMPORT`  
+- `OSSL_PARAM_KEYMGMT_SELECT_PRIVATE_IMPORT`  
+  (Support for import/export as appropriate, though private key is remote-only.)
+
+## 6. **Other Useful PARAMS**
+
+- `OSSL_PARAM_PROV_VERSION`  
+  Provider version string.
+- `OSSL_PARAM_PROV_NAME`  
+  Provider name string.
+
+---
+
+## **Reference: Core OpenSSL Headers**
+
+- [`include/openssl/core_names.h`](https://github.com/openssl/openssl/blob/master/include/openssl/core_names.h) — canonical source of parameter names.
+- [`doc/man7/provider-keymgmt.pod`](https://github.com/openssl/openssl/blob/master/doc/man7/provider-keymgmt.pod)
+- [`doc/man7/provider-signature.pod`](https://github.com/openssl/openssl/blob/master/doc/man7/provider-signature.pod)
+
+---
+
+## **Summary Table**
+
+| Operation       | Required PARAMS                                                        |
+|-----------------|-----------------------------------------------------------------------|
+| Key Management  | OSSL_PKEY_PARAM_ID, OSSL_PKEY_PARAM_TYPE, OSSL_PKEY_PARAM_BITS, OSSL_PKEY_PARAM_PUB_KEY, OSSL_PKEY_PARAM_FRIENDLY_NAME |
+| Signature       | OSSL_SIGNATURE_PARAM_DIGEST, OSSL_SIGNATURE_PARAM_PAD_MODE, OSSL_SIGNATURE_PARAM_SALT_LEN, OSSL_SIGNATURE_PARAM_ALGORITHM_ID, OSSL_SIGNATURE_PARAM_KEY_ID |
+| Decryption      | OSSL_ASYM_CIPHER_PARAM_PAD_MODE, OSSL_ASYM_CIPHER_PARAM_OAEP_DIGEST, OSSL_ASYM_CIPHER_PARAM_OAEP_LABEL, OSSL_ASYM_CIPHER_PARAM_KEY_ID |
+| X.509 Export    | OSSL_PKEY_PARAM_PUB_KEY, OSSL_PKEY_PARAM_ID                          |
+
+---
+
+## **Implementation Tips**
+
+- You must **store only references to private keys** (never the raw key material).
+- Your provider should route sign/decrypt requests to Azure Managed HSM using the key reference.
+- Implement all `get_params`, `set_params`, and context-related PARAMS for each operation.
+- Support for `OSSL_SIGNATURE_PARAM_ALGORITHM_ID` is **recommended** for interoperability.
+
+---
+
+**If you want a concrete starting point, review OpenSSL's built-in providers (e.g., RSA, EC) and the parameter handling in files like `rsa_kmgmt.c`, `rsa_sig.c`, and `core_names.h`.**
 

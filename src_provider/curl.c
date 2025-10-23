@@ -453,6 +453,107 @@ end:
   }
   return pk;
 }
+
+/* Get key type without materializing the full key - useful for symmetric keys */
+const char *AkvGetKeyType(const char *keyvault, const char *keyname, const MemoryStruct *accessToken, int *key_size)
+{
+  CURL *curl_handle;
+  CURLcode res;
+  const char *keyType = NULL;
+  char *result = NULL;
+
+  struct json_object *parsed_json = NULL;
+
+  MemoryStruct keyInfo;
+  keyInfo.memory = malloc(1);
+  keyInfo.size = 0;
+
+  char keyVaultUrl[4 * 1024] = {0};
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, "https://");
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyvault);
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, ".managedhsm.azure.net/keys/");
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyname);
+
+  curl_handle = curl_easy_init();
+
+  curl_easy_setopt(curl_handle, CURLOPT_URL, keyVaultUrl);
+  struct curl_slist *headers = NULL;
+  headers = curl_slist_append(headers, "Accept: application/json");
+  headers = curl_slist_append(headers, "Content-Type: application/json");
+
+  size_t bearer_size = snprintf(NULL, 0, "Authorization: Bearer %s", accessToken->memory) + 1;
+  char* bearer = malloc(bearer_size);
+  if (!bearer) {
+    Log(LogLevel_Error, "Failed to allocate memory for holding the authentication token.\n");
+    goto cleanup;
+  }
+  snprintf(bearer, bearer_size, "Authorization: Bearer %s", accessToken->memory);
+  headers = curl_slist_append(headers, bearer);
+  free(bearer);
+
+  curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headers);
+  curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+  curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)(&keyInfo));
+  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+
+  curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "GET");
+
+  res = curl_easy_perform(curl_handle);
+  curl_easy_cleanup(curl_handle);
+
+  if (res != CURLE_OK)
+  {
+    Log(LogLevel_Error, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+    goto cleanup;
+  }
+
+  parsed_json = json_tokener_parse(keyInfo.memory);
+  Log(LogLevel_Debug, "Key Info in Json \n---\n%s\n---\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
+
+  struct json_object *keyMaterial;
+  json_object_object_get_ex(parsed_json, "key", &keyMaterial);
+  if (keyMaterial == NULL)
+  {
+    vaultErrorLog(parsed_json);
+    goto cleanup;
+  }
+
+  struct json_object *jKeyType;
+  json_object_object_get_ex(keyMaterial, "kty", &jKeyType);
+  keyType = json_object_get_string(jKeyType);
+
+  if (keyType == NULL)
+  {
+    Log(LogLevel_Error, "no kty defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
+    goto cleanup;
+  }
+
+  /* Duplicate the key type string before cleanup */
+  result = (char *)malloc(strlen(keyType) + 1);
+  if (result != NULL)
+  {
+    memcpy(result, keyType, strlen(keyType) + 1);
+  }
+
+  /* Get key size for symmetric keys */
+  if (key_size != NULL && (strcasecmp(keyType, "oct-HSM") == 0 || strcasecmp(keyType, "oct") == 0))
+  {
+    struct json_object *jKeyOps;
+    if (json_object_object_get_ex(keyMaterial, "key_ops", &jKeyOps))
+    {
+      /* For AES keys, infer size from key operations or default to 256 */
+      *key_size = 256;  /* Default to AES-256 */
+    }
+  }
+
+cleanup:
+  if (keyInfo.memory)
+    free(keyInfo.memory);
+  if (parsed_json)
+    json_object_put(parsed_json);
+  return result;
+}
+
 EVP_PKEY *AkvGetKey(const char *keyvault, const char *keyname, const MemoryStruct *accessToken)
 {
   CURL *curl_handle;
@@ -887,6 +988,232 @@ int AkvEncrypt(const char *keyvault, const char *keyname, const MemoryStruct *ac
 cleanup:
   if (encryption.memory)
     free(encryption.memory);
+  if (parsed_json)
+    json_object_put(parsed_json);
+  if (request_json)
+    json_object_put(request_json);
+  return result;
+}
+
+int AkvWrap(const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *keyToWrap, size_t keyToWrapSize, MemoryStruct *wrappedKey)
+{
+  CURL *curl_handle;
+  CURLcode res;
+  int result = 0;
+
+  struct json_object *parsed_json = NULL;
+  json_object *request_json = NULL;
+
+  MemoryStruct wrapResponse;
+  wrapResponse.memory = malloc(1);
+  wrapResponse.size = 0;
+
+  char keyVaultUrl[4 * 1024] = {0};
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, "https://");
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyvault);
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, ".managedhsm.azure.net/keys/");
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyname);
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, "/wrapkey?");
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, ApiVersion);
+
+  curl_handle = curl_easy_init();
+
+  curl_easy_setopt(curl_handle, CURLOPT_URL, keyVaultUrl);
+  struct curl_slist *headers = NULL;
+  headers = curl_slist_append(headers, "Accept: application/json");
+  headers = curl_slist_append(headers, "Content-Type: application/json");
+
+  size_t bearer_size = snprintf(NULL, 0, "Authorization: Bearer %s", accessToken->memory) + 1;
+  char* bearer = malloc(bearer_size);
+  if (!bearer) {
+    Log(LogLevel_Error, "Failed to allocate memory for holding the authentication token.\n");
+    goto cleanup;
+  }
+  snprintf(bearer, bearer_size, "Authorization: Bearer %s", accessToken->memory);
+  headers = curl_slist_append(headers, bearer);
+  free(bearer);
+
+  curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headers);
+  curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+  curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)(&wrapResponse));
+  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+
+  request_json = json_object_new_object();
+  size_t outputLen = 0;
+  base64urlEncode(keyToWrap, keyToWrapSize, NULL, &outputLen);
+  if (outputLen <= 0)
+  {
+    Log(LogLevel_Error, "could not encode key to wrap\n");
+    goto cleanup;
+  }
+
+  unsigned char *encodedKey = (unsigned char *)malloc(outputLen + 1);
+  if (encodedKey == NULL)
+  {
+    Log(LogLevel_Error, "Failed to allocate %zu bytes for encoded key\n", outputLen + 1);
+    goto cleanup;
+  }
+  base64urlEncode(keyToWrap, keyToWrapSize, encodedKey, &outputLen);
+  encodedKey[outputLen] = '\0';
+  json_object_object_add(request_json, "alg", json_object_new_string(alg));
+  json_object_object_add(request_json, "value", json_object_new_string((const char *)encodedKey));
+  free(encodedKey);
+
+  curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "POST");
+  curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, json_object_to_json_string(request_json));
+
+  res = curl_easy_perform(curl_handle);
+  curl_easy_cleanup(curl_handle);
+
+  if (res != CURLE_OK)
+  {
+    Log(LogLevel_Error, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+    goto cleanup;
+  }
+
+  parsed_json = json_tokener_parse(wrapResponse.memory);
+
+  struct json_object *wrappedValue;
+  if (!json_object_object_get_ex(parsed_json, "value", &wrappedValue)) {
+    Log(LogLevel_Error, "no value defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
+    vaultErrorLog(parsed_json);
+    goto cleanup;
+  }
+  const char *value = json_object_get_string(wrappedValue);
+  const size_t valueSize = strlen(value);
+  outputLen = 0;
+
+  int decodeErr = base64urlDecode((const unsigned char *)value, valueSize, NULL, &outputLen);
+  if (!decodeErr && outputLen > 0)
+  {
+    unsigned char *result = (unsigned char *)malloc(outputLen);
+    base64urlDecode((const unsigned char *)value, strlen(value), result, &outputLen);
+    wrappedKey->memory = result;
+    wrappedKey->size = outputLen;
+  }
+  else
+  {
+    Log(LogLevel_Error, "decode error %d\n", decodeErr);
+    goto cleanup;
+  }
+
+  result = 1;
+cleanup:
+  if (wrapResponse.memory)
+    free(wrapResponse.memory);
+  if (parsed_json)
+    json_object_put(parsed_json);
+  if (request_json)
+    json_object_put(request_json);
+  return result;
+}
+
+int AkvUnwrap(const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *wrappedKey, size_t wrappedKeySize, MemoryStruct *unwrappedKey)
+{
+  CURL *curl_handle;
+  CURLcode res;
+  int result = 0;
+
+  struct json_object *parsed_json = NULL;
+  json_object *request_json = NULL;
+
+  MemoryStruct unwrapResponse;
+  unwrapResponse.memory = malloc(1);
+  unwrapResponse.size = 0;
+
+  char keyVaultUrl[4 * 1024] = {0};
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, "https://");
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyvault);
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, ".managedhsm.azure.net/keys/");
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, keyname);
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, "/unwrapkey?");
+  strcat_s(keyVaultUrl, sizeof keyVaultUrl, ApiVersion);
+
+  curl_handle = curl_easy_init();
+
+  curl_easy_setopt(curl_handle, CURLOPT_URL, keyVaultUrl);
+  struct curl_slist *headers = NULL;
+  headers = curl_slist_append(headers, "Accept: application/json");
+  headers = curl_slist_append(headers, "Content-Type: application/json");
+
+  size_t bearer_size = snprintf(NULL, 0, "Authorization: Bearer %s", accessToken->memory) + 1;
+  char* bearer = malloc(bearer_size);
+  if (!bearer) {
+    Log(LogLevel_Error, "Failed to allocate memory for holding the authentication token.\n");
+    goto cleanup;
+  }
+  snprintf(bearer, bearer_size, "Authorization: Bearer %s", accessToken->memory);
+  headers = curl_slist_append(headers, bearer);
+  free(bearer);
+
+  curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headers);
+  curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+  curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)(&unwrapResponse));
+  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+
+  request_json = json_object_new_object();
+  size_t outputLen = 0;
+  base64urlEncode(wrappedKey, wrappedKeySize, NULL, &outputLen);
+  if (outputLen <= 0)
+  {
+    Log(LogLevel_Error, "could not encode wrapped key\n");
+    goto cleanup;
+  }
+
+  unsigned char *encodedWrappedKey = (unsigned char *)malloc(outputLen + 1);
+  if (encodedWrappedKey == NULL)
+  {
+    Log(LogLevel_Error, "Failed to allocate %zu bytes for encoded wrapped key\n", outputLen + 1);
+    goto cleanup;
+  }
+  base64urlEncode(wrappedKey, wrappedKeySize, encodedWrappedKey, &outputLen);
+  encodedWrappedKey[outputLen] = '\0';
+  json_object_object_add(request_json, "alg", json_object_new_string(alg));
+  json_object_object_add(request_json, "value", json_object_new_string((const char *)encodedWrappedKey));
+  free(encodedWrappedKey);
+
+  curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "POST");
+  curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, json_object_to_json_string(request_json));
+
+  res = curl_easy_perform(curl_handle);
+  curl_easy_cleanup(curl_handle);
+
+  if (res != CURLE_OK)
+  {
+    Log(LogLevel_Error, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+    goto cleanup;
+  }
+
+  parsed_json = json_tokener_parse(unwrapResponse.memory);
+
+  struct json_object *unwrappedValue;
+  if (!json_object_object_get_ex(parsed_json, "value", &unwrappedValue)) {
+    Log(LogLevel_Error, "no value defined in returned json: \n%s\n", json_object_to_json_string_ext(parsed_json, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY));
+    vaultErrorLog(parsed_json);
+    goto cleanup;
+  }
+  const char *value = json_object_get_string(unwrappedValue);
+  const size_t valueSize = strlen(value);
+  outputLen = 0;
+
+  int decodeErr = base64urlDecode((const unsigned char *)value, valueSize, NULL, &outputLen);
+  if (!decodeErr && outputLen > 0)
+  {
+    unsigned char *result = (unsigned char *)malloc(outputLen);
+    base64urlDecode((const unsigned char *)value, strlen(value), result, &outputLen);
+    unwrappedKey->memory = result;
+    unwrappedKey->size = outputLen;
+  }
+  else
+  {
+    Log(LogLevel_Error, "decode error %d\n", decodeErr);
+    goto cleanup;
+  }
+
+  result = 1;
+cleanup:
+  if (unwrapResponse.memory)
+    free(unwrapResponse.memory);
   if (parsed_json)
     json_object_put(parsed_json);
   if (request_json)

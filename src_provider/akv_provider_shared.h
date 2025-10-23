@@ -82,7 +82,10 @@ int GetAccessTokenFromEnv(MemoryStruct *accessToken);
 int AkvSign(const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *hashText, size_t hashTextSize, MemoryStruct *signatureText);
 int AkvDecrypt(const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *ciperText, size_t ciperTextSize, MemoryStruct *decryptedText);
 int AkvEncrypt(const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *clearText, size_t clearTextSize, MemoryStruct *encryptedText);
+int AkvWrap(const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *keyToWrap, size_t keyToWrapSize, MemoryStruct *wrappedKey);
+int AkvUnwrap(const char *keyvault, const char *keyname, const MemoryStruct *accessToken, const char *alg, const unsigned char *wrappedKey, size_t wrappedKeySize, MemoryStruct *unwrappedKey);
 EVP_PKEY *AkvGetKey(const char *keyvault, const char *keyname, const MemoryStruct *accessToken);
+const char *AkvGetKeyType(const char *keyvault, const char *keyname, const MemoryStruct *accessToken, int *key_size);
 void base64urlEncode(const unsigned char *input, size_t inputLen, unsigned char *output, size_t *outputLen);
 int base64urlDecode(const unsigned char *input, size_t inputLen, unsigned char *output, size_t *outputLen);
 

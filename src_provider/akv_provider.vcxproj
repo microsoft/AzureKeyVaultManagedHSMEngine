@@ -56,7 +56,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="akv_cipher.c" />
+    <ClCompile Include="akv_cipher_aes.c" />
     <ClCompile Include="akv_keymgmt.c" />
+    <ClCompile Include="akv_keymgmt_aes.c" />
     <ClCompile Include="akv_logging.c" />
     <ClCompile Include="akv_provider.c" />
     <ClCompile Include="akv_signature.c" />

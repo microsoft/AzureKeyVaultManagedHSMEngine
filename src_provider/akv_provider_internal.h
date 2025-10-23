@@ -31,8 +31,10 @@ void akv_key_set_public(AKV_KEY *key, EVP_PKEY *pkey);
 /* Dispatch tables exposed to the provider */
 extern const OSSL_DISPATCH akv_rsa_keymgmt_functions[];
 extern const OSSL_DISPATCH akv_ec_keymgmt_functions[];
+extern const OSSL_DISPATCH akv_aes_keymgmt_functions[];
 extern const OSSL_DISPATCH akv_rsa_signature_functions[];
 extern const OSSL_DISPATCH akv_ecdsa_signature_functions[];
 extern const OSSL_DISPATCH akv_rsa_asym_cipher_functions[];
+extern const OSSL_DISPATCH akv_aes_asym_cipher_functions[];
 
 #endif /* AKV_PROVIDER_INTERNAL_H */

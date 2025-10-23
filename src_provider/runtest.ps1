@@ -51,13 +51,15 @@ try {
 	$vaultName = if ($Env:AKV_VAULT) { $Env:AKV_VAULT } else { 'ManagedHSMOpenSSLEngine' }
 	$rsaKeyName = if ($Env:AKV_RSA_KEY) { $Env:AKV_RSA_KEY } else { 'myrsakey' }
 	$ecKeyName = if ($Env:AKV_EC_KEY) { $Env:AKV_EC_KEY } else { 'ecckey' }
+	$aesKeyName = if ($Env:AKV_AES_KEY) { $Env:AKV_AES_KEY } else { 'myaeskey' }
 
 	$rsaKeyId = "https://$vaultName.managedhsm.azure.net/keys/$rsaKeyName"
 	$ecKeyId = "https://$vaultName.managedhsm.azure.net/keys/$ecKeyName"
 
 	$rsaProviderPath = "managedhsm:$($vaultName):$($rsaKeyName)"
 	$ecProviderPath = "managedhsm:$($vaultName):$($ecKeyName)"
-	Write-Host "Using vault '$vaultName' with RSA key '$rsaKeyName' and EC key '$ecKeyName'."
+	$aesProviderPath = "managedhsm:$($vaultName):$($aesKeyName)"
+	Write-Host "Using vault '$vaultName' with RSA key '$rsaKeyName', EC key '$ecKeyName', and AES key '$aesKeyName'."
 
 	function Invoke-OpenSslCommand {
 		param([string[]]$ArgumentList)
@@ -342,6 +344,72 @@ try {
 	} else {
 		throw "EC certificate file '$ecCertPath' was not created."
 	}
+
+	Write-Host ''
+	Write-Host '=== AES Key Wrap/Unwrap Tests ==='
+	Write-Host ''
+
+	Write-Host '--- Generating 32-byte test key ---'
+	Invoke-OpenSslCommand @('rand', '-out', 'local.key', '32')
+	$keySize = (Get-Item 'local.key').Length
+	Write-Host "Generated local.key ($keySize bytes)"
+
+	Write-Host '--- Wrapping key with Azure Managed HSM AES key ---'
+	Invoke-OpenSslCommand @(
+		'pkeyutl',
+		'-encrypt',
+		'-inkey', $aesProviderPath,
+		'-provider', 'akv_provider',
+		'-in', 'local.key',
+		'-out', 'local.key.wrap'
+	)
+	$wrappedSize = (Get-Item 'local.key.wrap').Length
+	Write-Host "Wrapped successfully -> local.key.wrap ($wrappedSize bytes)"
+
+	Write-Host '--- Unwrapping key with Azure Managed HSM AES key ---'
+	Invoke-OpenSslCommand @(
+		'pkeyutl',
+		'-decrypt',
+		'-inkey', $aesProviderPath,
+		'-provider', 'akv_provider',
+		'-in', 'local.key.wrap',
+		'-out', 'local.key.unwrapped'
+	)
+	$unwrappedSize = (Get-Item 'local.key.unwrapped').Length
+	Write-Host "Unwrapped successfully -> local.key.unwrapped ($unwrappedSize bytes)"
+
+	Write-Host '--- Comparing original and unwrapped keys ---'
+	$originalKey = [System.IO.File]::ReadAllBytes('local.key')
+	$unwrappedKey = [System.IO.File]::ReadAllBytes('local.key.unwrapped')
+
+	if ($originalKey.Length -ne $unwrappedKey.Length) {
+		throw "AES wrap/unwrap failed: Size mismatch (original=$($originalKey.Length) unwrapped=$($unwrappedKey.Length))"
+	}
+
+	$keysMatch = $true
+	for ($i = 0; $i -lt $originalKey.Length; $i++) {
+		if ($originalKey[$i] -ne $unwrappedKey[$i]) {
+			$keysMatch = $false
+			break
+		}
+	}
+
+	if (-not $keysMatch) {
+		throw 'AES wrap/unwrap failed: Keys do not match'
+	}
+	Write-Host 'Keys match perfectly!'
+
+	Write-Host '--- Negative test: Tamper with wrapped key ---'
+	$wrappedBytes = [System.IO.File]::ReadAllBytes('local.key.wrap')
+	$wrappedBytes[0] = $wrappedBytes[0] -bxor 0xFF  # Flip first byte
+	[System.IO.File]::WriteAllBytes('local.key.wrap.tampered', $wrappedBytes)
+
+	Write-Host 'Attempting to unwrap tampered key (should fail)...'
+	& openssl pkeyutl -decrypt -inkey $aesProviderPath -provider akv_provider -in local.key.wrap.tampered -out local.key.bad 2>$null
+	if ($LASTEXITCODE -eq 0) {
+		throw 'Tampered key unwrap should have failed but succeeded'
+	}
+	Write-Host 'Expected failure on tampered key - PASSED'
 
 	Write-Host ''
 	Write-Host '=== All tests completed successfully ==='
