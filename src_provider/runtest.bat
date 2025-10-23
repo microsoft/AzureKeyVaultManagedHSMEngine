@@ -4,17 +4,100 @@ setlocal enabledelayedexpansion
 REM ============================================================================
 REM Azure Managed HSM OpenSSL Provider Test Suite
 REM ============================================================================
+REM
+REM Usage: runtest.bat [/SKIPVALIDATION]
+REM
+REM Options:
+REM   /SKIPVALIDATION  Skip Azure Managed HSM and key validation checks
+REM                    (faster, but won't verify prerequisites)
+REM
+REM Environment Variables (optional):
+REM   AKV_VAULT    - Managed HSM name (default: ManagedHSMOpenSSLEngine)
+REM   AKV_RSA_KEY  - RSA key name (default: myrsakey)
+REM   AKV_EC_KEY   - EC key name (default: ecckey)
+REM   AKV_AES_KEY  - AES key name (default: myaeskey)
+REM
+REM ============================================================================
+
+if /i "%1"=="/?" goto :usage
+if /i "%1"=="/help" goto :usage
+if /i "%1"=="-help" goto :usage
+if /i "%1"=="--help" goto :usage
 
 echo.
 echo === Azure Managed HSM signing tests ===
 echo.
+goto :start
+
+:usage
+echo.
+echo Azure Managed HSM OpenSSL Provider Test Suite
+echo ==============================================
+echo.
+echo Usage: runtest.bat [/SKIPVALIDATION]
+echo.
+echo Options:
+echo   /SKIPVALIDATION  Skip Azure Managed HSM and key validation checks
+echo.
+echo Environment Variables (optional):
+echo   AKV_VAULT    - Managed HSM name (default: ManagedHSMOpenSSLEngine)
+echo   AKV_RSA_KEY  - RSA key name (default: myrsakey)
+echo   AKV_EC_KEY   - EC key name (default: ecckey)
+echo   AKV_AES_KEY  - AES key name (default: myaeskey)
+echo.
+echo Examples:
+echo   runtest.bat                    # Run all tests with validation
+echo   runtest.bat /SKIPVALIDATION    # Run tests without validation (faster)
+echo   set AKV_VAULT=MyVault ^& runtest.bat  # Use custom vault name
+echo.
+goto :end
+
+:start
 
 REM Change to script directory
 cd /d "%~dp0"
 echo Working directory: %CD%
 
-REM Fetch Azure CLI access token using pure batch commands
-echo Fetching Azure CLI access token...
+REM ============================================================================
+REM Pre-flight Checks
+REM ============================================================================
+
+echo.
+echo --- Checking prerequisites ---
+
+REM Check if OpenSSL is installed and accessible
+where openssl >nul 2>&1
+if errorlevel 1 (
+    echo ERROR: OpenSSL not found in PATH
+    echo Please install OpenSSL 3.x and ensure it's in your system PATH
+    goto :error
+)
+
+REM Get OpenSSL version
+for /f "tokens=2" %%v in ('openssl version') do set OPENSSL_VERSION=%%v
+echo [OK] OpenSSL version: %OPENSSL_VERSION%
+
+REM Check if provider DLL exists
+if not exist "x64\Release\akv_provider.dll" (
+    if not exist "..\x64\Release\akv_provider.dll" (
+        echo ERROR: akv_provider.dll not found
+        echo Please build the provider first using winbuild.bat
+        goto :error
+    )
+)
+echo [OK] Provider DLL found
+
+REM Check if Azure CLI is installed
+where az >nul 2>&1
+if errorlevel 1 (
+    echo ERROR: Azure CLI not found
+    echo Please install Azure CLI from https://aka.ms/InstallAzureCLIDocs
+    goto :error
+)
+echo [OK] Azure CLI installed
+
+echo.
+echo --- Fetching Azure CLI access token ---
 for /f "tokens=2 delims=:," %%i in ('az account get-access-token --output json --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47 --resource https://managedhsm.azure.net ^| findstr "accessToken"') do (
     set AZURE_CLI_ACCESS_TOKEN=%%i
 )
@@ -62,6 +145,79 @@ set EC_PROVIDER_PATH=managedhsm:%AKV_VAULT%:%AKV_EC_KEY%
 set AES_PROVIDER_PATH=managedhsm:%AKV_VAULT%:%AKV_AES_KEY%
 
 echo Using vault '%AKV_VAULT%' with RSA key '%AKV_RSA_KEY%', EC key '%AKV_EC_KEY%', and AES key '%AKV_AES_KEY%'.
+echo.
+
+REM ============================================================================
+REM Validate Managed HSM and Keys (can be skipped with /SKIPVALIDATION)
+REM ============================================================================
+
+if /i "%1"=="/SKIPVALIDATION" (
+    echo --- Skipping Managed HSM validation (use at your own risk^) ---
+    echo.
+    goto :skip_validation
+)
+
+echo --- Validating Managed HSM and keys (this may take 30-60 seconds^) ---
+
+REM Check if vault exists and is accessible
+echo Checking access to vault '%AKV_VAULT%'...
+az keyvault show --hsm-name %AKV_VAULT% --query "properties.provisioningState" -o tsv >nul 2>&1
+if errorlevel 1 (
+    echo ERROR: Cannot access Managed HSM '%AKV_VAULT%'
+    echo Please verify:
+    echo   1. The Managed HSM name is correct
+    echo   2. You have appropriate permissions
+    echo   3. You are logged in with 'az login'
+    echo.
+    echo TIP: Use 'runtest.bat /SKIPVALIDATION' to skip these checks
+    goto :error
+)
+echo [OK] Managed HSM '%AKV_VAULT%' is accessible
+
+REM Check if RSA key exists
+echo Checking RSA key '%AKV_RSA_KEY%'...
+az keyvault key show --hsm-name %AKV_VAULT% --name %AKV_RSA_KEY% --query "key.kty" -o tsv >nul 2>&1
+if errorlevel 1 (
+    echo ERROR: RSA key '%AKV_RSA_KEY%' not found in vault '%AKV_VAULT%'
+    echo Create the key with: az keyvault key create --hsm-name %AKV_VAULT% --name %AKV_RSA_KEY% --kty RSA-HSM --size 3072
+    goto :error
+)
+for /f %%k in ('az keyvault key show --hsm-name %AKV_VAULT% --name %AKV_RSA_KEY% --query "key.kty" -o tsv') do set RSA_KEY_TYPE=%%k
+echo [OK] RSA key '%AKV_RSA_KEY%' found (type: %RSA_KEY_TYPE%)
+
+REM Check if EC key exists
+echo Checking EC key '%AKV_EC_KEY%'...
+az keyvault key show --hsm-name %AKV_VAULT% --name %AKV_EC_KEY% --query "key.kty" -o tsv >nul 2>&1
+if errorlevel 1 (
+    echo ERROR: EC key '%AKV_EC_KEY%' not found in vault '%AKV_VAULT%'
+    echo Create the key with: az keyvault key create --hsm-name %AKV_VAULT% --name %AKV_EC_KEY% --kty EC-HSM --curve P-256
+    goto :error
+)
+for /f %%k in ('az keyvault key show --hsm-name %AKV_VAULT% --name %AKV_EC_KEY% --query "key.kty" -o tsv') do set EC_KEY_TYPE=%%k
+echo [OK] EC key '%AKV_EC_KEY%' found (type: %EC_KEY_TYPE%)
+
+REM Check if AES key exists
+echo Checking AES key '%AKV_AES_KEY%'...
+az keyvault key show --hsm-name %AKV_VAULT% --name %AKV_AES_KEY% --query "key.kty" -o tsv >nul 2>&1
+if errorlevel 1 (
+    echo ERROR: AES key '%AKV_AES_KEY%' not found in vault '%AKV_VAULT%'
+    echo Create the key with: az keyvault key create --hsm-name %AKV_VAULT% --name %AKV_AES_KEY% --kty oct-HSM --size 256
+    goto :error
+)
+for /f %%k in ('az keyvault key show --hsm-name %AKV_VAULT% --name %AKV_AES_KEY% --query "key.kty" -o tsv') do set AES_KEY_TYPE=%%k
+echo [OK] AES key '%AKV_AES_KEY%' found (type: %AES_KEY_TYPE%)
+
+echo.
+echo All prerequisites validated successfully!
+echo.
+
+:skip_validation
+
+REM ============================================================================
+REM Run Tests
+REM ============================================================================
+
+echo === Azure Managed HSM signing tests ===
 echo.
 
 REM Compute digest for verification
@@ -256,11 +412,16 @@ echo Writing test summary to %TEMP_FOLDER%\test_summary.txt...
     echo Test Run Time: %TIME%
     echo Working Directory: %CD%
     echo.
+    echo Prerequisites:
+    echo   OpenSSL Version: %OPENSSL_VERSION%
+    echo   Azure CLI: Installed
+    echo   Provider DLL: Found
+    echo.
     echo Environment:
     echo   Vault: %AKV_VAULT%
-    echo   RSA Key: %AKV_RSA_KEY%
-    echo   EC Key: %AKV_EC_KEY%
-    echo   AES Key: %AKV_AES_KEY%
+    echo   RSA Key: %AKV_RSA_KEY% ^(%RSA_KEY_TYPE%^)
+    echo   EC Key: %AKV_EC_KEY% ^(%EC_KEY_TYPE%^)
+    echo   AES Key: %AKV_AES_KEY% ^(%AES_KEY_TYPE%^)
     echo.
     echo Test Results:
     echo   [PASS] RSA PS256 signing roundtrip
@@ -312,12 +473,23 @@ echo Writing error summary to %TEMP_FOLDER%\test_summary.txt...
     echo Test Run Time: %TIME%
     echo Working Directory: %CD%
     echo.
-    echo Environment:
-    echo   Vault: %AKV_VAULT%
-    echo   RSA Key: %AKV_RSA_KEY%
-    echo   EC Key: %AKV_EC_KEY%
-    echo   AES Key: %AKV_AES_KEY%
-    echo.
+    if defined OPENSSL_VERSION (
+        echo Prerequisites:
+        echo   OpenSSL Version: %OPENSSL_VERSION%
+        if defined RSA_KEY_TYPE (
+            echo   Azure CLI: Installed
+            echo   Provider DLL: Found
+        )
+        echo.
+    )
+    if defined AKV_VAULT (
+        echo Environment:
+        echo   Vault: %AKV_VAULT%
+        if defined RSA_KEY_TYPE echo   RSA Key: %AKV_RSA_KEY% ^(%RSA_KEY_TYPE%^)
+        if defined EC_KEY_TYPE echo   EC Key: %AKV_EC_KEY% ^(%EC_KEY_TYPE%^)
+        if defined AES_KEY_TYPE echo   AES Key: %AKV_AES_KEY% ^(%AES_KEY_TYPE%^)
+        echo.
+    )
     echo TEST FAILED!
     echo.
     echo Check the log file at: %AKV_LOG_FILE%
