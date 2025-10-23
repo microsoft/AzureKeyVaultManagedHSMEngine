@@ -77,15 +77,35 @@ REM Get OpenSSL version
 for /f "tokens=2" %%v in ('openssl version') do set OPENSSL_VERSION=%%v
 echo [OK] OpenSSL version: %OPENSSL_VERSION%
 
-REM Check if provider DLL exists
+REM Get OpenSSL modules directory
+echo Checking OpenSSL modules directory...
+for /f "tokens=1* delims=:" %%i in ('openssl version -a ^| findstr "MODULESDIR"') do (
+    set MODULESDIR=%%j
+)
+REM Remove quotes and leading/trailing spaces from MODULESDIR
+set MODULESDIR=%MODULESDIR:"=%
+for /f "tokens=* delims= " %%a in ("%MODULESDIR%") do set MODULESDIR=%%a
+echo MODULESDIR: %MODULESDIR%
+
+REM Check if akv_provider.dll is installed in MODULESDIR
+if exist "%MODULESDIR%\akv_provider.dll" (
+    echo [OK] akv_provider.dll is installed in modules directory
+    set PROVIDER_INSTALLED=YES
+) else (
+    echo [WARN] akv_provider.dll is NOT installed in modules directory
+    echo To install: copy x64\Release\akv_provider.dll "%MODULESDIR%\"
+    set PROVIDER_INSTALLED=NO
+)
+
+REM Check if provider DLL exists in build directory
 if not exist "x64\Release\akv_provider.dll" (
     if not exist "..\x64\Release\akv_provider.dll" (
-        echo ERROR: akv_provider.dll not found
+        echo ERROR: akv_provider.dll not found in build directory
         echo Please build the provider first using winbuild.bat
         goto :error
     )
 )
-echo [OK] Provider DLL found
+echo [OK] Provider DLL found in build directory
 
 REM Check if Azure CLI is installed
 where az >nul 2>&1
@@ -95,6 +115,19 @@ if errorlevel 1 (
     goto :error
 )
 echo [OK] Azure CLI installed
+
+REM Check if akv_provider can be loaded
+echo Checking if akv_provider is available...
+openssl list -providers -provider akv_provider -provider default 2>nul | findstr "akv_provider" >nul
+if errorlevel 1 (
+    echo ERROR: akv_provider is not loadable
+    echo Please verify:
+    echo   1. akv_provider.dll is in the correct location
+    echo   2. OpenSSL can find the provider
+    echo   3. All dependencies are available
+    goto :error
+)
+echo [OK] akv_provider is loadable
 
 echo.
 echo --- Fetching Azure CLI access token ---
