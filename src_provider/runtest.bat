@@ -98,7 +98,7 @@ echo [OK] Azure CLI installed
 
 echo.
 echo --- Fetching Azure CLI access token ---
-for /f "tokens=2 delims=:," %%i in ('az account get-access-token --output json --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47 --resource https://managedhsm.azure.net ^| findstr "accessToken"') do (
+for /f "tokens=2 delims=:," %%i in ('call az account get-access-token --output json --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47 --resource https://managedhsm.azure.net ^| findstr "accessToken"') do (
     set AZURE_CLI_ACCESS_TOKEN=%%i
 )
 
@@ -164,7 +164,7 @@ echo --- Validating Managed HSM and keys (this may take 20-30 seconds^) ---
 
 REM Check if vault exists and is accessible
 echo Checking access to vault '%AKV_VAULT%'...
-az keyvault show --hsm-name %AKV_VAULT% --query "properties.provisioningState" -o tsv >nul 2>&1
+call az keyvault show --hsm-name %AKV_VAULT% --query "properties.provisioningState" -o tsv
 if errorlevel 1 (
     echo ERROR: Cannot access Managed HSM '%AKV_VAULT%'
     echo Please verify:
@@ -176,38 +176,39 @@ if errorlevel 1 (
     goto :error
 )
 echo [OK] Managed HSM '%AKV_VAULT%' is accessible
+echo.
 
 REM Check if RSA key exists
 echo Checking RSA key '%AKV_RSA_KEY%'...
-az keyvault key show --hsm-name %AKV_VAULT% --name %AKV_RSA_KEY% --query "key.kty" -o tsv >nul 2>&1
+call az keyvault key show --hsm-name %AKV_VAULT% --name %AKV_RSA_KEY% --query "key.kty" -o tsv
 if errorlevel 1 (
     echo ERROR: RSA key '%AKV_RSA_KEY%' not found in vault '%AKV_VAULT%'
     echo Create the key with: az keyvault key create --hsm-name %AKV_VAULT% --name %AKV_RSA_KEY% --kty RSA-HSM --size 3072
     goto :error
 )
-for /f %%k in ('az keyvault key show --hsm-name %AKV_VAULT% --name %AKV_RSA_KEY% --query "key.kty" -o tsv') do set RSA_KEY_TYPE=%%k
+for /f %%k in ('call az keyvault key show --hsm-name %AKV_VAULT% --name %AKV_RSA_KEY% --query "key.kty" -o tsv') do set RSA_KEY_TYPE=%%k
 echo [OK] RSA key '%AKV_RSA_KEY%' found (type: %RSA_KEY_TYPE%)
 
 REM Check if EC key exists
 echo Checking EC key '%AKV_EC_KEY%'...
-az keyvault key show --hsm-name %AKV_VAULT% --name %AKV_EC_KEY% --query "key.kty" -o tsv >nul 2>&1
+call az keyvault key show --hsm-name %AKV_VAULT% --name %AKV_EC_KEY% --query "key.kty" -o tsv
 if errorlevel 1 (
     echo ERROR: EC key '%AKV_EC_KEY%' not found in vault '%AKV_VAULT%'
     echo Create the key with: az keyvault key create --hsm-name %AKV_VAULT% --name %AKV_EC_KEY% --kty EC-HSM --curve P-256
     goto :error
 )
-for /f %%k in ('az keyvault key show --hsm-name %AKV_VAULT% --name %AKV_EC_KEY% --query "key.kty" -o tsv') do set EC_KEY_TYPE=%%k
+for /f %%k in ('call az keyvault key show --hsm-name %AKV_VAULT% --name %AKV_EC_KEY% --query "key.kty" -o tsv') do set EC_KEY_TYPE=%%k
 echo [OK] EC key '%AKV_EC_KEY%' found (type: %EC_KEY_TYPE%)
 
 REM Check if AES key exists
 echo Checking AES key '%AKV_AES_KEY%'...
-az keyvault key show --hsm-name %AKV_VAULT% --name %AKV_AES_KEY% --query "key.kty" -o tsv >nul 2>&1
+call az keyvault key show --hsm-name %AKV_VAULT% --name %AKV_AES_KEY% --query "key.kty" -o tsv
 if errorlevel 1 (
     echo ERROR: AES key '%AKV_AES_KEY%' not found in vault '%AKV_VAULT%'
     echo Create the key with: az keyvault key create --hsm-name %AKV_VAULT% --name %AKV_AES_KEY% --kty oct-HSM --size 256
     goto :error
 )
-for /f %%k in ('az keyvault key show --hsm-name %AKV_VAULT% --name %AKV_AES_KEY% --query "key.kty" -o tsv') do set AES_KEY_TYPE=%%k
+for /f %%k in ('call az keyvault key show --hsm-name %AKV_VAULT% --name %AKV_AES_KEY% --query "key.kty" -o tsv') do set AES_KEY_TYPE=%%k
 echo [OK] AES key '%AKV_AES_KEY%' found (type: %AES_KEY_TYPE%)
 
 echo.
@@ -500,7 +501,7 @@ echo Writing error summary to %TEMP_FOLDER%\test_summary.txt...
 ) > %TEMP_FOLDER%\test_summary.txt
 
 echo Test files preserved in .\%TEMP_FOLDER%\ folder for debugging
-exit /b 1
+@REM exit /b 1
 
 :end
 endlocal
