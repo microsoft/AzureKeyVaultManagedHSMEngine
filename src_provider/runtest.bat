@@ -108,8 +108,10 @@ set AZURE_CLI_ACCESS_TOKEN=!AZURE_CLI_ACCESS_TOKEN: =!
 
 if "%AZURE_CLI_ACCESS_TOKEN%"=="" (
     echo ERROR: Failed to get access token
+    echo Please verify you are logged in with 'az login'
     goto :error
 )
+echo [OK] Access token acquired
 
 REM Set up logging
 set AKV_LOG_FILE=.\logs\akv_provider.log
@@ -157,6 +159,7 @@ if /i "%1"=="/SKIPVALIDATION" (
     goto :skip_validation
 )
 
+echo.
 echo --- Validating Managed HSM and keys (this may take 30-60 seconds^) ---
 
 REM Check if vault exists and is accessible
