@@ -126,10 +126,10 @@ if errorlevel 1 (
 )
 
 REM Set package paths for manifest mode
-set "PKG_OPENSSL=!VCPKG_ROOT!\installed\x64-windows"
-set "PKG_CURL=!VCPKG_ROOT!\installed\x64-windows"
-set "PKG_JSON=!VCPKG_ROOT!\installed\x64-windows"
-set "PKG_ZLIB=!VCPKG_ROOT!\installed\x64-windows"
+set "PKG_OPENSSL=!CD!\vcpkg_installed\x64-windows"
+set "PKG_CURL=!CD!\vcpkg_installed\x64-windows"
+set "PKG_JSON=!CD!\vcpkg_installed\x64-windows"
+set "PKG_ZLIB=!CD!\vcpkg_installed\x64-windows"
 
 echo All dependencies installed successfully
 
