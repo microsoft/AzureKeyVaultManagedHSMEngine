@@ -6,7 +6,7 @@ REM Automated Build Script for Azure Key Vault Managed HSM OpenSSL Provider
 REM ============================================================================
 
 REM If VCPKG_ROOT not set, try to auto-detect or install vcpkg
-if "%VCPKG_ROOT%" == "" (
+if not defined VCPKG_ROOT (
     echo VCPKG_ROOT not set, attempting auto-detection...
     
     REM Try common locations
@@ -34,7 +34,7 @@ if "%VCPKG_ROOT%" == "" (
             
             REM Clone vcpkg
             git clone https://github.com/microsoft/vcpkg.git "%USERPROFILE%\vcpkg"
-            if !ERRORLEVEL! NEQ 0 (
+            if errorlevel 1 (
                 echo ERROR: Failed to clone vcpkg repository
                 echo Please ensure git is installed and accessible
                 goto end
@@ -43,7 +43,7 @@ if "%VCPKG_ROOT%" == "" (
             REM Bootstrap vcpkg
             echo Bootstrapping vcpkg...
             call "%USERPROFILE%\vcpkg\bootstrap-vcpkg.bat"
-            if !ERRORLEVEL! NEQ 0 (
+            if errorlevel 1 (
                 echo ERROR: Failed to bootstrap vcpkg
                 goto end
             )
@@ -65,19 +65,19 @@ if "%VCPKG_ROOT%" == "" (
 )
 
 REM Verify vcpkg installation
-if not exist "%VCPKG_ROOT%\.vcpkg-root" (
-    echo ERROR: %VCPKG_ROOT% does not appear to be a valid vcpkg installation
+if not exist "!VCPKG_ROOT!\.vcpkg-root" (
+    echo ERROR: !VCPKG_ROOT! does not appear to be a valid vcpkg installation
     echo The .vcpkg-root file is missing
     goto end
 )
 
 REM Check if vcpkg executable exists
-set VCPKG_EXE=%VCPKG_ROOT%\vcpkg.exe
-if not exist "%VCPKG_EXE%" (
-    echo ERROR: vcpkg.exe not found at %VCPKG_EXE%
+set "VCPKG_EXE=!VCPKG_ROOT!\vcpkg.exe"
+if not exist "!VCPKG_EXE!" (
+    echo ERROR: vcpkg.exe not found at !VCPKG_EXE!
     echo Attempting to bootstrap vcpkg...
-    call "%VCPKG_ROOT%\bootstrap-vcpkg.bat"
-    if !ERRORLEVEL! NEQ 0 (
+    call "!VCPKG_ROOT!\bootstrap-vcpkg.bat"
+    if errorlevel 1 (
         echo ERROR: Failed to bootstrap vcpkg
         goto end
     )
@@ -85,62 +85,53 @@ if not exist "%VCPKG_EXE%" (
 
 echo.
 echo ========================================================
-echo Using vcpkg: %VCPKG_ROOT%
+echo Using vcpkg: !VCPKG_ROOT!
 echo ========================================================
 echo.
+
+REM Check if this is the VS Build Tools vcpkg (which may have compatibility issues)
+echo !VCPKG_ROOT! | findstr /C:"Visual Studio" >nul
+if %ERRORLEVEL% EQU 0 (
+    echo WARNING: You are using vcpkg from Visual Studio Build Tools
+    echo This version may have compatibility issues with manifest mode.
+    echo.
+    echo For best results, consider using a standalone vcpkg:
+    echo   1. git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+    echo   2. C:\vcpkg\bootstrap-vcpkg.bat
+    echo   3. set VCPKG_ROOT=C:\vcpkg
+    echo.
+    set /p CONTINUE="Do you want to continue anyway? (Y/N): "
+    if /i not "!CONTINUE!"=="Y" (
+        echo Build cancelled
+        goto end
+    )
+    echo.
+)
 
 REM Install required vcpkg packages if not present
 echo Checking and installing required dependencies...
 echo.
 
-set PKG_OPENSSL=%VCPKG_ROOT%\packages\openssl_x64-windows
-set PKG_CURL=%VCPKG_ROOT%\packages\curl_x64-windows-static
-set PKG_JSON=%VCPKG_ROOT%\packages\json-c_x64-windows-static
-set PKG_ZLIB=%VCPKG_ROOT%\packages\zlib_x64-windows-static
-
-if not exist "%PKG_OPENSSL%" (
-    echo [1/4] Installing openssl:x64-windows...
-    "%VCPKG_EXE%" install openssl:x64-windows
-    if !ERRORLEVEL! NEQ 0 (
-        echo ERROR: Failed to install openssl
-        goto end
-    )
-) else (
-    echo [1/4] openssl:x64-windows already installed
+REM Use vcpkg manifest mode - install from vcpkg.json
+echo Installing dependencies from vcpkg.json...
+"!VCPKG_EXE!" install --triplet=x64-windows
+if errorlevel 1 (
+    echo ERROR: Failed to install dependencies
+    echo.
+    echo If you encounter manifest mode issues, try installing a standalone vcpkg:
+    echo   git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+    echo   C:\vcpkg\bootstrap-vcpkg.bat
+    echo   set VCPKG_ROOT=C:\vcpkg
+    goto end
 )
 
-if not exist "%PKG_CURL%" (
-    echo [2/4] Installing curl:x64-windows-static...
-    "%VCPKG_EXE%" install curl[core,ssl]:x64-windows-static
-    if !ERRORLEVEL! NEQ 0 (
-        echo ERROR: Failed to install curl
-        goto end
-    )
-) else (
-    echo [2/4] curl:x64-windows-static already installed
-)
+REM Set package paths for manifest mode
+set "PKG_OPENSSL=!VCPKG_ROOT!\installed\x64-windows"
+set "PKG_CURL=!VCPKG_ROOT!\installed\x64-windows"
+set "PKG_JSON=!VCPKG_ROOT!\installed\x64-windows"
+set "PKG_ZLIB=!VCPKG_ROOT!\installed\x64-windows"
 
-if not exist "%PKG_JSON%" (
-    echo [3/4] Installing json-c:x64-windows-static...
-    "%VCPKG_EXE%" install json-c:x64-windows-static
-    if !ERRORLEVEL! NEQ 0 (
-        echo ERROR: Failed to install json-c
-        goto end
-    )
-) else (
-    echo [3/4] json-c:x64-windows-static already installed
-)
-
-if not exist "%PKG_ZLIB%" (
-    echo [4/4] Installing zlib:x64-windows-static...
-    "%VCPKG_EXE%" install zlib:x64-windows-static
-    if !ERRORLEVEL! NEQ 0 (
-        echo ERROR: Failed to install zlib
-        goto end
-    )
-) else (
-    echo [4/4] zlib:x64-windows-static already installed
-)
+echo All dependencies installed successfully
 
 echo.
 echo ========================================================
@@ -151,9 +142,15 @@ echo.
 REM Build the project
 echo Building akv_provider.dll...
 echo.
-msbuild akv_provider.vcxproj /p:PkgOpenssl="%PKG_OPENSSL%" /p:PkgCurl="%PKG_CURL%" /p:PkgJson="%PKG_JSON%" /p:PkgZ="%PKG_ZLIB%" /p:Configuration=Release /p:Platform=x64 /v:minimal
+msbuild akv_provider.vcxproj /p:PkgOpenssl="!PKG_OPENSSL!" /p:PkgCurl="!PKG_CURL!" /p:PkgJson="!PKG_JSON!" /p:PkgZ="!PKG_ZLIB!" /p:Configuration=Release /p:Platform=x64 /v:minimal
 
-if !ERRORLEVEL! EQU 0 (
+if errorlevel 1 (
+    echo.
+    echo ========================================================
+    echo Build failed with error code %ERRORLEVEL%
+    echo ========================================================
+    echo.
+) else (
     echo.
     echo ========================================================
     echo Build successful!
@@ -162,12 +159,6 @@ if !ERRORLEVEL! EQU 0 (
     echo.
     echo To deploy, copy the DLL to OpenSSL modules directory:
     echo   copy x64\Release\akv_provider.dll C:\OpenSSL\lib\ossl-modules\
-    echo.
-) else (
-    echo.
-    echo ========================================================
-    echo Build failed with error code !ERRORLEVEL!
-    echo ========================================================
     echo.
 )
 

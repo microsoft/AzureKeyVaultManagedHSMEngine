@@ -1,0 +1,14 @@
+{
+  "name": "akv-provider",
+  "version": "1.0.0",
+  "description": "Azure Key Vault Managed HSM OpenSSL Provider",
+  "dependencies": [
+    "openssl",
+    {
+      "name": "curl",
+      "features": ["ssl"]
+    },
+    "json-c",
+    "zlib"
+  ]
+}
