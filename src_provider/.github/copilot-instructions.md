@@ -3,7 +3,8 @@ You are a copilot assistant to help create the OpenSSL provider for Azure Manage
 
 
 ## Testing
-When testing, always use the following PowerShell to acquire access token:When testing, always use the following powershell to acquire access token
+
+The test script (runtest.bat) automatically acquires the access token. If you need to manually set it for other purposes, use:
 
 ```powershell
 $s=(az account get-access-token --output json --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47 --resource https://managedhsm.azure.net)
@@ -26,19 +27,37 @@ The script will automatically:
 
 ## Deploying
 
-To deploy the newly built OpenSSL Provider:
+To deploy the newly built OpenSSL Provider, first check your OpenSSL modules directory:
 
 ```cmd
-copy .\x64\Release\akv_provider.dll C:\OpenSSL\lib\ossl-modules\
+openssl version -a | findstr MODULESDIR
 ```
+
+This will show the modules directory path (e.g., `MODULESDIR: "C:\OpenSSL\lib\ossl-modules"`).
+
+Then copy the provider DLL to that directory:
+
+```cmd
+copy .\x64\Release\akv_provider.dll "C:\OpenSSL\lib\ossl-modules\"
+```
+
+Note: Replace the path with your actual MODULESDIR from the first command.
+
+The test script (runtest.bat) will automatically check if the provider is installed in the correct location.
 
 ## Running Tests
 
 Run the comprehensive test suite:
 
-```powershell
+```cmd
 cd src_provider
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\runtest.ps1
+runtest.bat
+```
+
+Or skip validation checks (faster for development):
+
+```cmd
+runtest.bat /SKIPVALIDATION
 ```
 
 The test suite covers:
