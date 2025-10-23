@@ -135,8 +135,8 @@ try {
 	$sha256.Dispose()
 
 	Write-Host '--- Exporting public keys via provider ---'
-	Invoke-OpenSslCommand @('pkey', '-provider', 'akv_provider', '-in', $rsaProviderPath, '-pubout', '-out', 'myrsakey_pub.pem')
-	Invoke-OpenSslCommand @('pkey', '-provider', 'akv_provider', '-in', $ecProviderPath, '-pubout', '-out', 'ecckey_pub.pem')
+	Invoke-OpenSslCommand @('pkey', '-provider', 'akv_provider', '-provider', 'default', '-in', $rsaProviderPath, '-pubout', '-out', 'myrsakey_pub.pem')
+	Invoke-OpenSslCommand @('pkey', '-provider', 'akv_provider', '-provider', 'default', '-in', $ecProviderPath, '-pubout', '-out', 'ecckey_pub.pem')
 
 	Write-Host '--- RSA PS256 signing roundtrip ---'
 	Invoke-OpenSslCommand @(
@@ -144,6 +144,7 @@ try {
 		'-sha256',
 		'-sign', $rsaProviderPath,
 		'-provider', 'akv_provider',
+		'-provider', 'default',
 		'-sigopt', 'rsa_padding_mode:pss',
 		'-sigopt', 'rsa_pss_saltlen:digest',
 		'-sigopt', 'rsa_mgf1_md:sha256',
@@ -161,6 +162,7 @@ try {
 		'-sha256',
 		'-sign', $rsaProviderPath,
 		'-provider', 'akv_provider',
+		'-provider', 'default',
 		'-sigopt', 'rsa_padding_mode:pkcs1',
 		'-out', 'rs256.sig',
 		'input.bin'
@@ -186,6 +188,7 @@ try {
 		'pkeyutl',
 		'-decrypt',
 		'-provider', 'akv_provider',
+		'-provider', 'default',
 		'-inkey', $rsaProviderPath,
 		'-in', 'rsa_cipher.bin',
 		'-out', 'rsa_roundtrip.bin'
@@ -197,7 +200,7 @@ try {
 	Write-Host 'RSA decrypt roundtrip matches input.bin.'
 
 	Write-Host '--- EC ES256 signing roundtrip ---'
-	Invoke-OpenSslCommand @('dgst', '-sha256', '-sign', $ecProviderPath, '-provider', 'akv_provider', '-out', 'es256.sig', 'input.bin')
+	Invoke-OpenSslCommand @('dgst', '-sha256', '-sign', $ecProviderPath, '-provider', 'akv_provider', '-provider', 'default', '-out', 'es256.sig', 'input.bin')
 	$ecSignatureDer = [IO.File]::ReadAllBytes('es256.sig')
 	$ecSignatureBytes = Convert-DerEcdsaSignatureToP1363 -DerSignature $ecSignatureDer -ComponentSizeBytes 32
 
@@ -221,6 +224,7 @@ try {
 		'req'
 		'-new'
 		'-provider', 'akv_provider'
+		'-provider', 'default'
 		'-key', $rsaProviderPath
 		'-sha256'
 		'-sigopt', 'rsa_padding_mode:pkcs1'
@@ -239,7 +243,7 @@ try {
 	Invoke-OpenSslCommand @('req', '-text', '-in', $csrPath, '-noout')
 	
 	Write-Host 'Verifying CSR signature with provider:'
-	Invoke-OpenSslCommand @('req', '-in', $csrPath, '-noout', '-verify', '-provider', 'akv_provider')
+	Invoke-OpenSslCommand @('req', '-in', $csrPath, '-noout', '-verify', '-provider', 'akv_provider', '-provider', 'default')
 	
 	Write-Host 'CSR verification successful.'
 
@@ -251,6 +255,7 @@ try {
 		'-new'
 		'-x509'
 		'-provider', 'akv_provider'
+		'-provider', 'default'
 		'-propquery', '?provider=akv_provider'
 		'-key', $rsaProviderPath
 		'-sha256'
@@ -274,7 +279,7 @@ try {
 		Invoke-OpenSslCommand @('x509', '-in', $certPath, '-text', '-noout')
 		
 		Write-Host 'Verifying certificate signature:'
-		Invoke-OpenSslCommand @('verify', '-provider', 'akv_provider', '-CAfile', $certPath, $certPath)
+		Invoke-OpenSslCommand @('verify', '-provider', 'akv_provider', '-provider', 'default', '-CAfile', $certPath, $certPath)
 		
 		Write-Host 'Self-signed certificate verification successful.'
 	} else {
@@ -288,6 +293,7 @@ try {
 		'req'
 		'-new'
 		'-provider', 'akv_provider'
+		'-provider', 'default'
 		'-key', $ecProviderPath
 		'-sha256'
 		'-out', $ecCsrPath
@@ -304,7 +310,7 @@ try {
 	Invoke-OpenSslCommand @('req', '-text', '-in', $ecCsrPath, '-noout')
 	
 	Write-Host 'Verifying EC CSR signature with provider:'
-	Invoke-OpenSslCommand @('req', '-in', $ecCsrPath, '-noout', '-verify', '-provider', 'akv_provider')
+	Invoke-OpenSslCommand @('req', '-in', $ecCsrPath, '-noout', '-verify', '-provider', 'akv_provider', '-provider', 'default')
 	
 	Write-Host 'EC CSR verification successful.'
 
@@ -316,6 +322,7 @@ try {
 		'-new'
 		'-x509'
 		'-provider', 'akv_provider'
+		'-provider', 'default'
 		'-propquery', '?provider=akv_provider'
 		'-key', $ecProviderPath
 		'-sha256'
@@ -338,7 +345,7 @@ try {
 		Invoke-OpenSslCommand @('x509', '-in', $ecCertPath, '-text', '-noout')
 		
 		Write-Host 'Verifying EC certificate signature:'
-		Invoke-OpenSslCommand @('verify', '-provider', 'akv_provider', '-CAfile', $ecCertPath, $ecCertPath)
+		Invoke-OpenSslCommand @('verify', '-provider', 'akv_provider', '-provider', 'default', '-CAfile', $ecCertPath, $ecCertPath)
 		
 		Write-Host 'EC self-signed certificate verification successful.'
 	} else {
@@ -360,6 +367,7 @@ try {
 		'-encrypt',
 		'-inkey', $aesProviderPath,
 		'-provider', 'akv_provider',
+		'-provider', 'default',
 		'-in', 'local.key',
 		'-out', 'local.key.wrap'
 	)
@@ -372,6 +380,7 @@ try {
 		'-decrypt',
 		'-inkey', $aesProviderPath,
 		'-provider', 'akv_provider',
+		'-provider', 'default',
 		'-in', 'local.key.wrap',
 		'-out', 'local.key.unwrapped'
 	)
