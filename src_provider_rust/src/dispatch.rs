@@ -10,11 +10,15 @@ pub const OSSL_OP_KEYMGMT: c_int = 10;
 pub const OSSL_OP_SIGNATURE: c_int = 12;
 pub const OSSL_OP_ASYM_CIPHER: c_int = 13;
 
-// OpenSSL function IDs for provider core
-pub const OSSL_FUNC_PROVIDER_GETTABLE_PARAMS: c_int = 1024;
-pub const OSSL_FUNC_PROVIDER_GET_PARAMS: c_int = 1025;
+// OpenSSL function IDs for provider core (from OpenSSL 3.x include/openssl/core_dispatch.h)
+pub const OSSL_FUNC_PROVIDER_TEARDOWN: c_int = 1024;
+pub const OSSL_FUNC_PROVIDER_GETTABLE_PARAMS: c_int = 1025;
+pub const OSSL_FUNC_PROVIDER_GET_PARAMS: c_int = 1026;
 pub const OSSL_FUNC_PROVIDER_QUERY_OPERATION: c_int = 1027;
-pub const OSSL_FUNC_PROVIDER_TEARDOWN: c_int = 1030;
+pub const OSSL_FUNC_PROVIDER_UNQUERY_OPERATION: c_int = 1028;
+pub const OSSL_FUNC_PROVIDER_GET_REASON_STRINGS: c_int = 1029;
+pub const OSSL_FUNC_PROVIDER_GET_CAPABILITIES: c_int = 1030;
+pub const OSSL_FUNC_PROVIDER_SELF_TEST: c_int = 1031;
 
 // OpenSSL function IDs for store loader
 pub const OSSL_FUNC_STORE_OPEN: c_int = 1;
@@ -41,37 +45,45 @@ pub const OSSL_FUNC_KEYMGMT_IMPORT_TYPES: c_int = 41;
 pub const OSSL_FUNC_KEYMGMT_EXPORT: c_int = 42;
 pub const OSSL_FUNC_KEYMGMT_EXPORT_TYPES: c_int = 43;
 
-// OpenSSL function IDs for signature
+// OpenSSL function IDs for signature (from OpenSSL 3.x include/openssl/core_dispatch.h)
 pub const OSSL_FUNC_SIGNATURE_NEWCTX: c_int = 1;
-pub const OSSL_FUNC_SIGNATURE_FREECTX: c_int = 3;
-pub const OSSL_FUNC_SIGNATURE_DUPCTX: c_int = 4;
-pub const OSSL_FUNC_SIGNATURE_SIGN_INIT: c_int = 10;
-pub const OSSL_FUNC_SIGNATURE_SIGN: c_int = 11;
-pub const OSSL_FUNC_SIGNATURE_VERIFY_INIT: c_int = 12;
-pub const OSSL_FUNC_SIGNATURE_VERIFY: c_int = 13;
-pub const OSSL_FUNC_SIGNATURE_DIGEST_SIGN_INIT: c_int = 20;
-pub const OSSL_FUNC_SIGNATURE_DIGEST_SIGN_UPDATE: c_int = 21;
-pub const OSSL_FUNC_SIGNATURE_DIGEST_SIGN_FINAL: c_int = 22;
-pub const OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_INIT: c_int = 24;
-pub const OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_UPDATE: c_int = 25;
-pub const OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_FINAL: c_int = 26;
-pub const OSSL_FUNC_SIGNATURE_GET_CTX_PARAMS: c_int = 50;
-pub const OSSL_FUNC_SIGNATURE_GETTABLE_CTX_PARAMS: c_int = 51;
-pub const OSSL_FUNC_SIGNATURE_SET_CTX_PARAMS: c_int = 52;
-pub const OSSL_FUNC_SIGNATURE_SETTABLE_CTX_PARAMS: c_int = 53;
+pub const OSSL_FUNC_SIGNATURE_SIGN_INIT: c_int = 2;
+pub const OSSL_FUNC_SIGNATURE_SIGN: c_int = 3;
+pub const OSSL_FUNC_SIGNATURE_VERIFY_INIT: c_int = 4;
+pub const OSSL_FUNC_SIGNATURE_VERIFY: c_int = 5;
+pub const OSSL_FUNC_SIGNATURE_VERIFY_RECOVER_INIT: c_int = 6;
+pub const OSSL_FUNC_SIGNATURE_VERIFY_RECOVER: c_int = 7;
+pub const OSSL_FUNC_SIGNATURE_DIGEST_SIGN_INIT: c_int = 8;
+pub const OSSL_FUNC_SIGNATURE_DIGEST_SIGN_UPDATE: c_int = 9;
+pub const OSSL_FUNC_SIGNATURE_DIGEST_SIGN_FINAL: c_int = 10;
+pub const OSSL_FUNC_SIGNATURE_DIGEST_SIGN: c_int = 11;
+pub const OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_INIT: c_int = 12;
+pub const OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_UPDATE: c_int = 13;
+pub const OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_FINAL: c_int = 14;
+pub const OSSL_FUNC_SIGNATURE_DIGEST_VERIFY: c_int = 15;
+pub const OSSL_FUNC_SIGNATURE_FREECTX: c_int = 16;
+pub const OSSL_FUNC_SIGNATURE_DUPCTX: c_int = 17;
+pub const OSSL_FUNC_SIGNATURE_GET_CTX_PARAMS: c_int = 18;
+pub const OSSL_FUNC_SIGNATURE_GETTABLE_CTX_PARAMS: c_int = 19;
+pub const OSSL_FUNC_SIGNATURE_SET_CTX_PARAMS: c_int = 20;
+pub const OSSL_FUNC_SIGNATURE_SETTABLE_CTX_PARAMS: c_int = 21;
+pub const OSSL_FUNC_SIGNATURE_GET_CTX_MD_PARAMS: c_int = 22;
+pub const OSSL_FUNC_SIGNATURE_GETTABLE_CTX_MD_PARAMS: c_int = 23;
+pub const OSSL_FUNC_SIGNATURE_SET_CTX_MD_PARAMS: c_int = 24;
+pub const OSSL_FUNC_SIGNATURE_SETTABLE_CTX_MD_PARAMS: c_int = 25;
 
-// OpenSSL function IDs for asymmetric cipher
+// OpenSSL function IDs for asymmetric cipher (from OpenSSL 3.x include/openssl/core_dispatch.h)
 pub const OSSL_FUNC_ASYM_CIPHER_NEWCTX: c_int = 1;
-pub const OSSL_FUNC_ASYM_CIPHER_FREECTX: c_int = 3;
-pub const OSSL_FUNC_ASYM_CIPHER_DUPCTX: c_int = 4;
-pub const OSSL_FUNC_ASYM_CIPHER_ENCRYPT_INIT: c_int = 10;
-pub const OSSL_FUNC_ASYM_CIPHER_ENCRYPT: c_int = 11;
-pub const OSSL_FUNC_ASYM_CIPHER_DECRYPT_INIT: c_int = 12;
-pub const OSSL_FUNC_ASYM_CIPHER_DECRYPT: c_int = 13;
-pub const OSSL_FUNC_ASYM_CIPHER_GET_CTX_PARAMS: c_int = 50;
-pub const OSSL_FUNC_ASYM_CIPHER_GETTABLE_CTX_PARAMS: c_int = 51;
-pub const OSSL_FUNC_ASYM_CIPHER_SET_CTX_PARAMS: c_int = 52;
-pub const OSSL_FUNC_ASYM_CIPHER_SETTABLE_CTX_PARAMS: c_int = 53;
+pub const OSSL_FUNC_ASYM_CIPHER_ENCRYPT_INIT: c_int = 2;
+pub const OSSL_FUNC_ASYM_CIPHER_ENCRYPT: c_int = 3;
+pub const OSSL_FUNC_ASYM_CIPHER_DECRYPT_INIT: c_int = 4;
+pub const OSSL_FUNC_ASYM_CIPHER_DECRYPT: c_int = 5;
+pub const OSSL_FUNC_ASYM_CIPHER_FREECTX: c_int = 6;
+pub const OSSL_FUNC_ASYM_CIPHER_DUPCTX: c_int = 7;
+pub const OSSL_FUNC_ASYM_CIPHER_GET_CTX_PARAMS: c_int = 8;
+pub const OSSL_FUNC_ASYM_CIPHER_GETTABLE_CTX_PARAMS: c_int = 9;
+pub const OSSL_FUNC_ASYM_CIPHER_SET_CTX_PARAMS: c_int = 10;
+pub const OSSL_FUNC_ASYM_CIPHER_SETTABLE_CTX_PARAMS: c_int = 11;
 
 /// OSSL_DISPATCH structure (matches OpenSSL's definition)
 /// C definition: struct { int function_id; void (*function)(void); }
@@ -266,40 +278,56 @@ pub static AKV_KEYMGMT_ALGS: [OsslAlgorithm; 3] = [
 ];
 
 /// RSA signature dispatch functions
-pub static AKV_RSA_SIGNATURE_FUNCTIONS: [OsslDispatch; 15] = [
+pub static AKV_RSA_SIGNATURE_FUNCTIONS: [OsslDispatch; 23] = [
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_NEWCTX, crate::signature::akv_rsa_signature_newctx as *mut c_void),
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_FREECTX, crate::signature::akv_signature_freectx as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DUPCTX, crate::signature::akv_signature_dupctx as *mut c_void),
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_SIGN_INIT, crate::signature::akv_signature_sign_init as *mut c_void),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SIGN, crate::signature::akv_signature_sign as *mut c_void),
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_VERIFY_INIT, crate::signature::akv_signature_verify_init as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SIGN, crate::signature::akv_signature_sign as *mut c_void),
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_VERIFY, crate::signature::akv_signature_verify as *mut c_void),
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_INIT, crate::signature::akv_signature_digest_sign_init as *mut c_void),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_UPDATE, crate::signature::akv_signature_digest_update as *mut c_void),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_FINAL, crate::signature::akv_signature_digest_sign_final as *mut c_void),
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_INIT, crate::signature::akv_signature_digest_verify_init as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_UPDATE, crate::signature::akv_signature_digest_update as *mut c_void),
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_UPDATE, crate::signature::akv_signature_digest_update as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_FINAL, crate::signature::akv_signature_digest_sign_final as *mut c_void),
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_FINAL, crate::signature::akv_signature_digest_verify_final as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN, crate::signature::akv_signature_digest_sign as *mut c_void),
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_GET_CTX_PARAMS, crate::signature::akv_signature_get_ctx_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_GETTABLE_CTX_PARAMS, crate::signature::akv_signature_gettable_ctx_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SET_CTX_PARAMS, crate::signature::akv_signature_set_ctx_params as *mut c_void),
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_SETTABLE_CTX_PARAMS, crate::signature::akv_signature_settable_ctx_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_GET_CTX_MD_PARAMS, crate::signature::akv_signature_get_ctx_md_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_GETTABLE_CTX_MD_PARAMS, crate::signature::akv_signature_gettable_ctx_md_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SET_CTX_MD_PARAMS, crate::signature::akv_signature_set_ctx_md_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SETTABLE_CTX_MD_PARAMS, crate::signature::akv_signature_settable_ctx_md_params as *mut c_void),
     OsslDispatch::end(),
 ];
 
 /// EC/ECDSA signature dispatch functions
-pub static AKV_ECDSA_SIGNATURE_FUNCTIONS: [OsslDispatch; 15] = [
+pub static AKV_ECDSA_SIGNATURE_FUNCTIONS: [OsslDispatch; 23] = [
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_NEWCTX, crate::signature::akv_ecdsa_signature_newctx as *mut c_void),
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_FREECTX, crate::signature::akv_signature_freectx as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DUPCTX, crate::signature::akv_signature_dupctx as *mut c_void),
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_SIGN_INIT, crate::signature::akv_signature_sign_init as *mut c_void),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SIGN, crate::signature::akv_signature_sign as *mut c_void),
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_VERIFY_INIT, crate::signature::akv_signature_verify_init as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SIGN, crate::signature::akv_signature_sign as *mut c_void),
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_VERIFY, crate::signature::akv_signature_verify as *mut c_void),
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_INIT, crate::signature::akv_signature_digest_sign_init as *mut c_void),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_UPDATE, crate::signature::akv_signature_digest_update as *mut c_void),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_FINAL, crate::signature::akv_signature_digest_sign_final as *mut c_void),
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_INIT, crate::signature::akv_signature_digest_verify_init as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_UPDATE, crate::signature::akv_signature_digest_update as *mut c_void),
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_UPDATE, crate::signature::akv_signature_digest_update as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_FINAL, crate::signature::akv_signature_digest_sign_final as *mut c_void),
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_FINAL, crate::signature::akv_signature_digest_verify_final as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN, crate::signature::akv_signature_digest_sign as *mut c_void),
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_GET_CTX_PARAMS, crate::signature::akv_signature_get_ctx_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_GETTABLE_CTX_PARAMS, crate::signature::akv_signature_gettable_ctx_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SET_CTX_PARAMS, crate::signature::akv_signature_set_ctx_params as *mut c_void),
     OsslDispatch::new(OSSL_FUNC_SIGNATURE_SETTABLE_CTX_PARAMS, crate::signature::akv_signature_settable_ctx_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_GET_CTX_MD_PARAMS, crate::signature::akv_signature_get_ctx_md_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_GETTABLE_CTX_MD_PARAMS, crate::signature::akv_signature_gettable_ctx_md_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SET_CTX_MD_PARAMS, crate::signature::akv_signature_set_ctx_md_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SETTABLE_CTX_MD_PARAMS, crate::signature::akv_signature_settable_ctx_md_params as *mut c_void),
     OsslDispatch::end(),
 ];
 
@@ -420,10 +448,22 @@ pub unsafe fn query_operation_impl(operation_id: c_int) -> *const OsslAlgorithm 
             }
             (AKV_KEYMGMT_ALGS.as_ptr(), "KEYMGMT")
         },
-        // Temporarily disable signature and cipher for minimal smoke test
-        // OSSL_OP_SIGNATURE => AKV_SIGNATURE_ALGS.as_ptr(),
+        OSSL_OP_SIGNATURE => {
+            log::debug!("Returning SIGNATURE algorithms:");
+            for (i, alg) in AKV_SIGNATURE_ALGS.iter().enumerate() {
+                if !alg.algorithm_names.is_null() {
+                    let names = std::ffi::CStr::from_ptr(alg.algorithm_names).to_str().unwrap_or("<invalid>");
+                    log::debug!("  [{}] algorithm_names='{}', impl={:p}", i, names, alg.implementation);
+                }
+            }
+            (AKV_SIGNATURE_ALGS.as_ptr(), "SIGNATURE")
+        },
+        // Temporarily disable cipher for now
         // OSSL_OP_ASYM_CIPHER => AKV_ASYM_CIPHER_ALGS.as_ptr(),
-        _ => (ptr::null(), "UNKNOWN"),
+        _ => {
+            log::warn!("query_operation_impl: UNKNOWN operation_id={} (0x{:x})", operation_id, operation_id);
+            (ptr::null(), "UNKNOWN")
+        },
     };
     
     log::debug!("query_operation_impl({}) -> {:p}", op_name, result);

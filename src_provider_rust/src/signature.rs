@@ -3,7 +3,7 @@
 
 use crate::auth::AccessToken;
 use crate::http_client::AkvHttpClient;
-use crate::ossl_param::OsslParam;
+use crate::ossl_param::{OsslParam, OSSL_PARAM_UTF8_STRING, OSSL_PARAM_OCTET_STRING};
 use crate::provider::{AkvKey, ProviderContext};
 use openssl::bn::BigNum;
 use openssl::ecdsa::EcdsaSig;
@@ -634,15 +634,52 @@ pub unsafe extern "C" fn akv_signature_gettable_ctx_params(
     _vctx: *mut c_void,
     _provctx: *mut c_void,
 ) -> *const OsslParam {
-    // Return empty list
-    static EMPTY: OsslParam = OsslParam {
-        key: ptr::null(),
-        data_type: 0,
-        data: ptr::null_mut(),
-        data_size: 0,
-        return_size: 0,
-    };
-    &EMPTY as *const OsslParam
+    // List of parameters that can be retrieved from signature context
+    static PARAMS: [OsslParam; 6] = [
+        OsslParam {
+            key: b"algorithm-id\0".as_ptr() as *const c_char,
+            data_type: OSSL_PARAM_OCTET_STRING,
+            data: ptr::null_mut(),
+            data_size: 0,
+            return_size: 0,
+        },
+        OsslParam {
+            key: b"digest\0".as_ptr() as *const c_char,
+            data_type: OSSL_PARAM_UTF8_STRING,
+            data: ptr::null_mut(),
+            data_size: 0,
+            return_size: 0,
+        },
+        OsslParam {
+            key: b"pad-mode\0".as_ptr() as *const c_char,
+            data_type: OSSL_PARAM_UTF8_STRING,
+            data: ptr::null_mut(),
+            data_size: 0,
+            return_size: 0,
+        },
+        OsslParam {
+            key: b"saltlen\0".as_ptr() as *const c_char,
+            data_type: OSSL_PARAM_UTF8_STRING,
+            data: ptr::null_mut(),
+            data_size: 0,
+            return_size: 0,
+        },
+        OsslParam {
+            key: b"mgf1-digest\0".as_ptr() as *const c_char,
+            data_type: OSSL_PARAM_UTF8_STRING,
+            data: ptr::null_mut(),
+            data_size: 0,
+            return_size: 0,
+        },
+        OsslParam {
+            key: ptr::null(),
+            data_type: 0,
+            data: ptr::null_mut(),
+            data_size: 0,
+            return_size: 0,
+        },
+    ];
+    PARAMS.as_ptr()
 }
 
 /// Set context parameters
@@ -701,7 +738,98 @@ pub unsafe extern "C" fn akv_signature_settable_ctx_params(
     _vctx: *mut c_void,
     _provctx: *mut c_void,
 ) -> *const OsslParam {
-    // Return empty list for now
+    // Same parameters can be set as can be retrieved
+    akv_signature_gettable_ctx_params(_vctx, _provctx)
+}
+
+/// Duplicate signature context (DUPCTX)
+#[no_mangle]
+pub unsafe extern "C" fn akv_signature_dupctx(vctx: *mut c_void) -> *mut c_void {
+    log::trace!("akv_signature_dupctx: vctx={:p}", vctx);
+    
+    if vctx.is_null() {
+        log::debug!("akv_signature_dupctx -> NULL (src null)");
+        return ptr::null_mut();
+    }
+    
+    let src_ctx = &*(vctx as *const SignatureContext);
+    
+    // Clone the key by creating a new Box with the same contents
+    // Note: This creates a shallow copy - both contexts share the same key data
+    let key_clone = if let Some(ref key) = src_ctx.key {
+        Some(Box::new(AkvKey {
+            provctx: key.provctx,
+            keyvault_name: key.keyvault_name.clone(),
+            key_name: key.key_name.clone(),
+            key_version: key.key_version.clone(),
+            public_key: key.public_key.as_ref().map(|pk| pk.clone()),
+        }))
+    } else {
+        None
+    };
+    
+    let dup_ctx = Box::new(SignatureContext {
+        provctx: src_ctx.provctx,
+        keytype: src_ctx.keytype,
+        key: key_clone,
+        mdctx: None, // MD context is not duplicated
+        md_name: src_ctx.md_name.clone(),
+        mgf1_md_name: src_ctx.mgf1_md_name.clone(),
+        padding: src_ctx.padding,
+        pss_saltlen: src_ctx.pss_saltlen,
+        operation: src_ctx.operation,
+    });
+    
+    let dup_ptr = Box::into_raw(dup_ctx) as *mut c_void;
+    log::debug!("akv_signature_dupctx -> {:p} from {:p}", dup_ptr, vctx);
+    dup_ptr
+}
+
+/// Single-call digest and sign (DIGEST_SIGN)
+#[no_mangle]
+pub unsafe extern "C" fn akv_signature_digest_sign(
+    vctx: *mut c_void,
+    sig: *mut u8,
+    siglen: *mut usize,
+    sigsize: usize,
+    tbs: *const u8,
+    tbslen: usize,
+) -> c_int {
+    log::trace!(
+        "akv_signature_digest_sign: vctx={:p} sig={:p} siglen={:p} sigsize={} tbslen={}",
+        vctx, sig, siglen, sigsize, tbslen
+    );
+    
+    // This is a convenience function that combines digest_init, update, and final
+    // For now, we'll use the existing digest_sign_final after hashing
+    if vctx.is_null() {
+        return 0;
+    }
+    
+    // Initialize digest if not already done
+    if akv_signature_digest_sign_init(vctx, ptr::null(), ptr::null_mut(), ptr::null()) == 0 {
+        log::error!("akv_signature_digest_sign: init failed");
+        return 0;
+    }
+    
+    // Update with data
+    if akv_signature_digest_update(vctx, tbs, tbslen) == 0 {
+        log::error!("akv_signature_digest_sign: update failed");
+        return 0;
+    }
+    
+    // Finalize
+    akv_signature_digest_sign_final(vctx, sig, siglen, sigsize)
+}
+
+/// Get list of gettable MD context parameters (GETTABLE_CTX_MD_PARAMS)
+#[no_mangle]
+pub unsafe extern "C" fn akv_signature_gettable_ctx_md_params(
+    _vctx: *mut c_void,
+    _provctx: *mut c_void,
+) -> *const OsslParam {
+    log::trace!("akv_signature_gettable_ctx_md_params");
+    // Return empty list - MD params are handled internally
     static EMPTY: OsslParam = OsslParam {
         key: ptr::null(),
         data_type: 0,
@@ -710,4 +838,44 @@ pub unsafe extern "C" fn akv_signature_settable_ctx_params(
         return_size: 0,
     };
     &EMPTY as *const OsslParam
+}
+
+/// Get list of settable MD context parameters (SETTABLE_CTX_MD_PARAMS)
+#[no_mangle]
+pub unsafe extern "C" fn akv_signature_settable_ctx_md_params(
+    _vctx: *mut c_void,
+    _provctx: *mut c_void,
+) -> *const OsslParam {
+    log::trace!("akv_signature_settable_ctx_md_params");
+    // Return empty list - MD params are handled internally
+    static EMPTY: OsslParam = OsslParam {
+        key: ptr::null(),
+        data_type: 0,
+        data: ptr::null_mut(),
+        data_size: 0,
+        return_size: 0,
+    };
+    &EMPTY as *const OsslParam
+}
+
+/// Get MD context parameters (GET_CTX_MD_PARAMS)
+#[no_mangle]
+pub unsafe extern "C" fn akv_signature_get_ctx_md_params(
+    _vctx: *mut c_void,
+    _params: *mut OsslParam,
+) -> c_int {
+    log::trace!("akv_signature_get_ctx_md_params");
+    // Nothing to get currently
+    1
+}
+
+/// Set MD context parameters (SET_CTX_MD_PARAMS)
+#[no_mangle]
+pub unsafe extern "C" fn akv_signature_set_ctx_md_params(
+    _vctx: *mut c_void,
+    _params: *const OsslParam,
+) -> c_int {
+    log::trace!("akv_signature_set_ctx_md_params");
+    // Nothing to set currently
+    1
 }

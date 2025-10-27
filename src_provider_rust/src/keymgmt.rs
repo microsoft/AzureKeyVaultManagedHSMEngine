@@ -553,9 +553,12 @@ pub unsafe extern "C" fn akv_keymgmt_export(
         return 0;
     }
 
+    // We can only export public key material
+    // If private key is requested (even along with public), refuse the export
+    // This forces OpenSSL to use our provider's operations instead of trying to
+    // create a standalone EVP_PKEY and use default provider operations
     if (selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0 {
-        // Prevent other providers from attempting to consume private key material we cannot supply
-        log::debug!("akv_keymgmt_export -> 0 (private material not exportable: sel=0x{:x})", selection);
+        log::debug!("akv_keymgmt_export -> 0 (private material requested but not exportable: sel=0x{:x})", selection);
         return 0;
     }
 
