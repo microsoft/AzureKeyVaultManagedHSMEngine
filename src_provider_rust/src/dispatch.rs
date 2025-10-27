@@ -1,7 +1,7 @@
 // OpenSSL dispatch tables and algorithm definitions
 // Corresponds to OSSL_DISPATCH and OSSL_ALGORITHM structures in akv_provider.c
 
-use std::os::raw::{c_char, c_int};
+use std::os::raw::{c_char, c_int, c_void};
 use std::ptr;
 
 // OpenSSL operation IDs (from openssl/core_dispatch.h)
@@ -74,21 +74,26 @@ pub const OSSL_FUNC_ASYM_CIPHER_SET_CTX_PARAMS: c_int = 52;
 pub const OSSL_FUNC_ASYM_CIPHER_SETTABLE_CTX_PARAMS: c_int = 53;
 
 /// OSSL_DISPATCH structure (matches OpenSSL's definition)
+/// C definition: struct { int function_id; void (*function)(void); }
 #[repr(C)]
 pub struct OsslDispatch {
     pub function_id: c_int,
-    pub function: Option<unsafe extern "C" fn()>,
+    pub function: *mut c_void,
 }
 
 impl OsslDispatch {
-    pub const fn new(function_id: c_int, function: Option<unsafe extern "C" fn()>) -> Self {
+    pub const fn new(function_id: c_int, function: *mut c_void) -> Self {
         Self { function_id, function }
     }
     
     pub const fn end() -> Self {
-        Self { function_id: 0, function: None }
+        Self { function_id: 0, function: ptr::null_mut() }
     }
 }
+
+// Mark raw pointers in OsslDispatch as safe to share between threads
+// This is safe because the function pointers point to static functions defined in the provider
+unsafe impl Sync for OsslDispatch {}
 
 /// OSSL_ALGORITHM structure (matches OpenSSL's definition)
 #[repr(C)]
@@ -125,31 +130,31 @@ macro_rules! c_str {
 pub static AKV_STORE_FUNCTIONS: [OsslDispatch; 8] = [
     OsslDispatch::new(
         OSSL_FUNC_STORE_OPEN,
-        Some(unsafe { std::mem::transmute(crate::akv_store_open as *const ()) }),
+        crate::akv_store_open as *mut c_void,
     ),
     OsslDispatch::new(
         OSSL_FUNC_STORE_ATTACH,
-        Some(unsafe { std::mem::transmute(crate::akv_store_attach as *const ()) }),
+        crate::akv_store_attach as *mut c_void,
     ),
     OsslDispatch::new(
         OSSL_FUNC_STORE_SETTABLE_CTX_PARAMS,
-        Some(unsafe { std::mem::transmute(crate::akv_store_settable_ctx_params as *const ()) }),
+        crate::akv_store_settable_ctx_params as *mut c_void,
     ),
     OsslDispatch::new(
         OSSL_FUNC_STORE_SET_CTX_PARAMS,
-        Some(unsafe { std::mem::transmute(crate::akv_store_set_ctx_params as *const ()) }),
+        crate::akv_store_set_ctx_params as *mut c_void,
     ),
     OsslDispatch::new(
         OSSL_FUNC_STORE_LOAD,
-        Some(unsafe { std::mem::transmute(crate::akv_store_load as *const ()) }),
+        crate::akv_store_load as *mut c_void,
     ),
     OsslDispatch::new(
         OSSL_FUNC_STORE_EOF,
-        Some(unsafe { std::mem::transmute(crate::akv_store_eof as *const ()) }),
+        crate::akv_store_eof as *mut c_void,
     ),
     OsslDispatch::new(
         OSSL_FUNC_STORE_CLOSE,
-        Some(unsafe { std::mem::transmute(crate::akv_store_close as *const ()) }),
+        crate::akv_store_close as *mut c_void,
     ),
     OsslDispatch::end(),
 ];
@@ -169,51 +174,51 @@ pub static AKV_STORE_ALGS: [OsslAlgorithm; 2] = [
 
 /// RSA key management functions
 pub static AKV_RSA_KEYMGMT_FUNCTIONS: [OsslDispatch; 15] = [
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_NEW, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_keymgmt_new as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_FREE, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_keymgmt_free as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_LOAD, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_keymgmt_load as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_HAS, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_keymgmt_has as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_MATCH, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_keymgmt_match as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_GET_PARAMS, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_keymgmt_get_params as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_GETTABLE_PARAMS, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_rsa_keymgmt_gettable_params as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_SET_PARAMS, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_keymgmt_set_params as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_SETTABLE_PARAMS, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_rsa_keymgmt_settable_params as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_IMPORT, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_rsa_keymgmt_import as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_IMPORT_TYPES, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_rsa_keymgmt_eximport_types as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_EXPORT, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_keymgmt_export as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_EXPORT_TYPES, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_rsa_keymgmt_eximport_types as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_QUERY_OPERATION_NAME, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_rsa_keymgmt_query as *const ()) })),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_NEW, crate::keymgmt::akv_keymgmt_new as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_FREE, crate::keymgmt::akv_keymgmt_free as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_LOAD, crate::keymgmt::akv_keymgmt_load as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_HAS, crate::keymgmt::akv_keymgmt_has as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_MATCH, crate::keymgmt::akv_keymgmt_match as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_GET_PARAMS, crate::keymgmt::akv_keymgmt_get_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_GETTABLE_PARAMS, crate::keymgmt::akv_rsa_keymgmt_gettable_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_SET_PARAMS, crate::keymgmt::akv_keymgmt_set_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_SETTABLE_PARAMS, crate::keymgmt::akv_rsa_keymgmt_settable_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_IMPORT, crate::keymgmt::akv_rsa_keymgmt_import as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_IMPORT_TYPES, crate::keymgmt::akv_rsa_keymgmt_eximport_types as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_EXPORT, crate::keymgmt::akv_keymgmt_export as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_EXPORT_TYPES, crate::keymgmt::akv_rsa_keymgmt_eximport_types as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_QUERY_OPERATION_NAME, crate::keymgmt::akv_rsa_keymgmt_query as *mut c_void),
     OsslDispatch::end(),
 ];
 
 /// EC key management functions
 pub static AKV_EC_KEYMGMT_FUNCTIONS: [OsslDispatch; 15] = [
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_NEW, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_keymgmt_new as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_FREE, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_keymgmt_free as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_LOAD, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_keymgmt_load as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_HAS, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_keymgmt_has as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_MATCH, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_keymgmt_match as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_GET_PARAMS, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_keymgmt_get_params as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_GETTABLE_PARAMS, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_ec_keymgmt_gettable_params as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_SET_PARAMS, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_keymgmt_set_params as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_SETTABLE_PARAMS, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_ec_keymgmt_settable_params as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_IMPORT, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_ec_keymgmt_import as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_IMPORT_TYPES, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_ec_keymgmt_eximport_types as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_EXPORT, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_keymgmt_export as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_EXPORT_TYPES, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_ec_keymgmt_eximport_types as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_QUERY_OPERATION_NAME, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_ec_keymgmt_query as *const ()) })),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_NEW, crate::keymgmt::akv_keymgmt_new as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_FREE, crate::keymgmt::akv_keymgmt_free as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_LOAD, crate::keymgmt::akv_keymgmt_load as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_HAS, crate::keymgmt::akv_keymgmt_has as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_MATCH, crate::keymgmt::akv_keymgmt_match as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_GET_PARAMS, crate::keymgmt::akv_keymgmt_get_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_GETTABLE_PARAMS, crate::keymgmt::akv_ec_keymgmt_gettable_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_SET_PARAMS, crate::keymgmt::akv_keymgmt_set_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_SETTABLE_PARAMS, crate::keymgmt::akv_ec_keymgmt_settable_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_IMPORT, crate::keymgmt::akv_ec_keymgmt_import as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_IMPORT_TYPES, crate::keymgmt::akv_ec_keymgmt_eximport_types as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_EXPORT, crate::keymgmt::akv_keymgmt_export as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_EXPORT_TYPES, crate::keymgmt::akv_ec_keymgmt_eximport_types as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_QUERY_OPERATION_NAME, crate::keymgmt::akv_ec_keymgmt_query as *mut c_void),
     OsslDispatch::end(),
 ];
 
 /// AES key management functions
 pub static AKV_AES_KEYMGMT_FUNCTIONS: [OsslDispatch; 8] = [
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_NEW, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_aes_keymgmt_new as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_FREE, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_aes_keymgmt_free as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_LOAD, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_aes_keymgmt_load as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_HAS, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_aes_keymgmt_has as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_GETTABLE_PARAMS, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_aes_keymgmt_gettable_params as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_SETTABLE_PARAMS, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_aes_keymgmt_settable_params as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_KEYMGMT_QUERY_OPERATION_NAME, Some(unsafe { std::mem::transmute(crate::keymgmt::akv_aes_keymgmt_query as *const ()) })),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_NEW, crate::keymgmt::akv_aes_keymgmt_new as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_FREE, crate::keymgmt::akv_aes_keymgmt_free as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_LOAD, crate::keymgmt::akv_aes_keymgmt_load as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_HAS, crate::keymgmt::akv_aes_keymgmt_has as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_GETTABLE_PARAMS, crate::keymgmt::akv_aes_keymgmt_gettable_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_SETTABLE_PARAMS, crate::keymgmt::akv_aes_keymgmt_settable_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_KEYMGMT_QUERY_OPERATION_NAME, crate::keymgmt::akv_aes_keymgmt_query as *mut c_void),
     OsslDispatch::end(),
 ];
 
@@ -257,39 +262,39 @@ pub static AKV_KEYMGMT_ALGS: [OsslAlgorithm; 2] = [
 
 /// RSA signature dispatch functions
 pub static AKV_RSA_SIGNATURE_FUNCTIONS: [OsslDispatch; 15] = [
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_NEWCTX, Some(unsafe { std::mem::transmute(crate::signature::akv_rsa_signature_newctx as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_FREECTX, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_freectx as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SIGN_INIT, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_sign_init as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SIGN, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_sign as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_VERIFY_INIT, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_verify_init as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_VERIFY, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_verify as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_INIT, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_digest_sign_init as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_UPDATE, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_digest_update as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_FINAL, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_digest_sign_final as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_INIT, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_digest_verify_init as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_UPDATE, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_digest_update as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_FINAL, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_digest_verify_final as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_GET_CTX_PARAMS, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_get_ctx_params as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SETTABLE_CTX_PARAMS, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_settable_ctx_params as *const ()) })),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_NEWCTX, crate::signature::akv_rsa_signature_newctx as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_FREECTX, crate::signature::akv_signature_freectx as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SIGN_INIT, crate::signature::akv_signature_sign_init as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SIGN, crate::signature::akv_signature_sign as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_VERIFY_INIT, crate::signature::akv_signature_verify_init as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_VERIFY, crate::signature::akv_signature_verify as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_INIT, crate::signature::akv_signature_digest_sign_init as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_UPDATE, crate::signature::akv_signature_digest_update as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_FINAL, crate::signature::akv_signature_digest_sign_final as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_INIT, crate::signature::akv_signature_digest_verify_init as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_UPDATE, crate::signature::akv_signature_digest_update as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_FINAL, crate::signature::akv_signature_digest_verify_final as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_GET_CTX_PARAMS, crate::signature::akv_signature_get_ctx_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SETTABLE_CTX_PARAMS, crate::signature::akv_signature_settable_ctx_params as *mut c_void),
     OsslDispatch::end(),
 ];
 
 /// EC/ECDSA signature dispatch functions
 pub static AKV_ECDSA_SIGNATURE_FUNCTIONS: [OsslDispatch; 15] = [
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_NEWCTX, Some(unsafe { std::mem::transmute(crate::signature::akv_ecdsa_signature_newctx as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_FREECTX, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_freectx as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SIGN_INIT, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_sign_init as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SIGN, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_sign as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_VERIFY_INIT, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_verify_init as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_VERIFY, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_verify as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_INIT, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_digest_sign_init as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_UPDATE, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_digest_update as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_FINAL, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_digest_sign_final as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_INIT, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_digest_verify_init as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_UPDATE, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_digest_update as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_FINAL, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_digest_verify_final as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_GET_CTX_PARAMS, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_get_ctx_params as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SETTABLE_CTX_PARAMS, Some(unsafe { std::mem::transmute(crate::signature::akv_signature_settable_ctx_params as *const ()) })),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_NEWCTX, crate::signature::akv_ecdsa_signature_newctx as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_FREECTX, crate::signature::akv_signature_freectx as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SIGN_INIT, crate::signature::akv_signature_sign_init as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SIGN, crate::signature::akv_signature_sign as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_VERIFY_INIT, crate::signature::akv_signature_verify_init as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_VERIFY, crate::signature::akv_signature_verify as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_INIT, crate::signature::akv_signature_digest_sign_init as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_UPDATE, crate::signature::akv_signature_digest_update as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_SIGN_FINAL, crate::signature::akv_signature_digest_sign_final as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_INIT, crate::signature::akv_signature_digest_verify_init as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_UPDATE, crate::signature::akv_signature_digest_update as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_DIGEST_VERIFY_FINAL, crate::signature::akv_signature_digest_verify_final as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_GET_CTX_PARAMS, crate::signature::akv_signature_get_ctx_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_SIGNATURE_SETTABLE_CTX_PARAMS, crate::signature::akv_signature_settable_ctx_params as *mut c_void),
     OsslDispatch::end(),
 ];
 
@@ -312,31 +317,31 @@ pub static AKV_SIGNATURE_ALGS: [OsslAlgorithm; 3] = [
 
 /// RSA asymmetric cipher dispatch functions
 pub static AKV_RSA_ASYM_CIPHER_FUNCTIONS: [OsslDispatch; 11] = [
-    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_NEWCTX, Some(unsafe { std::mem::transmute(crate::cipher::akv_rsa_cipher_newctx as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_FREECTX, Some(unsafe { std::mem::transmute(crate::cipher::akv_rsa_cipher_freectx as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_ENCRYPT_INIT, Some(unsafe { std::mem::transmute(crate::cipher::akv_rsa_cipher_encrypt_init as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_ENCRYPT, Some(unsafe { std::mem::transmute(crate::cipher::akv_rsa_cipher_encrypt as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_DECRYPT_INIT, Some(unsafe { std::mem::transmute(crate::cipher::akv_rsa_cipher_decrypt_init as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_DECRYPT, Some(unsafe { std::mem::transmute(crate::cipher::akv_rsa_cipher_decrypt as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_GET_CTX_PARAMS, Some(unsafe { std::mem::transmute(crate::cipher::akv_rsa_cipher_get_ctx_params as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_GETTABLE_CTX_PARAMS, Some(unsafe { std::mem::transmute(crate::cipher::akv_rsa_cipher_gettable_ctx_params as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_SET_CTX_PARAMS, Some(unsafe { std::mem::transmute(crate::cipher::akv_rsa_cipher_set_ctx_params as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_SETTABLE_CTX_PARAMS, Some(unsafe { std::mem::transmute(crate::cipher::akv_rsa_cipher_settable_ctx_params as *const ()) })),
+    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_NEWCTX, crate::cipher::akv_rsa_cipher_newctx as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_FREECTX, crate::cipher::akv_rsa_cipher_freectx as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_ENCRYPT_INIT, crate::cipher::akv_rsa_cipher_encrypt_init as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_ENCRYPT, crate::cipher::akv_rsa_cipher_encrypt as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_DECRYPT_INIT, crate::cipher::akv_rsa_cipher_decrypt_init as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_DECRYPT, crate::cipher::akv_rsa_cipher_decrypt as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_GET_CTX_PARAMS, crate::cipher::akv_rsa_cipher_get_ctx_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_GETTABLE_CTX_PARAMS, crate::cipher::akv_rsa_cipher_gettable_ctx_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_SET_CTX_PARAMS, crate::cipher::akv_rsa_cipher_set_ctx_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_SETTABLE_CTX_PARAMS, crate::cipher::akv_rsa_cipher_settable_ctx_params as *mut c_void),
     OsslDispatch::end(),
 ];
 
 /// AES asymmetric cipher dispatch functions (key wrap/unwrap)
 pub static AKV_AES_ASYM_CIPHER_FUNCTIONS: [OsslDispatch; 11] = [
-    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_NEWCTX, Some(unsafe { std::mem::transmute(crate::cipher::akv_aes_cipher_newctx as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_FREECTX, Some(unsafe { std::mem::transmute(crate::cipher::akv_aes_cipher_freectx as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_ENCRYPT_INIT, Some(unsafe { std::mem::transmute(crate::cipher::akv_aes_cipher_encrypt_init as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_ENCRYPT, Some(unsafe { std::mem::transmute(crate::cipher::akv_aes_cipher_encrypt as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_DECRYPT_INIT, Some(unsafe { std::mem::transmute(crate::cipher::akv_aes_cipher_decrypt_init as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_DECRYPT, Some(unsafe { std::mem::transmute(crate::cipher::akv_aes_cipher_decrypt as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_GET_CTX_PARAMS, Some(unsafe { std::mem::transmute(crate::cipher::akv_aes_cipher_get_ctx_params as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_GETTABLE_CTX_PARAMS, Some(unsafe { std::mem::transmute(crate::cipher::akv_aes_cipher_gettable_ctx_params as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_SET_CTX_PARAMS, Some(unsafe { std::mem::transmute(crate::cipher::akv_aes_cipher_set_ctx_params as *const ()) })),
-    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_SETTABLE_CTX_PARAMS, Some(unsafe { std::mem::transmute(crate::cipher::akv_aes_cipher_settable_ctx_params as *const ()) })),
+    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_NEWCTX, crate::cipher::akv_aes_cipher_newctx as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_FREECTX, crate::cipher::akv_aes_cipher_freectx as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_ENCRYPT_INIT, crate::cipher::akv_aes_cipher_encrypt_init as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_ENCRYPT, crate::cipher::akv_aes_cipher_encrypt as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_DECRYPT_INIT, crate::cipher::akv_aes_cipher_decrypt_init as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_DECRYPT, crate::cipher::akv_aes_cipher_decrypt as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_GET_CTX_PARAMS, crate::cipher::akv_aes_cipher_get_ctx_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_GETTABLE_CTX_PARAMS, crate::cipher::akv_aes_cipher_gettable_ctx_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_SET_CTX_PARAMS, crate::cipher::akv_aes_cipher_set_ctx_params as *mut c_void),
+    OsslDispatch::new(OSSL_FUNC_ASYM_CIPHER_SETTABLE_CTX_PARAMS, crate::cipher::akv_aes_cipher_settable_ctx_params as *mut c_void),
     OsslDispatch::end(),
 ];
 
@@ -379,19 +384,19 @@ pub static AKV_ASYM_CIPHER_ALGS: [OsslAlgorithm; 5] = [
 pub static AKV_DISPATCH_TABLE: [OsslDispatch; 5] = [
     OsslDispatch::new(
         OSSL_FUNC_PROVIDER_GETTABLE_PARAMS,
-        Some(unsafe { std::mem::transmute(crate::akv_gettable_params as *const ()) }),
+        crate::akv_gettable_params as *mut c_void,
     ),
     OsslDispatch::new(
         OSSL_FUNC_PROVIDER_GET_PARAMS,
-        Some(unsafe { std::mem::transmute(crate::akv_get_params as *const ()) }),
+        crate::akv_get_params as *mut c_void,
     ),
     OsslDispatch::new(
         OSSL_FUNC_PROVIDER_QUERY_OPERATION,
-        Some(unsafe { std::mem::transmute(crate::akv_query_operation as *const ()) }),
+        crate::akv_query_operation as *mut c_void,
     ),
     OsslDispatch::new(
         OSSL_FUNC_PROVIDER_TEARDOWN,
-        Some(unsafe { std::mem::transmute(crate::akv_teardown as *const ()) }),
+        crate::akv_teardown as *mut c_void,
     ),
     OsslDispatch::end(),
 ];
@@ -412,3 +417,4 @@ pub unsafe fn query_operation_impl(operation_id: c_int) -> *const OsslAlgorithm 
     log::debug!("query_operation_impl -> {:p}", result);
     result
 }
+
