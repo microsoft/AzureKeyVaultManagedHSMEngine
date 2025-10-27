@@ -1,7 +1,7 @@
 // OpenSSL dispatch tables and algorithm definitions
 // Corresponds to OSSL_DISPATCH and OSSL_ALGORITHM structures in akv_provider.c
 
-use std::os::raw::{c_char, c_int, c_void};
+use std::os::raw::{c_char, c_int};
 use std::ptr;
 
 // OpenSSL operation IDs (from openssl/core_dispatch.h)
@@ -218,13 +218,15 @@ pub static AKV_AES_KEYMGMT_FUNCTIONS: [OsslDispatch; 8] = [
 ];
 
 /// Key management algorithm table
-pub static AKV_KEYMGMT_ALGS: [OsslAlgorithm; 6] = [
+/// Key management algorithm table - MINIMAL: RSA only for smoke test
+pub static AKV_KEYMGMT_ALGS: [OsslAlgorithm; 2] = [
     OsslAlgorithm {
         algorithm_names: c_str!("RSA:rsaEncryption"),
         property_definition: c_str!("provider=akv_provider"),
         implementation: AKV_RSA_KEYMGMT_FUNCTIONS.as_ptr(),
         algorithm_description: c_str!("Azure Key Vault RSA key management"),
     },
+    /* Temporarily disabled for minimal smoke test
     OsslAlgorithm {
         algorithm_names: c_str!("EC:id-ecPublicKey"),
         property_definition: c_str!("provider=akv_provider"),
@@ -249,6 +251,7 @@ pub static AKV_KEYMGMT_ALGS: [OsslAlgorithm; 6] = [
         implementation: AKV_AES_KEYMGMT_FUNCTIONS.as_ptr(),
         algorithm_description: c_str!("Azure Key Vault AES-256 key management"),
     },
+    */
     OsslAlgorithm::end(),
 ];
 
@@ -400,8 +403,9 @@ pub unsafe fn query_operation_impl(operation_id: c_int) -> *const OsslAlgorithm 
     let result = match operation_id {
         OSSL_OP_STORE => AKV_STORE_ALGS.as_ptr(),
         OSSL_OP_KEYMGMT => AKV_KEYMGMT_ALGS.as_ptr(),
-        OSSL_OP_SIGNATURE => AKV_SIGNATURE_ALGS.as_ptr(),
-        OSSL_OP_ASYM_CIPHER => AKV_ASYM_CIPHER_ALGS.as_ptr(),
+        // Temporarily disable signature and cipher for minimal smoke test
+        // OSSL_OP_SIGNATURE => AKV_SIGNATURE_ALGS.as_ptr(),
+        // OSSL_OP_ASYM_CIPHER => AKV_ASYM_CIPHER_ALGS.as_ptr(),
         _ => ptr::null(),
     };
     

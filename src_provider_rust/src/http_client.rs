@@ -34,7 +34,6 @@ struct AkvKeyMaterial {
     x: Option<String>,        // EC x coordinate (base64url)
     y: Option<String>,        // EC y coordinate (base64url)
     crv: Option<String>,      // EC curve name
-    key_ops: Option<Vec<String>>, // Key operations
 }
 
 /// Sign request payload
@@ -130,7 +129,7 @@ pub struct EcPublicKey {
 pub enum PublicKeyMaterial {
     Rsa(RsaPublicKey),
     Ec(EcPublicKey),
-    Symmetric { bits: usize },
+    Symmetric { _bits: usize },
 }
 
 /// HTTP client for Azure Key Vault operations
@@ -273,7 +272,7 @@ impl AkvHttpClient {
             "oct" | "oct-HSM" => {
                 // Symmetric key - we don't get the actual key material
                 log::debug!("Symmetric key detected");
-                Ok(PublicKeyMaterial::Symmetric { bits: 256 })
+                Ok(PublicKeyMaterial::Symmetric { _bits: 256 })
             }
             _ => Err(format!("Unsupported key type: {}", key.kty))
         }

@@ -255,7 +255,7 @@ pub unsafe extern "C" fn akv_store_load(
         let data_type_ptr = data_type.as_ptr() as *mut c_char;
         
         // Build OSSL_PARAM array
-        let mut params: [OsslParam; 4] = [
+        let params: [OsslParam; 4] = [
             OsslParam::construct_int(
                 OSSL_OBJECT_PARAM_TYPE.as_ptr() as *const c_char,
                 &mut object_type as *mut c_int
@@ -336,7 +336,7 @@ pub unsafe extern "C" fn akv_store_load(
             );
             
             // Build OSSL_PARAM array
-            let mut params: [OsslParam; 4] = [
+            let params: [OsslParam; 4] = [
                 OsslParam::construct_int(
                     OSSL_OBJECT_PARAM_TYPE.as_ptr() as *const c_char,
                     &mut object_type as *mut c_int
@@ -407,7 +407,7 @@ pub unsafe extern "C" fn akv_store_load(
             let data_type_ptr = data_type.as_ptr() as *mut c_char;
             
             // Build OSSL_PARAM array
-            let mut params: [OsslParam; 4] = [
+            let params: [OsslParam; 4] = [
                 OsslParam::construct_int(
                     OSSL_OBJECT_PARAM_TYPE.as_ptr() as *const c_char,
                     &mut object_type as *mut c_int

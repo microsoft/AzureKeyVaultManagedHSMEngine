@@ -15,18 +15,6 @@ pub fn decode_url_safe(data: &str) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("Base64 decode error: {}", e))
 }
 
-/// Encode bytes to standard base64
-pub fn encode_standard(data: &[u8]) -> String {
-    general_purpose::STANDARD.encode(data)
-}
-
-/// Decode standard base64
-pub fn decode_standard(data: &str) -> Result<Vec<u8>, String> {
-    general_purpose::STANDARD
-        .decode(data)
-        .map_err(|e| format!("Base64 decode error: {}", e))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

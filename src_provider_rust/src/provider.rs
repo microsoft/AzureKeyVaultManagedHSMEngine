@@ -1,8 +1,7 @@
 // Provider core functionality
 // Corresponds to akv_provider.c
 
-use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_int, c_void};
+use std::os::raw::c_void;
 use openssl::pkey::{PKey, Public};
 
 /// Provider context structure (corresponds to AKV_PROVIDER_CTX)
@@ -102,19 +101,7 @@ pub struct ParsedUri {
     pub key_version: Option<String>,
 }
 
-/// Case-insensitive comparison for the first n characters
-fn case_cmp_n(lhs: &str, rhs: &str, count: usize) -> i32 {
-    let lhs_lower = lhs[..count.min(lhs.len())].to_lowercase();
-    let rhs_lower = rhs[..count.min(rhs.len())].to_lowercase();
-    
-    match lhs_lower.cmp(&rhs_lower) {
-        std::cmp::Ordering::Less => -1,
-        std::cmp::Ordering::Equal => 0,
-        std::cmp::Ordering::Greater => 1,
-    }
-}
-
-/// Check if input has a case-insensitive prefix
+/// Parse a Key Vault URI
 fn has_case_prefix(input: &str, prefix: &str) -> bool {
     log::trace!("has_case_prefix input={} prefix={}", input, prefix);
     let result = input.len() >= prefix.len() 

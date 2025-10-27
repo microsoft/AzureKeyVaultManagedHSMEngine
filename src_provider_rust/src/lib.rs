@@ -6,13 +6,6 @@
 //! This provider enables OpenSSL to use Azure Managed HSM for cryptographic operations
 //! including signing, encryption, and key management.
 
-/// Helper macro to create static C strings
-macro_rules! static_cstr {
-    ($s:expr) => {
-        concat!($s, "\0").as_ptr() as *const c_char
-    };
-}
-
 mod provider;
 mod store;
 mod dispatch;
@@ -36,14 +29,9 @@ pub use logging::*;
 pub use openssl_helpers::*;
 
 use std::os::raw::{c_char, c_int, c_void};
-use std::ptr;
-use std::ffi::CStr;
 
 // Provider name and version constants
 const PROVIDER_NAME: &str = "Azure Managed HSM Provider";
-const PROVIDER_VERSION: &str = "0.1.0";
-const PROVIDER_BUILDINFO: &str = "Azure Managed HSM Provider (Rust)";
-
 // C string constants for parameters
 static PROVIDER_NAME_CSTR: &[u8] = b"Azure Managed HSM Provider\0";
 static PROVIDER_VERSION_CSTR: &[u8] = b"0.1.0\0";

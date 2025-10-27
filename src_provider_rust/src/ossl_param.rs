@@ -3,7 +3,6 @@
 
 use std::os::raw::{c_char, c_int, c_uint, c_void};
 use std::ptr;
-use std::ffi::CString;
 
 /// OSSL_PARAM structure (matches OpenSSL's definition)
 /// Used to pass parameters between OpenSSL and provider

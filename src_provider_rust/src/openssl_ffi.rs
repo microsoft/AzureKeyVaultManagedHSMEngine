@@ -56,7 +56,4 @@ extern "C" {
 
     /// Compare two EVP_PKEY objects
     pub fn EVP_PKEY_eq(a: *const EVP_PKEY, b: *const EVP_PKEY) -> c_int;
-
-    /// Free an EVP_PKEY
-    pub fn EVP_PKEY_free(pkey: *mut EVP_PKEY);
 }

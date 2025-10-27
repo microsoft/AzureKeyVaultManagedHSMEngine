@@ -5,16 +5,13 @@ use crate::provider::{ProviderContext, AkvKey, AkvAesKey};
 use crate::ossl_param::OsslParam;
 use crate::openssl_ffi;
 use openssl::pkey::PKey;
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::os::raw::{c_char, c_int, c_void};
 use std::ptr;
 
 // OpenSSL key selection flags
 pub const OSSL_KEYMGMT_SELECT_PRIVATE_KEY: c_int = 0x01;
 pub const OSSL_KEYMGMT_SELECT_PUBLIC_KEY: c_int = 0x02;
-pub const OSSL_KEYMGMT_SELECT_DOMAIN_PARAMETERS: c_int = 0x04;
-pub const OSSL_KEYMGMT_SELECT_OTHER_PARAMETERS: c_int = 0x80;
-pub const OSSL_KEYMGMT_SELECT_ALL: c_int = 0xFF;
 
 // OpenSSL operation IDs (must match dispatch.rs)
 pub const OSSL_OP_SIGNATURE: c_int = 12;

@@ -9,7 +9,6 @@ use openssl::bn::BigNum;
 use openssl::ecdsa::EcdsaSig;
 use openssl::hash::MessageDigest;
 use openssl::md_ctx::MdCtx;
-use openssl::nid::Nid;
 use openssl::rsa::Padding;
 use openssl::sign::Verifier;
 use std::ffi::CStr;

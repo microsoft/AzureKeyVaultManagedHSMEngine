@@ -293,7 +293,7 @@ pub unsafe extern "C" fn akv_rsa_cipher_encrypt(
     vctx: *mut c_void,
     out: *mut c_uchar,
     outlen: *mut usize,
-    outsize: usize,
+    _outsize: usize,
     _input: *const c_uchar,
     _inlen: usize,
 ) -> c_int {
