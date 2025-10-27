@@ -27,19 +27,19 @@ pub const OSSL_FUNC_STORE_CLOSE: c_int = 7;
 
 // OpenSSL function IDs for key management
 pub const OSSL_FUNC_KEYMGMT_NEW: c_int = 1;
-pub const OSSL_FUNC_KEYMGMT_FREE: c_int = 3;
-pub const OSSL_FUNC_KEYMGMT_LOAD: c_int = 10;
-pub const OSSL_FUNC_KEYMGMT_HAS: c_int = 20;
-pub const OSSL_FUNC_KEYMGMT_MATCH: c_int = 21;
-pub const OSSL_FUNC_KEYMGMT_GET_PARAMS: c_int = 50;
-pub const OSSL_FUNC_KEYMGMT_GETTABLE_PARAMS: c_int = 51;
-pub const OSSL_FUNC_KEYMGMT_SET_PARAMS: c_int = 52;
-pub const OSSL_FUNC_KEYMGMT_SETTABLE_PARAMS: c_int = 53;
+pub const OSSL_FUNC_KEYMGMT_LOAD: c_int = 8;
+pub const OSSL_FUNC_KEYMGMT_FREE: c_int = 10;
+pub const OSSL_FUNC_KEYMGMT_GET_PARAMS: c_int = 11;
+pub const OSSL_FUNC_KEYMGMT_GETTABLE_PARAMS: c_int = 12;
+pub const OSSL_FUNC_KEYMGMT_SET_PARAMS: c_int = 13;
+pub const OSSL_FUNC_KEYMGMT_SETTABLE_PARAMS: c_int = 14;
+pub const OSSL_FUNC_KEYMGMT_QUERY_OPERATION_NAME: c_int = 20;
+pub const OSSL_FUNC_KEYMGMT_HAS: c_int = 21;
+pub const OSSL_FUNC_KEYMGMT_MATCH: c_int = 23;
 pub const OSSL_FUNC_KEYMGMT_IMPORT: c_int = 40;
 pub const OSSL_FUNC_KEYMGMT_IMPORT_TYPES: c_int = 41;
 pub const OSSL_FUNC_KEYMGMT_EXPORT: c_int = 42;
 pub const OSSL_FUNC_KEYMGMT_EXPORT_TYPES: c_int = 43;
-pub const OSSL_FUNC_KEYMGMT_QUERY_OPERATION_NAME: c_int = 100;
 
 // OpenSSL function IDs for signature
 pub const OSSL_FUNC_SIGNATURE_NEWCTX: c_int = 1;
@@ -78,11 +78,11 @@ pub const OSSL_FUNC_ASYM_CIPHER_SETTABLE_CTX_PARAMS: c_int = 53;
 #[repr(C)]
 pub struct OsslDispatch {
     pub function_id: c_int,
-    pub function: *mut c_void,
+    pub function: *mut ::std::os::raw::c_void,
 }
 
 impl OsslDispatch {
-    pub const fn new(function_id: c_int, function: *mut c_void) -> Self {
+    pub const fn new(function_id: c_int, function: *mut ::std::os::raw::c_void) -> Self {
         Self { function_id, function }
     }
     
@@ -405,16 +405,25 @@ pub static AKV_DISPATCH_TABLE: [OsslDispatch; 5] = [
 pub unsafe fn query_operation_impl(operation_id: c_int) -> *const OsslAlgorithm {
     log::trace!("query_operation_impl operation_id={}", operation_id);
     
-    let result = match operation_id {
-        OSSL_OP_STORE => AKV_STORE_ALGS.as_ptr(),
-        OSSL_OP_KEYMGMT => AKV_KEYMGMT_ALGS.as_ptr(),
+    let (result, op_name) = match operation_id {
+        OSSL_OP_STORE => (AKV_STORE_ALGS.as_ptr(), "STORE"),
+        OSSL_OP_KEYMGMT => {
+            log::debug!("Returning KEYMGMT algorithms: RSA dispatch table at {:p}", AKV_RSA_KEYMGMT_FUNCTIONS.as_ptr());
+            log::debug!("  RSA KEYMGMT functions:");
+            for (i, dispatch) in AKV_RSA_KEYMGMT_FUNCTIONS.iter().enumerate() {
+                log::debug!("    [{}] function_id={}, function={:p}", i, dispatch.function_id, dispatch.function);
+            }
+            (AKV_KEYMGMT_ALGS.as_ptr(), "KEYMGMT")
+        },
         // Temporarily disable signature and cipher for minimal smoke test
         // OSSL_OP_SIGNATURE => AKV_SIGNATURE_ALGS.as_ptr(),
         // OSSL_OP_ASYM_CIPHER => AKV_ASYM_CIPHER_ALGS.as_ptr(),
-        _ => ptr::null(),
+        _ => (ptr::null(), "UNKNOWN"),
     };
     
-    log::debug!("query_operation_impl -> {:p}", result);
+    log::debug!("query_operation_impl({}) -> {:p}", op_name, result);
     result
 }
+
+
 

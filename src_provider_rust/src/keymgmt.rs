@@ -220,9 +220,12 @@ fn akv_aes_key_has_private(key: &AkvAesKey) -> bool {
 
 /// Create a new key management context
 /// Corresponds to akv_keymgmt_new
+/// Create a new key management context
+/// Corresponds to akv_keymgmt_new in C
 #[no_mangle]
 pub unsafe extern "C" fn akv_keymgmt_new(provctx: *mut c_void) -> *mut c_void {
     log::trace!("akv_keymgmt_new provctx={:p}", provctx);
+    log::info!("========== akv_keymgmt_new CALLED ==========");
     
     let key = Box::new(AkvKey::new(provctx as *mut ProviderContext));
     let key_ptr = Box::into_raw(key) as *mut c_void;
@@ -245,13 +248,15 @@ pub unsafe extern "C" fn akv_keymgmt_free(vkey: *mut c_void) {
 }
 
 /// Load a key from a reference (from store loader)
-/// Corresponds to akv_keymgmt_load
+/// Load a key from a reference
+/// Corresponds to akv_keymgmt_load in C
 #[no_mangle]
 pub unsafe extern "C" fn akv_keymgmt_load(
     reference: *const c_void,
     reference_sz: usize,
 ) -> *mut c_void {
     log::trace!("akv_keymgmt_load reference={:p} size={}", reference, reference_sz);
+    log::info!("========== akv_keymgmt_load CALLED ==========");
     log::debug!(
         "akv_keymgmt_load called: reference={:p}, size={}, expected_size={}",
         reference, reference_sz, std::mem::size_of::<*mut AkvKey>()
@@ -292,9 +297,10 @@ pub unsafe extern "C" fn akv_keymgmt_load(
 #[no_mangle]
 pub unsafe extern "C" fn akv_keymgmt_has(vkey: *const c_void, selection: c_int) -> c_int {
     log::trace!("akv_keymgmt_has key={:p} selection=0x{:x}", vkey, selection);
+    log::info!("========== akv_keymgmt_has CALLED (selection=0x{:x}) ==========", selection);
     
     if vkey.is_null() {
-        log::debug!("akv_keymgmt_has -> 0 (null key)");
+        log::error!("akv_keymgmt_has -> 0 (null key)");
         return 0;
     }
     
@@ -302,13 +308,13 @@ pub unsafe extern "C" fn akv_keymgmt_has(vkey: *const c_void, selection: c_int) 
     
     // Check if public key is required and present
     if (selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0 && key.public_key.is_none() {
-        log::debug!("akv_keymgmt_has -> 0 (missing public key)");
+        log::error!("akv_keymgmt_has -> 0 (missing public key)");
         return 0;
     }
     
     // Check if private key metadata is required and present
     if (selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0 && !akv_key_has_private(key) {
-        log::debug!("akv_keymgmt_has -> 0 (missing private metadata)");
+        log::error!("akv_keymgmt_has -> 0 (missing private metadata)");
         return 0;
     }
     
@@ -404,16 +410,17 @@ pub unsafe extern "C" fn akv_keymgmt_get_params(
     params: *mut OsslParam,
 ) -> c_int {
     log::trace!("akv_keymgmt_get_params key={:p} params={:p}", vkey, params);
+    log::info!("========== akv_keymgmt_get_params CALLED ==========");
     
     if vkey.is_null() {
-        log::debug!("akv_keymgmt_get_params -> 0 (null key)");
+        log::error!("akv_keymgmt_get_params -> 0 (null key)");
         return 0;
     }
     
     let key = &*(vkey as *const AkvKey);
     
     if key.public_key.is_none() {
-        log::debug!("akv_keymgmt_get_params -> 0 (missing public key)");
+        log::error!("akv_keymgmt_get_params -> 0 (missing public key)");
         return 0;
     }
     
@@ -422,16 +429,29 @@ pub unsafe extern "C" fn akv_keymgmt_get_params(
         return 1;
     }
     
+    // Log requested parameters
+    let mut param_idx = 0;
+    let mut current_param = params;
+    while !(*current_param).key.is_null() {
+        let key_cstr = std::ffi::CStr::from_ptr((*current_param).key);
+        let key_str = key_cstr.to_string_lossy();
+        log::debug!("  Param[{}]: key='{}', data_type={}", param_idx, key_str, (*current_param).data_type);
+        param_idx += 1;
+        current_param = current_param.add(1);
+    }
+    
     // Delegate to OpenSSL's EVP_PKEY_get_params
     let pkey_ptr = std::mem::transmute::<_, *const openssl_ffi::EVP_PKEY>(key.public_key.as_ref().unwrap());
+    log::debug!("Calling EVP_PKEY_get_params with pkey={:p}", pkey_ptr);
     let result = openssl_ffi::EVP_PKEY_get_params(pkey_ptr, params);
+    log::debug!("EVP_PKEY_get_params returned: {}", result);
     
     if result <= 0 {
-        log::debug!("akv_keymgmt_get_params -> 0 (EVP_PKEY_get_params failed)");
+        log::error!("akv_keymgmt_get_params -> 0 (EVP_PKEY_get_params failed with {})", result);
         return 0;
     }
     
-    log::debug!("akv_keymgmt_get_params -> 1");
+    log::info!("akv_keymgmt_get_params -> 1 (success)");
     1
 }
 
@@ -487,9 +507,11 @@ pub unsafe extern "C" fn akv_keymgmt_export(
         "akv_keymgmt_export key={:p} selection=0x{:x} callback={:p} cbarg={:p}",
         vkey, selection, callback, cbarg
     );
+    log::info!("========== akv_keymgmt_export CALLED ==========");
+    log::debug!("akv_keymgmt_export: selection=0x{:x}", selection);
 
     if vkey.is_null() || callback.is_null() {
-        log::debug!("akv_keymgmt_export -> 0 (invalid arguments)");
+        log::error!("akv_keymgmt_export -> 0 (invalid arguments)");
         return 0;
     }
 

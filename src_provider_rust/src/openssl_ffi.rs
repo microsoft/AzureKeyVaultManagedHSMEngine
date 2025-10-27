@@ -56,4 +56,35 @@ extern "C" {
 
     /// Compare two EVP_PKEY objects
     pub fn EVP_PKEY_eq(a: *const EVP_PKEY, b: *const EVP_PKEY) -> c_int;
+    
+    /// Get the last error from the OpenSSL error queue
+    pub fn ERR_get_error() -> c_ulong;
+    
+    /// Get error string for an error code
+    pub fn ERR_error_string(e: c_ulong, buf: *mut c_char) -> *const c_char;
+}
+
+use std::os::raw::c_ulong;
+
+/// Helper function to print OpenSSL errors to log
+pub fn log_openssl_errors(prefix: &str) {
+    loop {
+        let err = unsafe { ERR_get_error() };
+        if err == 0 {
+            break;
+        }
+        
+        let mut buf = [0i8; 256];
+        let err_str = unsafe {
+            let ptr = ERR_error_string(err, buf.as_mut_ptr());
+            if ptr.is_null() {
+                break;
+            }
+            std::ffi::CStr::from_ptr(ptr)
+                .to_string_lossy()
+                .into_owned()
+        };
+        
+        log::error!("{}: OpenSSL error 0x{:x}: {}", prefix, err, err_str);
+    }
 }

@@ -369,6 +369,7 @@ pub unsafe extern "C" fn akv_store_load(
             
             if cb_result == 0 {
                 log::error!("RSA object callback failed (returned 0)");
+                crate::openssl_ffi::log_openssl_errors("Object callback");
                 log::debug!("Freeing rejected key at {:p}", key_ptr);
                 let _ = unsafe { Box::from_raw(key_ptr as *mut AkvKey) };
                 ctx.exhausted = true;
