@@ -7,8 +7,7 @@ use crate::ossl_param::{OsslParam, OSSL_PARAM_UTF8_STRING, OSSL_PARAM_OCTET_STRI
 use crate::provider::{AkvKey, ProviderContext};
 use openssl::bn::BigNum;
 use openssl::ecdsa::EcdsaSig;
-use openssl::hash::MessageDigest;
-use openssl::md_ctx::MdCtx;
+use openssl::hash::{MessageDigest, Hasher};
 use openssl::rsa::Padding;
 use openssl::sign::Verifier;
 use std::ffi::CStr;
@@ -38,7 +37,7 @@ pub struct SignatureContext {
     provctx: *mut ProviderContext,
     keytype: KeyType,
     key: Option<Box<AkvKey>>,
-    mdctx: Option<MdCtx>,
+    hasher: Option<Hasher>,
     md_name: Option<String>,
     mgf1_md_name: Option<String>,
     operation: c_int,
@@ -53,7 +52,7 @@ impl SignatureContext {
             provctx,
             keytype: KeyType::Rsa,
             key: None,
-            mdctx: None,
+            hasher: None,
             md_name: None,
             mgf1_md_name: None,
             operation: 0,
@@ -68,7 +67,7 @@ impl SignatureContext {
             provctx,
             keytype: KeyType::Ec,
             key: None,
-            mdctx: None,
+            hasher: None,
             md_name: None,
             mgf1_md_name: None,
             operation: 0,
@@ -86,17 +85,17 @@ impl SignatureContext {
                 if self.padding == RSA_PSS_PADDING {
                     // RSA-PSS
                     match md_name {
-                        "SHA256" | "SHA2-256" => Some("PS256"),
-                        "SHA384" | "SHA2-384" => Some("PS384"),
-                        "SHA512" | "SHA2-512" => Some("PS512"),
+                        "sha256" | "SHA256" | "SHA2-256" => Some("PS256"),
+                        "sha384" | "SHA384" | "SHA2-384" => Some("PS384"),
+                        "sha512" | "SHA512" | "SHA2-512" => Some("PS512"),
                         _ => None,
                     }
                 } else {
                     // RSA PKCS#1 v1.5
                     match md_name {
-                        "SHA256" | "SHA2-256" => Some("RS256"),
-                        "SHA384" | "SHA2-384" => Some("RS384"),
-                        "SHA512" | "SHA2-512" => Some("RS512"),
+                        "sha256" | "SHA256" | "SHA2-256" => Some("RS256"),
+                        "sha384" | "SHA384" | "SHA2-384" => Some("RS384"),
+                        "sha512" | "SHA512" | "SHA2-512" => Some("RS512"),
                         _ => None,
                     }
                 }
@@ -104,9 +103,9 @@ impl SignatureContext {
             KeyType::Ec => {
                 // ECDSA
                 match md_name {
-                    "SHA256" | "SHA2-256" => Some("ES256"),
-                    "SHA384" | "SHA2-384" => Some("ES384"),
-                    "SHA512" | "SHA2-512" => Some("ES512"),
+                    "sha256" | "SHA256" | "SHA2-256" => Some("ES256"),
+                    "sha384" | "SHA384" | "SHA2-384" => Some("ES384"),
+                    "sha512" | "SHA512" | "SHA2-512" => Some("ES512"),
                     "SHA256K" => Some("ES256K"),
                     _ => None,
                 }
@@ -396,14 +395,25 @@ pub unsafe extern "C" fn akv_signature_digest_sign_init(
     vkey: *mut c_void,
     _params: *const OsslParam,
 ) -> c_int {
-    log::trace!("akv_signature_digest_sign_init");
+    log::trace!("akv_signature_digest_sign_init vctx={:p} mdname={:p} vkey={:p}", vctx, mdname, vkey);
     
-    if vctx.is_null() || vkey.is_null() {
+    if vctx.is_null() {
+        log::error!("akv_signature_digest_sign_init: vctx is null");
+        return 0;
+    }
+    
+    if vkey.is_null() {
+        log::error!("akv_signature_digest_sign_init: vkey is null");
         return 0;
     }
 
+    log::debug!("akv_signature_digest_sign_init: casting pointers");
     let ctx = &mut *(vctx as *mut SignatureContext);
     let key_ref = &*(vkey as *const AkvKey);
+    
+    log::debug!("akv_signature_digest_sign_init: cloning key (vault={}, name={})", 
+        key_ref.keyvault_name.as_deref().unwrap_or("<none>"),
+        key_ref.key_name.as_deref().unwrap_or("<none>"));
     
     // Clone the key
     ctx.key = Some(Box::new(AkvKey {
@@ -413,26 +423,42 @@ pub unsafe extern "C" fn akv_signature_digest_sign_init(
         key_version: key_ref.key_version.clone(),
         public_key: key_ref.public_key.clone(),
     }));
+    
+    log::debug!("akv_signature_digest_sign_init: key cloned successfully");
     ctx.operation = EVP_PKEY_OP_SIGN;
 
     // Set digest if provided
     if !mdname.is_null() {
         if let Ok(name) = CStr::from_ptr(mdname).to_str() {
+            log::debug!("akv_signature_digest_sign_init: digest name={}", name);
             ctx.md_name = Some(name.to_string());
             
-            // Create MD context
-            match MdCtx::new() {
-                Ok(mdctx) => {
-                    ctx.mdctx = Some(mdctx);
+            // Create and initialize hasher with the digest algorithm
+            log::debug!("akv_signature_digest_sign_init: creating hasher for {}", name);
+            let md = match MessageDigest::from_name(name) {
+                Some(md) => md,
+                None => {
+                    log::error!("Unknown digest algorithm: {}", name);
+                    return 0;
+                }
+            };
+            
+            match Hasher::new(md) {
+                Ok(hasher) => {
+                    ctx.hasher = Some(hasher);
+                    log::debug!("akv_signature_digest_sign_init: hasher created and initialized");
                 }
                 Err(e) => {
-                    log::error!("Failed to create MD context: {}", e);
+                    log::error!("Failed to create hasher: {}", e);
                     return 0;
                 }
             }
         }
+    } else {
+        log::debug!("akv_signature_digest_sign_init: no digest name provided");
     }
 
+    log::info!("akv_signature_digest_sign_init -> 1 (success)");
     1
 }
 
@@ -468,13 +494,21 @@ pub unsafe extern "C" fn akv_signature_digest_verify_init(
         if let Ok(name) = CStr::from_ptr(mdname).to_str() {
             ctx.md_name = Some(name.to_string());
             
-            // Create MD context
-            match MdCtx::new() {
-                Ok(mdctx) => {
-                    ctx.mdctx = Some(mdctx);
+            // Create and initialize hasher with the digest algorithm
+            let md = match MessageDigest::from_name(name) {
+                Some(md) => md,
+                None => {
+                    log::error!("Unknown digest algorithm: {}", name);
+                    return 0;
+                }
+            };
+            
+            match Hasher::new(md) {
+                Ok(hasher) => {
+                    ctx.hasher = Some(hasher);
                 }
                 Err(e) => {
-                    log::error!("Failed to create MD context: {}", e);
+                    log::error!("Failed to create hasher: {}", e);
                     return 0;
                 }
             }
@@ -491,23 +525,29 @@ pub unsafe extern "C" fn akv_signature_digest_update(
     data: *const c_uchar,
     datalen: usize,
 ) -> c_int {
+    log::trace!("akv_signature_digest_update vctx={:p} datalen={}", vctx, datalen);
+    
     if vctx.is_null() || data.is_null() {
+        log::error!("akv_signature_digest_update: null pointer");
         return 0;
     }
 
     let ctx = &mut *(vctx as *mut SignatureContext);
     
-    if let Some(ref mut mdctx) = ctx.mdctx {
+    if let Some(ref mut hasher) = ctx.hasher {
         let data_slice = std::slice::from_raw_parts(data, datalen);
-        match mdctx.digest_update(data_slice) {
-            Ok(_) => 1,
+        match hasher.update(data_slice) {
+            Ok(_) => {
+                log::debug!("akv_signature_digest_update -> 1 (success, {} bytes)", datalen);
+                1
+            }
             Err(e) => {
                 log::error!("Digest update failed: {}", e);
                 0
             }
         }
     } else {
-        log::error!("MD context not initialized");
+        log::error!("Hasher not initialized");
         0
     }
 }
@@ -541,11 +581,10 @@ pub unsafe extern "C" fn akv_signature_digest_sign_final(
     }
 
     // Finalize digest
-    if let Some(ref mut mdctx) = ctx.mdctx {
-        let mut digest = vec![0u8; 64]; // Max digest size
-        match mdctx.digest_final(&mut digest) {
-            Ok(len) => {
-                digest.truncate(len);
+    if let Some(ref mut hasher) = ctx.hasher {
+        match hasher.finish() {
+            Ok(digest) => {
+                log::debug!("Digest finalized: {} bytes", digest.len());
                 
                 // Sign the digest
                 match ctx.sign_remote(&digest) {
@@ -555,6 +594,7 @@ pub unsafe extern "C" fn akv_signature_digest_sign_final(
                         }
                         ptr::copy_nonoverlapping(signature.as_ptr(), sig, signature.len());
                         *siglen = signature.len();
+                        log::info!("akv_signature_digest_sign_final -> 1 (signature {} bytes)", signature.len());
                         1
                     }
                     Err(e) => {
@@ -569,7 +609,7 @@ pub unsafe extern "C" fn akv_signature_digest_sign_final(
             }
         }
     } else {
-        log::error!("MD context not initialized");
+        log::error!("Hasher not initialized");
         0
     }
 }
@@ -590,12 +630,9 @@ pub unsafe extern "C" fn akv_signature_digest_verify_final(
     let ctx = &mut *(vctx as *mut SignatureContext);
     
     // Finalize digest
-    if let Some(ref mut mdctx) = ctx.mdctx {
-        let mut digest = vec![0u8; 64]; // Max digest size
-        match mdctx.digest_final(&mut digest) {
-            Ok(len) => {
-                digest.truncate(len);
-                
+    if let Some(ref mut hasher) = ctx.hasher {
+        match hasher.finish() {
+            Ok(digest) => {
                 // Verify the signature
                 let sig_slice = std::slice::from_raw_parts(sig, siglen);
                 match ctx.verify_local(sig_slice, &digest) {
@@ -613,7 +650,7 @@ pub unsafe extern "C" fn akv_signature_digest_verify_final(
             }
         }
     } else {
-        log::error!("MD context not initialized");
+        log::error!("Hasher not initialized");
         0
     }
 }
@@ -688,47 +725,95 @@ pub unsafe extern "C" fn akv_signature_set_ctx_params(
     vctx: *mut c_void,
     params: *const OsslParam,
 ) -> c_int {
+    log::trace!("akv_signature_set_ctx_params vctx={:p} params={:p}", vctx, params);
+    
     if vctx.is_null() || params.is_null() {
+        log::debug!("akv_signature_set_ctx_params -> 1 (null params, no-op)");
         return 1;
     }
 
     let ctx = &mut *(vctx as *mut SignatureContext);
     let mut current = params;
+    let mut param_count = 0;
 
     while !(*current).key.is_null() {
         let key_cstr = CStr::from_ptr((*current).key);
         if let Ok(key_str) = key_cstr.to_str() {
+            log::debug!("akv_signature_set_ctx_params: processing param '{}' (data_type={})", key_str, (*current).data_type);
             match key_str {
                 "digest" => {
                     if let Some(value_ptr) = OsslParam::get_utf8_string_ptr(current) {
                         if let Ok(md_name) = CStr::from_ptr(value_ptr).to_str() {
+                            log::debug!("  Setting digest={}", md_name);
                             ctx.md_name = Some(md_name.to_string());
+                            param_count += 1;
                         }
                     }
                 }
                 "pad-mode" => {
+                    // Try as integer first, then as string
                     if let Some(padding) = OsslParam::get_int(current) {
+                        log::debug!("  Setting pad-mode={} (from int)", padding);
                         ctx.padding = padding;
+                        param_count += 1;
+                    } else if let Some(value_ptr) = OsslParam::get_utf8_string_ptr(current) {
+                        if let Ok(value_str) = CStr::from_ptr(value_ptr).to_str() {
+                            // Parse string padding mode (e.g., "pss", "pkcs1")
+                            let padding = match value_str.to_lowercase().as_str() {
+                                "pss" => RSA_PSS_PADDING,
+                                "pkcs1" | "pkcs1_padding" => RSA_PKCS1_PADDING,
+                                _ => {
+                                    // Try to parse as number
+                                    value_str.parse::<c_int>().unwrap_or(RSA_PKCS1_PADDING)
+                                }
+                            };
+                            log::debug!("  Setting pad-mode={} (from string '{}')", padding, value_str);
+                            ctx.padding = padding;
+                            param_count += 1;
+                        }
                     }
                 }
                 "mgf1-digest" => {
                     if let Some(value_ptr) = OsslParam::get_utf8_string_ptr(current) {
                         if let Ok(md_name) = CStr::from_ptr(value_ptr).to_str() {
+                            log::debug!("  Setting mgf1-digest={}", md_name);
                             ctx.mgf1_md_name = Some(md_name.to_string());
+                            param_count += 1;
                         }
                     }
                 }
                 "saltlen" => {
+                    // Try as integer first, then as string
                     if let Some(saltlen) = OsslParam::get_int(current) {
+                        log::debug!("  Setting saltlen={} (from int)", saltlen);
                         ctx.pss_saltlen = saltlen;
+                        param_count += 1;
+                    } else if let Some(value_ptr) = OsslParam::get_utf8_string_ptr(current) {
+                        if let Ok(value_str) = CStr::from_ptr(value_ptr).to_str() {
+                            // Parse string saltlen (e.g., "digest", "auto", "32")
+                            let saltlen = match value_str.to_lowercase().as_str() {
+                                "digest" => RSA_PSS_SALTLEN_DIGEST,
+                                "auto" | "max" => -2, // RSA_PSS_SALTLEN_AUTO
+                                _ => {
+                                    // Try to parse as number
+                                    value_str.parse::<c_int>().unwrap_or(RSA_PSS_SALTLEN_DIGEST)
+                                }
+                            };
+                            log::debug!("  Setting saltlen={} (from string '{}')", saltlen, value_str);
+                            ctx.pss_saltlen = saltlen;
+                            param_count += 1;
+                        }
                     }
                 }
-                _ => {}
+                _ => {
+                    log::debug!("  Ignoring unknown param '{}'", key_str);
+                }
             }
         }
         current = current.offset(1);
     }
 
+    log::info!("akv_signature_set_ctx_params -> 1 (processed {} params)", param_count);
     1
 }
 
@@ -768,11 +853,32 @@ pub unsafe extern "C" fn akv_signature_dupctx(vctx: *mut c_void) -> *mut c_void 
         None
     };
     
+    // Try to duplicate the hasher
+    let hasher_clone = if let Some(ref md_name) = src_ctx.md_name {
+        if let Some(md) = MessageDigest::from_name(md_name) {
+            match Hasher::new(md) {
+                Ok(hasher) => {
+                    log::debug!("Created new hasher for duplicated context");
+                    Some(hasher)
+                }
+                Err(e) => {
+                    log::warn!("Failed to create hasher in dupctx: {}", e);
+                    None
+                }
+            }
+        } else {
+            log::warn!("Unknown digest {} in dupctx", md_name);
+            None
+        }
+    } else {
+        None
+    };
+    
     let dup_ctx = Box::new(SignatureContext {
         provctx: src_ctx.provctx,
         keytype: src_ctx.keytype,
         key: key_clone,
-        mdctx: None, // MD context is not duplicated
+        hasher: hasher_clone,
         md_name: src_ctx.md_name.clone(),
         mgf1_md_name: src_ctx.mgf1_md_name.clone(),
         padding: src_ctx.padding,

@@ -574,9 +574,19 @@ pub unsafe extern "C" fn akv_keymgmt_export(
         let n_bn = rsa_key.n();
         let e_bn = rsa_key.e();
         
-        // Convert BIGNUMs to byte arrays
-        let n_vec = n_bn.to_vec();
-        let e_vec = e_bn.to_vec();
+        // Convert BIGNUMs to byte arrays (big-endian)
+        let mut n_vec = n_bn.to_vec();
+        let mut e_vec = e_bn.to_vec();
+        
+        // CRITICAL: OSSL_PARAM integer buffers are interpreted in native endianness
+        // (see https://www.openssl.org/docs/man3.0/man3/OSSL_PARAM.html#Supported-types)
+        // On little-endian systems (x86/x64), we must reverse the bytes from big-endian
+        #[cfg(target_endian = "little")]
+        {
+            n_vec.reverse();
+            e_vec.reverse();
+            log::debug!("akv_keymgmt_export: reversed bytes for little-endian system");
+        }
         
         log::debug!("akv_keymgmt_export: RSA n_len={}, e_len={}", n_vec.len(), e_vec.len());
         

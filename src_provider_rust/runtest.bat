@@ -97,16 +97,6 @@ if exist "%MODULESDIR%\akv_provider.dll" (
     set PROVIDER_INSTALLED=NO
 )
 
-REM Check if provider DLL exists in build directory
-if not exist "x64\Release\akv_provider.dll" (
-    if not exist "..\x64\Release\akv_provider.dll" (
-        echo ERROR: akv_provider.dll not found in build directory
-        echo Please build the provider first using winbuild.bat
-        goto :error
-    )
-)
-echo [OK] Provider DLL found in build directory
-
 REM Check if Azure CLI is installed
 where az >nul 2>&1
 if errorlevel 1 (
