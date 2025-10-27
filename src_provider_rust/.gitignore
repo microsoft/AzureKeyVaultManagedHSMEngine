@@ -6,6 +6,13 @@
 # Cargo.lock (keep for applications, ignore for libraries)
 Cargo.lock
 
+# Test artifacts and logs
+/logs/
+/temp_*/
+*.sig
+*.pem
+test*.txt
+
 # IDE files
 .vscode/
 .idea/
