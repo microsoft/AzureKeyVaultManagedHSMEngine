@@ -223,20 +223,25 @@ pub static AKV_AES_KEYMGMT_FUNCTIONS: [OsslDispatch; 8] = [
 ];
 
 /// Key management algorithm table
-/// Key management algorithm table - MINIMAL: RSA only for smoke test
-pub static AKV_KEYMGMT_ALGS: [OsslAlgorithm; 2] = [
+pub static AKV_KEYMGMT_ALGS: [OsslAlgorithm; 3] = [
     OsslAlgorithm {
         algorithm_names: c_str!("RSA:rsaEncryption"),
         property_definition: c_str!("provider=akv_provider"),
         implementation: AKV_RSA_KEYMGMT_FUNCTIONS.as_ptr(),
         algorithm_description: c_str!("Azure Key Vault RSA key management"),
     },
-    /* Temporarily disabled for minimal smoke test
     OsslAlgorithm {
         algorithm_names: c_str!("EC:id-ecPublicKey"),
         property_definition: c_str!("provider=akv_provider"),
         implementation: AKV_EC_KEYMGMT_FUNCTIONS.as_ptr(),
         algorithm_description: c_str!("Azure Key Vault EC key management"),
+    },
+    /* Temporarily disabled - AES not yet implemented
+    OsslAlgorithm {
+        algorithm_names: c_str!("AES-128-KW:id-aes128-wrap:AES-128-WRAP:2.16.840.1.101.3.4.1.5"),
+        property_definition: c_str!("provider=akv_provider"),
+        implementation: AKV_AES_KEYMGMT_FUNCTIONS.as_ptr(),
+        algorithm_description: c_str!("Azure Key Vault AES-128 key management"),
     },
     OsslAlgorithm {
         algorithm_names: c_str!("AES-128-KW:id-aes128-wrap:AES-128-WRAP:2.16.840.1.101.3.4.1.5"),

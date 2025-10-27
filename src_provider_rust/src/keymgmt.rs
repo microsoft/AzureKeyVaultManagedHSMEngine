@@ -603,9 +603,49 @@ pub unsafe extern "C" fn akv_keymgmt_export(
     }
     
     // Try to get EC key
-    if let Ok(_ec_key) = pkey.ec_key() {
-        log::error!("akv_keymgmt_export: EC export not yet implemented");
-        return 0;
+    if let Ok(ec_key) = pkey.ec_key() {
+        // Get the public key point
+        let group = ec_key.group();
+        let pub_key_point = ec_key.public_key();
+        
+        // Convert point to uncompressed form (0x04 || x || y)
+        use openssl::ec::PointConversionForm;
+        let pub_key_bytes = pub_key_point.to_bytes(
+            group, 
+            PointConversionForm::UNCOMPRESSED, 
+            &mut openssl::bn::BigNumContext::new().unwrap()
+        ).unwrap();
+        
+        log::debug!("akv_keymgmt_export: EC pub_key_bytes_len={}", pub_key_bytes.len());
+        
+        // Get curve NID and name
+        let nid = group.curve_name().unwrap();
+        let curve_name = nid.long_name().unwrap();
+        log::debug!("akv_keymgmt_export: EC curve={}", curve_name);
+        
+        // Build OSSL_PARAM array for EC key
+        // pub_key_bytes format: [0x04, x_bytes..., y_bytes...]
+        let params_vec = vec![
+            OsslParam::construct_octet_string(
+                c"pub".as_ptr() as *const i8,
+                pub_key_bytes.as_ptr() as *mut c_void,
+                pub_key_bytes.len()
+            ),
+            OsslParam::construct_utf8_string(
+                c"group".as_ptr() as *const i8,
+                curve_name.as_ptr() as *mut i8,
+                curve_name.len()
+            ),
+            OsslParam::end(),
+        ];
+        
+        // Call the callback
+        type ExportCallback = unsafe extern "C" fn(*const OsslParam, *mut c_void) -> c_int;
+        let cb: ExportCallback = std::mem::transmute(callback);
+        
+        let result = cb(params_vec.as_ptr(), cbarg);
+        log::debug!("akv_keymgmt_export -> {} (manual EC export)", result);
+        return result;
     }
     
     log::error!("akv_keymgmt_export: unknown key type");
