@@ -17,9 +17,9 @@ pub const OSSL_KEYMGMT_SELECT_DOMAIN_PARAMETERS: c_int = 0x04;
 pub const OSSL_KEYMGMT_SELECT_OTHER_PARAMETERS: c_int = 0x80;
 pub const OSSL_KEYMGMT_SELECT_ALL: c_int = 0xFF;
 
-// OpenSSL operation IDs
-pub const OSSL_OP_SIGNATURE: c_int = 10;
-pub const OSSL_OP_ASYM_CIPHER: c_int = 11;
+// OpenSSL operation IDs (must match dispatch.rs)
+pub const OSSL_OP_SIGNATURE: c_int = 12;
+pub const OSSL_OP_ASYM_CIPHER: c_int = 13;
 
 // Common OSSL parameter names used during export
 const OSSL_PKEY_PARAM_ID: &[u8] = b"id\0";
