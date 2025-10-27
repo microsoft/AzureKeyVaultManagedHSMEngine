@@ -25,6 +25,7 @@ mod logging;
 mod base64;
 mod http_client;
 mod openssl_helpers;
+mod openssl_ffi;
 
 pub use provider::*;
 pub use store::*;

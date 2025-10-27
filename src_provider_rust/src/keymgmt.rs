@@ -3,10 +3,9 @@
 
 use crate::provider::{ProviderContext, AkvKey, AkvAesKey};
 use crate::ossl_param::OsslParam;
-use openssl::bn::BigNumContext;
-use openssl::ec::PointConversionForm;
-use openssl::pkey::Id;
-use std::ffi::CString;
+use crate::openssl_ffi;
+use openssl::pkey::PKey;
+use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
 use std::ptr;
 
@@ -22,66 +21,52 @@ pub const OSSL_OP_SIGNATURE: c_int = 12;
 pub const OSSL_OP_ASYM_CIPHER: c_int = 13;
 
 // Common OSSL parameter names used during export
-const OSSL_PKEY_PARAM_ID: &[u8] = b"id\0";
-const OSSL_PKEY_PARAM_TYPE: &[u8] = b"type\0";
 const OSSL_PKEY_PARAM_BITS: &[u8] = b"bits\0";
 const OSSL_PKEY_PARAM_SECURITY_BITS: &[u8] = b"security-bits\0";
 const OSSL_PKEY_PARAM_MAX_SIZE: &[u8] = b"max-size\0";
-const OSSL_PKEY_PARAM_FRIENDLY_NAME: &[u8] = b"friendly-name\0";
-const OSSL_PKEY_PARAM_PUB_KEY: &[u8] = b"pub\0";
+const OSSL_PKEY_PARAM_DEFAULT_DIGEST: &[u8] = b"default-digest\0";
+const OSSL_PKEY_PARAM_MANDATORY_DIGEST: &[u8] = b"mandatory-digest\0";
 const OSSL_PKEY_PARAM_RSA_N: &[u8] = b"n\0";
 const OSSL_PKEY_PARAM_RSA_E: &[u8] = b"e\0";
-const OSSL_PKEY_PARAM_EC_GROUP_NAME: &[u8] = b"group\0";
-const OSSL_PKEY_PARAM_EC_ENCODING: &[u8] = b"encoding\0";
-const OSSL_PKEY_PARAM_EC_POINT_CONVERSION_FORMAT: &[u8] = b"format\0";
+const OSSL_PKEY_PARAM_GROUP_NAME: &[u8] = b"group\0";
+const OSSL_PKEY_PARAM_PUB_KEY: &[u8] = b"pub\0";
+const OSSL_PKEY_PARAM_EC_PUB_X: &[u8] = b"qx\0";
+const OSSL_PKEY_PARAM_EC_PUB_Y: &[u8] = b"qy\0";
+const OSSL_PKEY_PARAM_ENCODED_PUBLIC_KEY: &[u8] = b"encoded-pub-key\0";
 
-// Static export type descriptors advertised via export_types callbacks
-static RSA_EXPORT_TYPES: [OsslParam; 10] = [
-    OsslParam {
-        key: OSSL_PKEY_PARAM_TYPE.as_ptr() as *const c_char,
-        data_type: crate::ossl_param::OSSL_PARAM_UTF8_STRING,
-        data: ptr::null_mut(),
-        data_size: 0,
-        return_size: 0,
-    },
-    OsslParam {
-        key: OSSL_PKEY_PARAM_FRIENDLY_NAME.as_ptr() as *const c_char,
-        data_type: crate::ossl_param::OSSL_PARAM_UTF8_STRING,
-        data: ptr::null_mut(),
-        data_size: 0,
-        return_size: 0,
-    },
-    OsslParam {
-        key: OSSL_PKEY_PARAM_ID.as_ptr() as *const c_char,
-        data_type: crate::ossl_param::OSSL_PARAM_UTF8_STRING,
-        data: ptr::null_mut(),
-        data_size: 0,
-        return_size: 0,
-    },
+// Static gettable parameter descriptors for RSA
+static RSA_GETTABLE_PARAMS: [OsslParam; 8] = [
     OsslParam {
         key: OSSL_PKEY_PARAM_BITS.as_ptr() as *const c_char,
-        data_type: crate::ossl_param::OSSL_PARAM_UNSIGNED_INTEGER,
+        data_type: crate::ossl_param::OSSL_PARAM_INTEGER,
         data: ptr::null_mut(),
-        data_size: std::mem::size_of::<usize>(),
+        data_size: 0,
         return_size: 0,
     },
     OsslParam {
         key: OSSL_PKEY_PARAM_SECURITY_BITS.as_ptr() as *const c_char,
         data_type: crate::ossl_param::OSSL_PARAM_INTEGER,
         data: ptr::null_mut(),
-        data_size: std::mem::size_of::<c_int>(),
+        data_size: 0,
         return_size: 0,
     },
     OsslParam {
         key: OSSL_PKEY_PARAM_MAX_SIZE.as_ptr() as *const c_char,
-        data_type: crate::ossl_param::OSSL_PARAM_UNSIGNED_INTEGER,
+        data_type: crate::ossl_param::OSSL_PARAM_INTEGER,
         data: ptr::null_mut(),
-        data_size: std::mem::size_of::<usize>(),
+        data_size: 0,
         return_size: 0,
     },
     OsslParam {
-        key: OSSL_PKEY_PARAM_PUB_KEY.as_ptr() as *const c_char,
-        data_type: crate::ossl_param::OSSL_PARAM_OCTET_STRING,
+        key: OSSL_PKEY_PARAM_DEFAULT_DIGEST.as_ptr() as *const c_char,
+        data_type: crate::ossl_param::OSSL_PARAM_UTF8_STRING,
+        data: ptr::null_mut(),
+        data_size: 0,
+        return_size: 0,
+    },
+    OsslParam {
+        key: OSSL_PKEY_PARAM_MANDATORY_DIGEST.as_ptr() as *const c_char,
+        data_type: crate::ossl_param::OSSL_PARAM_UTF8_STRING,
         data: ptr::null_mut(),
         data_size: 0,
         return_size: 0,
@@ -103,23 +88,10 @@ static RSA_EXPORT_TYPES: [OsslParam; 10] = [
     OsslParam::end(),
 ];
 
-static EC_EXPORT_TYPES: [OsslParam; 11] = [
+// Static gettable parameter descriptors for EC
+static EC_GETTABLE_PARAMS: [OsslParam; 10] = [
     OsslParam {
-        key: OSSL_PKEY_PARAM_TYPE.as_ptr() as *const c_char,
-        data_type: crate::ossl_param::OSSL_PARAM_UTF8_STRING,
-        data: ptr::null_mut(),
-        data_size: 0,
-        return_size: 0,
-    },
-    OsslParam {
-        key: OSSL_PKEY_PARAM_FRIENDLY_NAME.as_ptr() as *const c_char,
-        data_type: crate::ossl_param::OSSL_PARAM_UTF8_STRING,
-        data: ptr::null_mut(),
-        data_size: 0,
-        return_size: 0,
-    },
-    OsslParam {
-        key: OSSL_PKEY_PARAM_ID.as_ptr() as *const c_char,
+        key: OSSL_PKEY_PARAM_GROUP_NAME.as_ptr() as *const c_char,
         data_type: crate::ossl_param::OSSL_PARAM_UTF8_STRING,
         data: ptr::null_mut(),
         data_size: 0,
@@ -127,41 +99,27 @@ static EC_EXPORT_TYPES: [OsslParam; 11] = [
     },
     OsslParam {
         key: OSSL_PKEY_PARAM_BITS.as_ptr() as *const c_char,
-        data_type: crate::ossl_param::OSSL_PARAM_UNSIGNED_INTEGER,
+        data_type: crate::ossl_param::OSSL_PARAM_INTEGER,
         data: ptr::null_mut(),
-        data_size: std::mem::size_of::<usize>(),
+        data_size: 0,
         return_size: 0,
     },
     OsslParam {
         key: OSSL_PKEY_PARAM_SECURITY_BITS.as_ptr() as *const c_char,
         data_type: crate::ossl_param::OSSL_PARAM_INTEGER,
         data: ptr::null_mut(),
-        data_size: std::mem::size_of::<c_int>(),
+        data_size: 0,
         return_size: 0,
     },
     OsslParam {
         key: OSSL_PKEY_PARAM_MAX_SIZE.as_ptr() as *const c_char,
-        data_type: crate::ossl_param::OSSL_PARAM_UNSIGNED_INTEGER,
-        data: ptr::null_mut(),
-        data_size: std::mem::size_of::<usize>(),
-        return_size: 0,
-    },
-    OsslParam {
-        key: OSSL_PKEY_PARAM_EC_GROUP_NAME.as_ptr() as *const c_char,
-        data_type: crate::ossl_param::OSSL_PARAM_UTF8_STRING,
+        data_type: crate::ossl_param::OSSL_PARAM_INTEGER,
         data: ptr::null_mut(),
         data_size: 0,
         return_size: 0,
     },
     OsslParam {
-        key: OSSL_PKEY_PARAM_EC_ENCODING.as_ptr() as *const c_char,
-        data_type: crate::ossl_param::OSSL_PARAM_UTF8_STRING,
-        data: ptr::null_mut(),
-        data_size: 0,
-        return_size: 0,
-    },
-    OsslParam {
-        key: OSSL_PKEY_PARAM_EC_POINT_CONVERSION_FORMAT.as_ptr() as *const c_char,
+        key: OSSL_PKEY_PARAM_MANDATORY_DIGEST.as_ptr() as *const c_char,
         data_type: crate::ossl_param::OSSL_PARAM_UTF8_STRING,
         data: ptr::null_mut(),
         data_size: 0,
@@ -170,6 +128,72 @@ static EC_EXPORT_TYPES: [OsslParam; 11] = [
     OsslParam {
         key: OSSL_PKEY_PARAM_PUB_KEY.as_ptr() as *const c_char,
         data_type: crate::ossl_param::OSSL_PARAM_OCTET_STRING,
+        data: ptr::null_mut(),
+        data_size: 0,
+        return_size: 0,
+    },
+    OsslParam {
+        key: OSSL_PKEY_PARAM_EC_PUB_X.as_ptr() as *const c_char,
+        data_type: crate::ossl_param::OSSL_PARAM_UNSIGNED_INTEGER,
+        data: ptr::null_mut(),
+        data_size: 0,
+        return_size: 0,
+    },
+    OsslParam {
+        key: OSSL_PKEY_PARAM_EC_PUB_Y.as_ptr() as *const c_char,
+        data_type: crate::ossl_param::OSSL_PARAM_UNSIGNED_INTEGER,
+        data: ptr::null_mut(),
+        data_size: 0,
+        return_size: 0,
+    },
+    OsslParam {
+        key: OSSL_PKEY_PARAM_ENCODED_PUBLIC_KEY.as_ptr() as *const c_char,
+        data_type: crate::ossl_param::OSSL_PARAM_OCTET_STRING,
+        data: ptr::null_mut(),
+        data_size: 0,
+        return_size: 0,
+    },
+    OsslParam::end(),
+];
+
+// Static export type descriptors for RSA (advertised via export_types callbacks)
+static RSA_EXPORT_TYPES: [OsslParam; 3] = [
+    OsslParam {
+        key: OSSL_PKEY_PARAM_RSA_N.as_ptr() as *const c_char,
+        data_type: crate::ossl_param::OSSL_PARAM_UNSIGNED_INTEGER,
+        data: ptr::null_mut(),
+        data_size: 0,
+        return_size: 0,
+    },
+    OsslParam {
+        key: OSSL_PKEY_PARAM_RSA_E.as_ptr() as *const c_char,
+        data_type: crate::ossl_param::OSSL_PARAM_UNSIGNED_INTEGER,
+        data: ptr::null_mut(),
+        data_size: 0,
+        return_size: 0,
+    },
+    OsslParam::end(),
+];
+
+// Static export type descriptors for EC
+static EC_EXPORT_TYPES: [OsslParam; 4] = [
+    OsslParam {
+        key: OSSL_PKEY_PARAM_EC_PUB_X.as_ptr() as *const c_char,
+        data_type: crate::ossl_param::OSSL_PARAM_UNSIGNED_INTEGER,
+        data: ptr::null_mut(),
+        data_size: 0,
+        return_size: 0,
+    },
+    OsslParam {
+        key: OSSL_PKEY_PARAM_EC_PUB_Y.as_ptr() as *const c_char,
+        data_type: crate::ossl_param::OSSL_PARAM_UNSIGNED_INTEGER,
+        data: ptr::null_mut(),
+        data_size: 0,
+        return_size: 0,
+    },
+    OsslParam {
+        key: OSSL_PKEY_PARAM_GROUP_NAME.as_ptr() as *const c_char,
+        data_type: crate::ossl_param::OSSL_PARAM_UTF8_STRING,
         data: ptr::null_mut(),
         data_size: 0,
         return_size: 0,
@@ -313,16 +337,64 @@ pub unsafe extern "C" fn akv_keymgmt_match(
     let key1 = &*(vkey1 as *const AkvKey);
     let key2 = &*(vkey2 as *const AkvKey);
     
-    // Check if private keys match (same vault and key name)
-    if (selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0 {
-        if key1.keyvault_name != key2.keyvault_name || key1.key_name != key2.key_name {
-            log::debug!("akv_keymgmt_match -> 0 (private keys differ)");
+    // Check if public keys match using EVP_PKEY_eq
+    if (selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0 {
+        if key1.public_key.is_none() || key2.public_key.is_none() {
+            log::debug!("akv_keymgmt_match -> 0 (missing public key, sel=0x{:x})", selection);
+            return 0;
+        }
+        
+        // Use OpenSSL's EVP_PKEY_eq to compare public keys
+        let pkey1_ptr = std::mem::transmute::<_, *const openssl_ffi::EVP_PKEY>(key1.public_key.as_ref().unwrap());
+        let pkey2_ptr = std::mem::transmute::<_, *const openssl_ffi::EVP_PKEY>(key2.public_key.as_ref().unwrap());
+        
+        if openssl_ffi::EVP_PKEY_eq(pkey1_ptr, pkey2_ptr) <= 0 {
+            log::debug!("akv_keymgmt_match -> 0 (public key mismatch, sel=0x{:x})", selection);
             return 0;
         }
     }
     
-    // For public keys, we could compare the actual public key material
-    // For now, we assume match if we get here
+    // Check if private keys match (same vault and key name)
+    if (selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0 {
+        if !akv_key_has_private(key1) || !akv_key_has_private(key2) {
+            log::debug!("akv_keymgmt_match -> 0 (private metadata missing, sel=0x{:x})", selection);
+            return 0;
+        }
+        
+        // Compare vault names (case-insensitive)
+        let vault1 = key1.keyvault_name.as_ref().unwrap();
+        let vault2 = key2.keyvault_name.as_ref().unwrap();
+        if !vault1.eq_ignore_ascii_case(vault2) {
+            log::debug!("akv_keymgmt_match -> 0 (vault identity mismatch, sel=0x{:x})", selection);
+            return 0;
+        }
+        
+        // Compare key names (case-insensitive)
+        let name1 = key1.key_name.as_ref().unwrap();
+        let name2 = key2.key_name.as_ref().unwrap();
+        if !name1.eq_ignore_ascii_case(name2) {
+            log::debug!("akv_keymgmt_match -> 0 (key name mismatch, sel=0x{:x})", selection);
+            return 0;
+        }
+        
+        // Compare versions if present
+        match (&key1.key_version, &key2.key_version) {
+            (Some(v1), Some(v2)) => {
+                if !v1.eq_ignore_ascii_case(v2) {
+                    log::debug!("akv_keymgmt_match -> 0 (version mismatch, sel=0x{:x})", selection);
+                    return 0;
+                }
+            }
+            (Some(_), None) | (None, Some(_)) => {
+                log::debug!("akv_keymgmt_match -> 0 (version presence mismatch, sel=0x{:x})", selection);
+                return 0;
+            }
+            (None, None) => {
+                // Both have no version - OK
+            }
+        }
+    }
+    
     log::debug!("akv_keymgmt_match -> 1");
     1
 }
@@ -331,10 +403,37 @@ pub unsafe extern "C" fn akv_keymgmt_match(
 /// Corresponds to akv_keymgmt_get_params
 #[no_mangle]
 pub unsafe extern "C" fn akv_keymgmt_get_params(
-    _vkey: *const c_void,
-    _params: *mut OsslParam,
+    vkey: *const c_void,
+    params: *mut OsslParam,
 ) -> c_int {
-    log::trace!("akv_keymgmt_get_params (stub)");
+    log::trace!("akv_keymgmt_get_params key={:p} params={:p}", vkey, params);
+    
+    if vkey.is_null() {
+        log::debug!("akv_keymgmt_get_params -> 0 (null key)");
+        return 0;
+    }
+    
+    let key = &*(vkey as *const AkvKey);
+    
+    if key.public_key.is_none() {
+        log::debug!("akv_keymgmt_get_params -> 0 (missing public key)");
+        return 0;
+    }
+    
+    if params.is_null() {
+        log::debug!("akv_keymgmt_get_params -> 1 (no params requested)");
+        return 1;
+    }
+    
+    // Delegate to OpenSSL's EVP_PKEY_get_params
+    let pkey_ptr = std::mem::transmute::<_, *const openssl_ffi::EVP_PKEY>(key.public_key.as_ref().unwrap());
+    let result = openssl_ffi::EVP_PKEY_get_params(pkey_ptr, params);
+    
+    if result <= 0 {
+        log::debug!("akv_keymgmt_get_params -> 0 (EVP_PKEY_get_params failed)");
+        return 0;
+    }
+    
     log::debug!("akv_keymgmt_get_params -> 1");
     1
 }
@@ -343,10 +442,37 @@ pub unsafe extern "C" fn akv_keymgmt_get_params(
 /// Corresponds to akv_keymgmt_set_params
 #[no_mangle]
 pub unsafe extern "C" fn akv_keymgmt_set_params(
-    _vkey: *mut c_void,
-    _params: *const OsslParam,
+    vkey: *mut c_void,
+    params: *const OsslParam,
 ) -> c_int {
-    log::trace!("akv_keymgmt_set_params (stub)");
+    log::trace!("akv_keymgmt_set_params key={:p} params={:p}", vkey, params);
+    
+    if vkey.is_null() {
+        log::debug!("akv_keymgmt_set_params -> 0 (null key)");
+        return 0;
+    }
+    
+    let key = &mut *(vkey as *mut AkvKey);
+    
+    if key.public_key.is_none() {
+        log::debug!("akv_keymgmt_set_params -> 0 (missing public key)");
+        return 0;
+    }
+    
+    if params.is_null() {
+        log::debug!("akv_keymgmt_set_params -> 1 (no params to set)");
+        return 1;
+    }
+    
+    // Delegate to OpenSSL's EVP_PKEY_set_params
+    let pkey_ptr = std::mem::transmute::<_, *mut openssl_ffi::EVP_PKEY>(key.public_key.as_mut().unwrap());
+    let result = openssl_ffi::EVP_PKEY_set_params(pkey_ptr, params);
+    
+    if result <= 0 {
+        log::debug!("akv_keymgmt_set_params -> 0 (EVP_PKEY_set_params failed)");
+        return 0;
+    }
+    
     log::debug!("akv_keymgmt_set_params -> 1");
     1
 }
@@ -361,8 +487,8 @@ pub unsafe extern "C" fn akv_keymgmt_export(
     cbarg: *mut c_void,
 ) -> c_int {
     log::trace!(
-        "akv_keymgmt_export key={:p} selection=0x{:x} callback={:p}",
-        vkey, selection, callback
+        "akv_keymgmt_export key={:p} selection=0x{:x} callback={:p} cbarg={:p}",
+        vkey, selection, callback, cbarg
     );
 
     if vkey.is_null() || callback.is_null() {
@@ -372,247 +498,37 @@ pub unsafe extern "C" fn akv_keymgmt_export(
 
     let key = &*(vkey as *const AkvKey);
 
-    let pkey = match key.public_key.as_ref() {
-        Some(p) => p,
-        None => {
-            log::debug!("akv_keymgmt_export -> 0 (no cached public key)");
-            return 0;
-        }
-    };
-
-    let key_type = match pkey.id() {
-        Id::RSA => "RSA",
-        Id::EC => "EC",
-        other => {
-            log::error!("Unsupported key type for export: {:?}", other);
-            return 0;
-        }
-    };
+    if key.public_key.is_none() {
+        log::debug!("akv_keymgmt_export -> 0 (no cached public key)");
+        return 0;
+    }
 
     if (selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0 {
-        log::debug!("akv_keymgmt_export requested private key (not supported)");
+        // Prevent other providers from attempting to consume private key material we cannot supply
+        log::debug!("akv_keymgmt_export -> 0 (private material not exportable: sel=0x{:x})", selection);
+        return 0;
     }
 
-    let mut params: Vec<OsslParam> = Vec::new();
-    let mut owned_strings: Vec<CString> = Vec::new();
-
-    // Key type string
-    owned_strings.push(CString::new(key_type).expect("static string"));
-    let type_ptr = owned_strings.last().unwrap().as_ptr() as *mut c_char;
-    params.push(OsslParam::construct_utf8_string(
-        OSSL_PKEY_PARAM_TYPE.as_ptr() as *const c_char,
-        type_ptr,
-        0,
-    ));
-
-    // Friendly name (key name)
-    if let Some(name) = &key.key_name {
-        match CString::new(name.as_str()) {
-            Ok(cstr) => {
-                owned_strings.push(cstr);
-                let ptr = owned_strings.last().unwrap().as_ptr() as *mut c_char;
-                params.push(OsslParam::construct_utf8_string(
-                    OSSL_PKEY_PARAM_FRIENDLY_NAME.as_ptr() as *const c_char,
-                    ptr,
-                    0,
-                ));
-            }
-            Err(e) => {
-                log::error!("Failed to build friendly name string: {}", e);
-                return 0;
-            }
-        }
+    // Use OpenSSL's EVP_PKEY_todata to convert key to params
+    let pkey_ptr = std::mem::transmute::<_, *const openssl_ffi::EVP_PKEY>(key.public_key.as_ref().unwrap());
+    let mut params: *mut OsslParam = ptr::null_mut();
+    
+    if openssl_ffi::EVP_PKEY_todata(pkey_ptr, selection, &mut params) <= 0 {
+        log::error!("akv_keymgmt_export failed to map key to params (sel=0x{:x})", selection);
+        log::debug!("akv_keymgmt_export -> 0 (todata failed)");
+        return 0;
     }
 
-    // Key identifier (managedhsm URI)
-    if let (Some(vault), Some(name)) = (&key.keyvault_name, &key.key_name) {
-        let mut identifier = format!("managedhsm:{}:{}", vault, name);
-        if let Some(version) = &key.key_version {
-            identifier.push(':');
-            identifier.push_str(version);
-        }
-
-        match CString::new(identifier) {
-            Ok(cstr) => {
-                owned_strings.push(cstr);
-                let ptr = owned_strings.last().unwrap().as_ptr() as *mut c_char;
-                params.push(OsslParam::construct_utf8_string(
-                    OSSL_PKEY_PARAM_ID.as_ptr() as *const c_char,
-                    ptr,
-                    0,
-                ));
-            }
-            Err(e) => {
-                log::error!("Failed to build key identifier string: {}", e);
-                return 0;
-            }
-        }
-    }
-
-    // Key size metadata
-    let mut bits_value: c_int = pkey.bits() as c_int;
-    params.push(OsslParam::construct_int(
-        OSSL_PKEY_PARAM_BITS.as_ptr() as *const c_char,
-        &mut bits_value,
-    ));
-
-    let mut security_bits_value: c_int = pkey.security_bits() as c_int;
-    params.push(OsslParam::construct_int(
-        OSSL_PKEY_PARAM_SECURITY_BITS.as_ptr() as *const c_char,
-        &mut security_bits_value,
-    ));
-
-    let mut max_size_value: usize = pkey.size();
-    params.push(OsslParam::construct_size_t(
-        OSSL_PKEY_PARAM_MAX_SIZE.as_ptr() as *const c_char,
-        &mut max_size_value,
-    ));
-
-    // Buffers that must outlive the callback
-    let mut rsa_n_bytes: Vec<u8> = Vec::new();
-    let mut rsa_e_bytes: Vec<u8> = Vec::new();
-    let mut rsa_pub_bytes: Vec<u8> = Vec::new();
-    let mut ec_point_bytes: Vec<u8> = Vec::new();
-
-    match pkey.id() {
-        Id::RSA => {
-            let rsa = match pkey.rsa() {
-                Ok(r) => r,
-                Err(e) => {
-                    log::error!("Failed to access RSA key components: {}", e);
-                    return 0;
-                }
-            };
-
-            rsa_n_bytes = rsa.n().to_vec();
-            rsa_e_bytes = rsa.e().to_vec();
-
-            match rsa.public_key_to_der() {
-                Ok(der) => rsa_pub_bytes = der,
-                Err(e) => {
-                    log::error!("Failed to DER encode RSA public key: {}", e);
-                    return 0;
-                }
-            }
-
-            if rsa_n_bytes.is_empty() || rsa_e_bytes.is_empty() || rsa_pub_bytes.is_empty() {
-                log::error!("RSA key export encountered empty component");
-                return 0;
-            }
-
-            params.push(OsslParam::construct_big_number(
-                OSSL_PKEY_PARAM_RSA_N.as_ptr() as *const c_char,
-                rsa_n_bytes.as_mut_ptr(),
-                rsa_n_bytes.len(),
-            ));
-            params.push(OsslParam::construct_big_number(
-                OSSL_PKEY_PARAM_RSA_E.as_ptr() as *const c_char,
-                rsa_e_bytes.as_mut_ptr(),
-                rsa_e_bytes.len(),
-            ));
-            params.push(OsslParam::construct_octet_string(
-                OSSL_PKEY_PARAM_PUB_KEY.as_ptr() as *const c_char,
-                rsa_pub_bytes.as_mut_ptr() as *mut c_void,
-                rsa_pub_bytes.len(),
-            ));
-        }
-        Id::EC => {
-            let ec = match pkey.ec_key() {
-                Ok(ec) => ec,
-                Err(e) => {
-                    log::error!("Failed to access EC key components: {}", e);
-                    return 0;
-                }
-            };
-
-            if let Some(nid) = ec.group().curve_name() {
-                match nid.short_name() {
-                    Ok(name) => match CString::new(name) {
-                        Ok(cstr) => {
-                            owned_strings.push(cstr);
-                            let ptr = owned_strings.last().unwrap().as_ptr() as *mut c_char;
-                            params.push(OsslParam::construct_utf8_string(
-                                OSSL_PKEY_PARAM_EC_GROUP_NAME.as_ptr() as *const c_char,
-                                ptr,
-                                0,
-                            ));
-                        }
-                        Err(e) => {
-                            log::error!("Failed to build EC group string: {}", e);
-                            return 0;
-                        }
-                    },
-                    Err(e) => {
-                        log::error!("Failed to resolve EC group short name: {}", e);
-                        return 0;
-                    }
-                }
-            }
-
-            // Provide encoding metadata expected by OpenSSL
-            owned_strings.push(CString::new("encoded-point").expect("static string"));
-            let encoding_ptr = owned_strings.last().unwrap().as_ptr() as *mut c_char;
-            params.push(OsslParam::construct_utf8_string(
-                OSSL_PKEY_PARAM_EC_ENCODING.as_ptr() as *const c_char,
-                encoding_ptr,
-                0,
-            ));
-
-            owned_strings.push(CString::new("uncompressed").expect("static string"));
-            let format_ptr = owned_strings.last().unwrap().as_ptr() as *mut c_char;
-            params.push(OsslParam::construct_utf8_string(
-                OSSL_PKEY_PARAM_EC_POINT_CONVERSION_FORMAT.as_ptr() as *const c_char,
-                format_ptr,
-                0,
-            ));
-
-            let mut ctx = match BigNumContext::new() {
-                Ok(ctx) => ctx,
-                Err(e) => {
-                    log::error!("Failed to allocate BigNumContext: {}", e);
-                    return 0;
-                }
-            };
-
-            match ec.public_key().to_bytes(
-                ec.group(),
-                PointConversionForm::UNCOMPRESSED,
-                &mut ctx,
-            ) {
-                Ok(bytes) => ec_point_bytes = bytes,
-                Err(e) => {
-                    log::error!("Failed to encode EC public point: {}", e);
-                    return 0;
-                }
-            }
-
-            if ec_point_bytes.is_empty() {
-                log::error!("EC key export encountered empty public point");
-                return 0;
-            }
-
-            params.push(OsslParam::construct_octet_string(
-                OSSL_PKEY_PARAM_PUB_KEY.as_ptr() as *const c_char,
-                ec_point_bytes.as_mut_ptr() as *mut c_void,
-                ec_point_bytes.len(),
-            ));
-        }
-        _ => unreachable!(),
-    }
-
-    params.push(OsslParam::end());
-
+    // Call the callback
     type ExportCallback = unsafe extern "C" fn(*const OsslParam, *mut c_void) -> c_int;
     let cb: ExportCallback = std::mem::transmute(callback);
-
-    let result = cb(params.as_ptr(), cbarg);
-
-    if result == 0 {
-        log::error!("Key export callback reported failure");
-    } else {
-        log::debug!("akv_keymgmt_export -> 1");
-    }
-
+    
+    let result = cb(params, cbarg);
+    
+    // Free the params allocated by OpenSSL
+    openssl_ffi::OSSL_PARAM_free(params);
+    
+    log::debug!("akv_keymgmt_export -> {}", result);
     result
 }
 
@@ -624,10 +540,9 @@ pub unsafe extern "C" fn akv_keymgmt_export(
 #[no_mangle]
 pub unsafe extern "C" fn akv_rsa_keymgmt_gettable_params(_provctx: *mut c_void) -> *const OsslParam {
     log::trace!("akv_rsa_keymgmt_gettable_params");
-    // Return empty list for now
-        static END_PARAM: OsslParam = OsslParam::end();
-        log::debug!("akv_rsa_keymgmt_gettable_params -> {:p}", &END_PARAM as *const OsslParam);
-        &END_PARAM as *const OsslParam
+    let ptr = RSA_GETTABLE_PARAMS.as_ptr();
+    log::debug!("akv_rsa_keymgmt_gettable_params -> {:p}", ptr);
+    ptr
 }
 
 /// Get settable parameters for RSA keys
@@ -654,16 +569,104 @@ pub unsafe extern "C" fn akv_rsa_keymgmt_eximport_types(_selection: c_int) -> *c
     }
 }
 
+/// Common import logic for RSA and EC keys
+/// Corresponds to akv_keymgmt_import_common in C
+unsafe fn akv_keymgmt_import_common(
+    key: &mut AkvKey,
+    algorithm: &str,
+    selection: c_int,
+    params: *const OsslParam,
+) -> c_int {
+    log::trace!(
+        "akv_keymgmt_import_common key={:p} algorithm={} selection=0x{:x} params={:p}",
+        key as *const AkvKey, algorithm, selection, params
+    );
+
+    // Reject unmanaged public-only imports (let default provider handle them)
+    if (selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0 &&
+       (selection & !OSSL_KEYMGMT_SELECT_PUBLIC_KEY) == 0 &&
+       !akv_key_has_private(key)
+    {
+        log::debug!("akv_keymgmt_import_common -> 0 (public import without metadata)");
+        return 0;
+    }
+
+    // Create EVP_PKEY_CTX using default or base provider to avoid recursion
+    let algo_cstr = match CString::new(algorithm) {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("Failed to create CString for algorithm {}: {}", algorithm, e);
+            return 0;
+        }
+    };
+
+    let provider_default = CString::new("provider=default").unwrap();
+    let provider_base = CString::new("provider=base").unwrap();
+
+    let mut ctx = openssl_ffi::EVP_PKEY_CTX_new_from_name(
+        ptr::null_mut(),
+        algo_cstr.as_ptr(),
+        provider_default.as_ptr(),
+    );
+
+    if ctx.is_null() {
+        ctx = openssl_ffi::EVP_PKEY_CTX_new_from_name(
+            ptr::null_mut(),
+            algo_cstr.as_ptr(),
+            provider_base.as_ptr(),
+        );
+    }
+
+    if ctx.is_null() {
+        log::error!("akv_keymgmt_import_common failed to create ctx for {}", algorithm);
+        return 0;
+    }
+
+    // Initialize context for fromdata operation
+    if openssl_ffi::EVP_PKEY_fromdata_init(ctx) <= 0 {
+        log::error!("akv_keymgmt_import_common fromdata_init failed for {}", algorithm);
+        openssl_ffi::EVP_PKEY_CTX_free(ctx);
+        return 0;
+    }
+
+    // Create EVP_PKEY from params
+    let mut tmp: *mut openssl_ffi::EVP_PKEY = ptr::null_mut();
+    if openssl_ffi::EVP_PKEY_fromdata(ctx, &mut tmp, selection, params as *mut OsslParam) <= 0 {
+        log::error!("akv_keymgmt_import_common fromdata failed for {} (sel=0x{:x})", algorithm, selection);
+        openssl_ffi::EVP_PKEY_CTX_free(ctx);
+        return 0;
+    }
+
+    // Wrap the EVP_PKEY in an openssl-rs PKey
+    // We need to transfer ownership from the raw pointer to Rust
+    let pkey = std::mem::transmute::<*mut openssl_ffi::EVP_PKEY, PKey<openssl::pkey::Public>>(tmp);
+    key.set_public(pkey);
+
+    openssl_ffi::EVP_PKEY_CTX_free(ctx);
+
+    log::debug!("akv_keymgmt_import_common imported {} key into {:p}", algorithm, key as *const AkvKey);
+    1
+}
+
 /// Import an RSA key (stub for now)
 #[no_mangle]
 pub unsafe extern "C" fn akv_rsa_keymgmt_import(
-    _vkey: *mut c_void,
-    _selection: c_int,
-    _params: *const OsslParam,
+    vkey: *mut c_void,
+    selection: c_int,
+    params: *const OsslParam,
 ) -> c_int {
-    log::trace!("akv_rsa_keymgmt_import (stub)");
-    log::debug!("akv_rsa_keymgmt_import -> 0 (not implemented)");
-    0
+    log::trace!("akv_rsa_keymgmt_import key={:p} selection=0x{:x} params={:p}", vkey, selection, params);
+    
+    if vkey.is_null() {
+        log::debug!("akv_rsa_keymgmt_import -> 0 (null key)");
+        return 0;
+    }
+    
+    let key = &mut *(vkey as *mut AkvKey);
+    let result = akv_keymgmt_import_common(key, "RSA", selection, params);
+    
+    log::debug!("akv_rsa_keymgmt_import -> {}", result);
+    result
 }
 
 /// Query which operations are supported for RSA keys
@@ -693,9 +696,9 @@ pub unsafe extern "C" fn akv_rsa_keymgmt_query(operation_id: c_int) -> *const c_
 #[no_mangle]
 pub unsafe extern "C" fn akv_ec_keymgmt_gettable_params(_provctx: *mut c_void) -> *const OsslParam {
     log::trace!("akv_ec_keymgmt_gettable_params");
-    static END_PARAM: OsslParam = OsslParam::end();
-    log::debug!("akv_ec_keymgmt_gettable_params -> {:p}", &END_PARAM as *const OsslParam);
-    &END_PARAM as *const OsslParam
+    let ptr = EC_GETTABLE_PARAMS.as_ptr();
+    log::debug!("akv_ec_keymgmt_gettable_params -> {:p}", ptr);
+    ptr
 }
 
 /// Get settable parameters for EC keys
@@ -725,13 +728,22 @@ pub unsafe extern "C" fn akv_ec_keymgmt_eximport_types(_selection: c_int) -> *co
 /// Import an EC key (stub for now)
 #[no_mangle]
 pub unsafe extern "C" fn akv_ec_keymgmt_import(
-    _vkey: *mut c_void,
-    _selection: c_int,
-    _params: *const OsslParam,
+    vkey: *mut c_void,
+    selection: c_int,
+    params: *const OsslParam,
 ) -> c_int {
-    log::trace!("akv_ec_keymgmt_import (stub)");
-    log::debug!("akv_ec_keymgmt_import -> 0 (not implemented)");
-    0
+    log::trace!("akv_ec_keymgmt_import key={:p} selection=0x{:x} params={:p}", vkey, selection, params);
+    
+    if vkey.is_null() {
+        log::debug!("akv_ec_keymgmt_import -> 0 (null key)");
+        return 0;
+    }
+    
+    let key = &mut *(vkey as *mut AkvKey);
+    let result = akv_keymgmt_import_common(key, "EC", selection, params);
+    
+    log::debug!("akv_ec_keymgmt_import -> {}", result);
+    result
 }
 
 /// Query which operations are supported for EC keys
