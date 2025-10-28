@@ -17,6 +17,13 @@ This is a Rust implementation of the OpenSSL Provider for Azure Managed HSM, con
 
 ## Current Implementation Status
 
+### Recent Update (2025-10-27)
+- Reworked RSA/ECDSA verification to call the low-level `EVP_PKEY_verify*` APIs directly, preventing OpenSSL from double hashing pre-digested data.
+- Normalized RSA modulus/exponent byte order during import/export so Azure big-endian material is reversed exactly once before reaching `OSSL_PARAM`.
+- Added the `foreign-types` dependency and new OpenSSL FFI bindings required for the verification path.
+- Checked in the shared `testOpenssl.cnf` used by the test harness so CSR/signing scenarios run without manual setup.
+- `runtest.bat /SKIPVALIDATION` now succeeds for RSA (RS256/PS256), ECDSA, CSR, and certificate flows; AES wrap/unwrap still requires implementation.
+
 ### ✅ Completed Components
 
 1. **Provider Core** (`provider.rs`)
