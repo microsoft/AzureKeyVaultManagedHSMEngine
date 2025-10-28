@@ -1239,6 +1239,11 @@ pub unsafe extern "C" fn akv_aes_keymgmt_settable_params(
 pub unsafe extern "C" fn akv_aes_keymgmt_query(operation_id: c_int) -> *const c_char {
     log::trace!("akv_aes_keymgmt_query operation_id={}", operation_id);
 
+    if operation_id == OSSL_OP_ASYM_CIPHER {
+        log::debug!("akv_aes_keymgmt_query -> AES-256-KW (asym_cipher)");
+        return b"AES-256-KW\0".as_ptr() as *const c_char;
+    }
+
     log::debug!("akv_aes_keymgmt_query -> NULL");
     ptr::null()
 }

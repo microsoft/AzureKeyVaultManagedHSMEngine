@@ -300,8 +300,8 @@ pub static AKV_EC_KEYMGMT_FUNCTIONS: [OsslDispatch; 15] = [
     OsslDispatch::end(),
 ];
 
-/// AES key management functions
-pub static AKV_AES_KEYMGMT_FUNCTIONS: [OsslDispatch; 11] = [
+/// AES key management dispatch functions (matches C provider: 9 functions)
+pub static AKV_AES_KEYMGMT_FUNCTIONS: [OsslDispatch; 10] = [
     OsslDispatch::new(
         OSSL_FUNC_KEYMGMT_NEW,
         crate::keymgmt::akv_aes_keymgmt_new as *mut c_void,
@@ -329,10 +329,6 @@ pub static AKV_AES_KEYMGMT_FUNCTIONS: [OsslDispatch; 11] = [
     OsslDispatch::new(
         OSSL_FUNC_KEYMGMT_GETTABLE_PARAMS,
         crate::keymgmt::akv_aes_keymgmt_gettable_params as *mut c_void,
-    ),
-    OsslDispatch::new(
-        OSSL_FUNC_KEYMGMT_SETTABLE_PARAMS,
-        crate::keymgmt::akv_aes_keymgmt_settable_params as *mut c_void,
     ),
     OsslDispatch::new(
         OSSL_FUNC_KEYMGMT_IMPORT,
