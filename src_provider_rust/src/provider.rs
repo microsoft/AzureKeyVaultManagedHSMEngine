@@ -1,8 +1,8 @@
 // Provider core functionality
 // Corresponds to akv_provider.c
 
-use std::os::raw::c_void;
 use openssl::pkey::{PKey, Public};
+use std::os::raw::c_void;
 
 /// Provider context structure (corresponds to AKV_PROVIDER_CTX)
 #[repr(C)]
@@ -41,12 +41,17 @@ impl AkvKey {
 
     /// Set key metadata (vault name, key name, version)
     pub fn set_metadata(&mut self, vault: &str, name: &str, version: Option<&str>) -> bool {
-        log::trace!("akv_key_set_metadata vault={} name={} version={:?}", vault, name, version);
-        
+        log::trace!(
+            "akv_key_set_metadata vault={} name={} version={:?}",
+            vault,
+            name,
+            version
+        );
+
         self.keyvault_name = Some(vault.to_string());
         self.key_name = Some(name.to_string());
         self.key_version = version.map(|v| v.to_string());
-        
+
         log::debug!("akv_key_set_metadata -> true");
         true
     }
@@ -104,8 +109,7 @@ pub struct ParsedUri {
 /// Parse a Key Vault URI
 fn has_case_prefix(input: &str, prefix: &str) -> bool {
     log::trace!("has_case_prefix input={} prefix={}", input, prefix);
-    let result = input.len() >= prefix.len() 
-        && input[..prefix.len()].eq_ignore_ascii_case(prefix);
+    let result = input.len() >= prefix.len() && input[..prefix.len()].eq_ignore_ascii_case(prefix);
     log::debug!("has_case_prefix -> {}", result);
     result
 }
@@ -113,23 +117,23 @@ fn has_case_prefix(input: &str, prefix: &str) -> bool {
 /// Parse URI in key-value format: akv:type=managedhsm,vault=name,name=keyname,version=v1
 pub fn parse_uri_keyvalue(uri: &str) -> Result<ParsedUri, String> {
     log::trace!("parse_uri_keyvalue uri={}", uri);
-    
+
     if !has_case_prefix(uri, "akv:") {
         log::debug!("parse_uri_keyvalue -> Err (missing akv prefix)");
         return Err("URI must start with 'akv:' prefix".to_string());
     }
-    
+
     let cursor = &uri[4..]; // Skip "akv:"
     let mut vault_name: Option<String> = None;
     let mut key_name: Option<String> = None;
     let mut key_version: Option<String> = None;
     let mut type_validated = false;
-    
+
     for token in cursor.split(',') {
         if let Some(equals_pos) = token.find('=') {
             let key = &token[..equals_pos];
             let value = &token[equals_pos + 1..];
-            
+
             match key.to_lowercase().as_str() {
                 "keyvault_type" | "type" => {
                     if !value.eq_ignore_ascii_case("managedhsm") {
@@ -153,17 +157,19 @@ pub fn parse_uri_keyvalue(uri: &str) -> Result<ParsedUri, String> {
             }
         }
     }
-    
+
     // Treat missing type as managedhsm by default (for legacy URIs)
     if !type_validated {
         type_validated = true;
     }
-    
+
     match (type_validated, vault_name, key_name) {
         (true, Some(vault), Some(name)) => {
             log::debug!(
                 "parse_uri_keyvalue parsed vault={} name={} version={:?}",
-                vault, name, key_version
+                vault,
+                name,
+                key_version
             );
             Ok(ParsedUri {
                 vault_name: vault,
@@ -181,23 +187,24 @@ pub fn parse_uri_keyvalue(uri: &str) -> Result<ParsedUri, String> {
 /// Parse URI in simple format: managedhsm:vaultname:keyname
 pub fn parse_uri_simple(uri: &str) -> Result<ParsedUri, String> {
     log::trace!("parse_uri_simple uri={}", uri);
-    
+
     if !has_case_prefix(uri, "managedhsm:") {
         log::debug!("parse_uri_simple -> Err (missing managedhsm prefix)");
         return Err("URI must start with 'managedhsm:' prefix".to_string());
     }
-    
+
     let cursor = &uri[11..]; // Skip "managedhsm:"
-    
+
     if let Some(sep_pos) = cursor.find(':') {
         let vault_name = cursor[..sep_pos].to_string();
         let key_name = cursor[sep_pos + 1..].to_string();
-        
+
         log::debug!(
             "parse_uri_simple parsed vault={} name={}",
-            vault_name, key_name
+            vault_name,
+            key_name
         );
-        
+
         Ok(ParsedUri {
             vault_name,
             key_name,

@@ -1,7 +1,7 @@
 // Base64 encoding/decoding utilities
 // Corresponds to base64.c
 
-use base64::{Engine as _, engine::general_purpose};
+use base64::{engine::general_purpose, Engine as _};
 
 /// Encode bytes to URL-safe base64 (no padding)
 pub fn encode_url_safe(data: &[u8]) -> String {

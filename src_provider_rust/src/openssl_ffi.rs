@@ -1,9 +1,9 @@
 // FFI bindings for OpenSSL functions not available in openssl-rs crate
 // These are needed for provider implementation
 
-use std::os::raw::{c_char, c_int, c_uchar, c_void};
 use crate::ossl_param::OsslParam;
 use openssl_sys::EVP_MD;
+use std::os::raw::{c_char, c_int, c_uchar, c_void};
 
 // Opaque types from OpenSSL
 #[allow(non_camel_case_types)]
@@ -90,10 +90,10 @@ extern "C" {
 
     /// Configure RSA-PSS MGF1 digest
     pub fn EVP_PKEY_CTX_set_rsa_mgf1_md(ctx: *mut EVP_PKEY_CTX, md: *const EVP_MD) -> c_int;
-    
+
     /// Get the last error from the OpenSSL error queue
     pub fn ERR_get_error() -> c_ulong;
-    
+
     /// Get error string for an error code
     pub fn ERR_error_string(e: c_ulong, buf: *mut c_char) -> *const c_char;
 }
@@ -107,18 +107,16 @@ pub fn log_openssl_errors(prefix: &str) {
         if err == 0 {
             break;
         }
-        
+
         let mut buf = [0i8; 256];
         let err_str = unsafe {
             let ptr = ERR_error_string(err, buf.as_mut_ptr());
             if ptr.is_null() {
                 break;
             }
-            std::ffi::CStr::from_ptr(ptr)
-                .to_string_lossy()
-                .into_owned()
+            std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
         };
-        
+
         log::error!("{}: OpenSSL error 0x{:x}: {}", prefix, err, err_str);
     }
 }

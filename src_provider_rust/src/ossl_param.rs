@@ -40,7 +40,7 @@ pub const OSSL_OBJECT_PARAM_DATA_TYPE: &[u8] = b"data-type\0";
 pub const OSSL_OBJECT_PARAM_REFERENCE: &[u8] = b"reference\0";
 
 // Object types
-pub const OSSL_OBJECT_PKEY: c_int = 2;  // From OpenSSL core_object.h
+pub const OSSL_OBJECT_PKEY: c_int = 2; // From OpenSSL core_object.h
 
 impl OsslParam {
     /// Create an end-of-array marker
@@ -77,11 +77,7 @@ impl OsslParam {
     }
 
     /// Create an octet string parameter
-    pub fn construct_octet_string(
-        key: *const c_char,
-        value: *mut c_void,
-        size: usize,
-    ) -> Self {
+    pub fn construct_octet_string(key: *const c_char, value: *mut c_void, size: usize) -> Self {
         Self {
             key,
             data_type: OSSL_PARAM_OCTET_STRING,
@@ -92,11 +88,7 @@ impl OsslParam {
     }
 
     /// Create an unsigned big number parameter (binary big-endian data)
-    pub fn construct_big_number(
-        key: *const c_char,
-        value: *mut u8,
-        size: usize,
-    ) -> Self {
+    pub fn construct_big_number(key: *const c_char, value: *mut u8, size: usize) -> Self {
         Self {
             key,
             data_type: OSSL_PARAM_UNSIGNED_INTEGER,
@@ -116,7 +108,7 @@ impl OsslParam {
             return_size: 0,
         }
     }
-    
+
     /// Create a UTF8 string parameter
     pub fn construct_utf8_string(key: *const c_char, value: *mut c_char, value_len: usize) -> Self {
         Self {
@@ -149,12 +141,12 @@ impl OsslParam {
         if self.data_type != OSSL_PARAM_UTF8_PTR {
             return false;
         }
-        
+
         let ptr_ref = self.data as *mut *const c_char;
         if ptr_ref.is_null() {
             return false;
         }
-        
+
         *ptr_ref = value;
         true
     }
@@ -164,12 +156,12 @@ impl OsslParam {
         if self.data_type != OSSL_PARAM_INTEGER {
             return false;
         }
-        
+
         let int_ref = self.data as *mut c_int;
         if int_ref.is_null() {
             return false;
         }
-        
+
         *int_ref = value;
         true
     }
@@ -179,12 +171,12 @@ impl OsslParam {
         if param.is_null() || (*param).data_type != OSSL_PARAM_INTEGER {
             return None;
         }
-        
+
         let int_ref = (*param).data as *const c_int;
         if int_ref.is_null() {
             return None;
         }
-        
+
         Some(*int_ref)
     }
 
@@ -193,7 +185,7 @@ impl OsslParam {
         if param.is_null() {
             return None;
         }
-        
+
         if (*param).data_type == OSSL_PARAM_UTF8_PTR {
             let ptr_ref = (*param).data as *const *const c_char;
             if ptr_ref.is_null() {

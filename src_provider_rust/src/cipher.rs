@@ -1,5 +1,5 @@
 /* Copyright (c) Microsoft Corporation.
-   Licensed under the MIT License. */
+Licensed under the MIT License. */
 
 use crate::auth::AccessToken;
 use crate::http_client::AkvHttpClient;
@@ -12,6 +12,24 @@ use std::ptr;
 /// RSA padding modes
 const RSA_PKCS1_PADDING: c_int = 1;
 const RSA_PKCS1_OAEP_PADDING: c_int = 4;
+
+fn normalize_aes_algorithm_name(name: &str) -> Option<&'static str> {
+    let primary = name.split(':').next().unwrap_or(name).trim();
+    let upper = primary.to_ascii_uppercase();
+
+    match upper.as_str() {
+        "A128KW" | "AES-128-KW" | "ID-AES128-WRAP" | "AES-128-WRAP" | "2.16.840.1.101.3.4.1.5" => {
+            Some("A128KW")
+        }
+        "A192KW" | "AES-192-KW" | "ID-AES192-WRAP" | "AES-192-WRAP" | "2.16.840.1.101.3.4.1.25" => {
+            Some("A192KW")
+        }
+        "A256KW" | "AES-256-KW" | "ID-AES256-WRAP" | "AES-256-WRAP" | "2.16.840.1.101.3.4.1.45" => {
+            Some("A256KW")
+        }
+        _ => None,
+    }
+}
 
 /// RSA Cipher context for asymmetric encryption/decryption
 pub struct RsaCipherContext {
@@ -67,8 +85,8 @@ impl RsaCipherContext {
             ciphertext.len()
         );
 
-        let token = AccessToken::from_env()
-            .map_err(|e| format!("Failed to get access token: {}", e))?;
+        let token =
+            AccessToken::from_env().map_err(|e| format!("Failed to get access token: {}", e))?;
         let client = AkvHttpClient::new(vault_name.clone(), token)
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
@@ -103,27 +121,30 @@ impl AesCipherContext {
         })
     }
 
-    /// Get the Azure algorithm based on key size
-    fn get_algorithm(&self) -> Option<&str> {
-        // Use preset algorithm if available
+    /// Get the Azure algorithm based on configured value or key size
+    fn get_algorithm(&self) -> Result<&'static str, String> {
         if let Some(ref alg) = self.algorithm {
-            return Some(alg.as_str());
+            return normalize_aes_algorithm_name(alg)
+                .ok_or_else(|| format!("Unsupported AES algorithm '{}'", alg));
         }
 
-        // Otherwise derive from key size
-        let key = self.key.as_ref()?;
+        let key = self
+            .key
+            .as_ref()
+            .ok_or_else(|| "No key set for AES context".to_string())?;
+
         match key.key_bits {
-            128 => Some("A128KW"),
-            192 => Some("A192KW"),
-            256 => Some("A256KW"),
-            _ => None,
+            128 => Ok("A128KW"),
+            192 => Ok("A192KW"),
+            256 => Ok("A256KW"),
+            other => Err(format!("Unsupported AES key size {}", other)),
         }
     }
 
     /// Wrap a key using Azure Managed HSM
     fn wrap_key_remote(&self, plaintext: &[u8]) -> Result<Vec<u8>, String> {
-        let key = self.key.as_ref().ok_or("No key set")?;
-        let algorithm = self.get_algorithm().ok_or("Unsupported key size")?;
+        let key = self.key.as_ref().ok_or_else(|| "No key set".to_string())?;
+        let algorithm = self.get_algorithm()?;
 
         let vault_name = key.keyvault_name.as_ref().ok_or("No vault name")?;
         let key_name = key.key_name.as_ref().ok_or("No key name")?;
@@ -135,8 +156,8 @@ impl AesCipherContext {
             plaintext.len()
         );
 
-        let token = AccessToken::from_env()
-            .map_err(|e| format!("Failed to get access token: {}", e))?;
+        let token =
+            AccessToken::from_env().map_err(|e| format!("Failed to get access token: {}", e))?;
         let client = AkvHttpClient::new(vault_name.clone(), token)
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
@@ -147,8 +168,8 @@ impl AesCipherContext {
 
     /// Unwrap a key using Azure Managed HSM
     fn unwrap_key_remote(&self, ciphertext: &[u8]) -> Result<Vec<u8>, String> {
-        let key = self.key.as_ref().ok_or("No key set")?;
-        let algorithm = self.get_algorithm().ok_or("Unsupported key size")?;
+        let key = self.key.as_ref().ok_or_else(|| "No key set".to_string())?;
+        let algorithm = self.get_algorithm()?;
 
         let vault_name = key.keyvault_name.as_ref().ok_or("No vault name")?;
         let key_name = key.key_name.as_ref().ok_or("No key name")?;
@@ -160,8 +181,8 @@ impl AesCipherContext {
             ciphertext.len()
         );
 
-        let token = AccessToken::from_env()
-            .map_err(|e| format!("Failed to get access token: {}", e))?;
+        let token =
+            AccessToken::from_env().map_err(|e| format!("Failed to get access token: {}", e))?;
         let client = AkvHttpClient::new(vault_name.clone(), token)
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
@@ -487,7 +508,7 @@ pub unsafe extern "C" fn akv_aes_cipher_encrypt(
 
     // If out is null, estimate output size (input + overhead)
     if out.is_null() {
-        *outlen = inlen + 16; // AES key wrap adds 8 bytes, add extra for safety
+        *outlen = inlen + 8;
         return 1;
     }
 
@@ -530,7 +551,7 @@ pub unsafe extern "C" fn akv_aes_cipher_decrypt(
 
     // If out is null, estimate output size
     if out.is_null() {
-        *outlen = inlen; // Unwrapped will be smaller
+        *outlen = inlen.saturating_sub(8);
         return 1;
     }
 
@@ -572,7 +593,18 @@ pub unsafe extern "C" fn akv_aes_cipher_set_ctx_params(
             if key_str == "algorithm" {
                 if let Some(value_ptr) = OsslParam::get_utf8_string_ptr(current) {
                     if let Ok(alg_str) = CStr::from_ptr(value_ptr).to_str() {
-                        ctx.algorithm = Some(alg_str.to_string());
+                        if let Some(normalized) = normalize_aes_algorithm_name(alg_str) {
+                            ctx.algorithm = Some(normalized.to_string());
+                            log::debug!(
+                                "akv_aes_cipher_set_ctx_params -> algorithm set to {}",
+                                normalized
+                            );
+                        } else {
+                            log::warn!(
+                                "akv_aes_cipher_set_ctx_params ignoring unsupported algorithm '{}'",
+                                alg_str
+                            );
+                        }
                     }
                 }
             }
@@ -616,4 +648,3 @@ pub unsafe extern "C" fn akv_aes_cipher_gettable_ctx_params(
 ) -> *const OsslParam {
     akv_aes_cipher_settable_ctx_params(_vctx, _provctx)
 }
-

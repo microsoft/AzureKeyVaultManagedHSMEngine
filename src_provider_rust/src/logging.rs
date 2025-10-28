@@ -1,8 +1,8 @@
 // Logging utilities
 // Corresponds to akv_logging.c
 
-use std::sync::Once;
 use std::io::Write;
+use std::sync::Once;
 
 static INIT: Once = Once::new();
 
@@ -11,14 +11,12 @@ static INIT: Once = Once::new();
 pub fn init_logging() -> Result<(), String> {
     INIT.call_once(|| {
         let log_file = std::env::var("AKV_LOG_FILE").ok();
-        
-        let mut builder = env_logger::Builder::from_env(
-            env_logger::Env::default()
-                .default_filter_or("info")
-        );
-        
+
+        let mut builder =
+            env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"));
+
         builder.format_timestamp_millis();
-        
+
         // Custom format with timestamp and level
         builder.format(|buf, record| {
             writeln!(
@@ -31,7 +29,7 @@ pub fn init_logging() -> Result<(), String> {
                 record.args()
             )
         });
-        
+
         // Configure target (file or stderr)
         if let Some(ref path) = log_file {
             if !path.is_empty() {
@@ -51,10 +49,10 @@ pub fn init_logging() -> Result<(), String> {
                 }
             }
         }
-        
+
         builder.init();
     });
-    
+
     Ok(())
 }
 
