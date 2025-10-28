@@ -25,6 +25,52 @@ const RSA_PSS_SALTLEN_DIGEST: c_int = -1;
 const EVP_PKEY_OP_SIGN: c_int = 1;
 const EVP_PKEY_OP_VERIFY: c_int = 2;
 
+/// ASN.1 types
+const V_ASN1_NULL: c_int = 5;
+
+// OpenSSL FFI declarations for X509_ALGOR
+#[allow(non_camel_case_types)]
+#[repr(C)]
+struct X509_ALGOR {
+    _opaque: [u8; 0],
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+struct ASN1_OBJECT {
+    _opaque: [u8; 0],
+}
+
+extern "C" {
+    fn X509_ALGOR_new() -> *mut X509_ALGOR;
+    fn X509_ALGOR_free(algor: *mut X509_ALGOR);
+    fn X509_ALGOR_set0(
+        algor: *mut X509_ALGOR,
+        aobj: *mut ASN1_OBJECT,
+        ptype: c_int,
+        pval: *mut c_void,
+    ) -> c_int;
+    fn i2d_X509_ALGOR(algor: *const X509_ALGOR, pp: *mut *mut c_uchar) -> c_int;
+    fn OBJ_nid2obj(n: c_int) -> *mut ASN1_OBJECT;
+    fn OSSL_PARAM_set_octet_string(p: *mut OsslParam, val: *const c_void, len: usize) -> c_int;
+}
+
+/// NIDs for signature algorithms
+#[allow(non_upper_case_globals)]
+const NID_sha256WithRSAEncryption: c_int = 668;
+#[allow(non_upper_case_globals)]
+const NID_sha384WithRSAEncryption: c_int = 669;
+#[allow(non_upper_case_globals)]
+const NID_sha512WithRSAEncryption: c_int = 670;
+#[allow(non_upper_case_globals)]
+const NID_ecdsa_with_SHA256: c_int = 794;
+#[allow(non_upper_case_globals)]
+const NID_ecdsa_with_SHA384: c_int = 795;
+#[allow(non_upper_case_globals)]
+const NID_ecdsa_with_SHA512: c_int = 796;
+#[allow(non_upper_case_globals)]
+const NID_rsassaPss: c_int = 912;
+
 /// Key types for signature
 #[derive(Debug, Clone, Copy)]
 enum KeyType {
@@ -43,6 +89,7 @@ pub struct SignatureContext {
     operation: c_int,
     padding: c_int,
     pss_saltlen: c_int,
+    aid: Option<Vec<u8>>,  // DER-encoded algorithm identifier for X.509 operations
 }
 
 impl SignatureContext {
@@ -58,6 +105,7 @@ impl SignatureContext {
             operation: 0,
             padding: RSA_PKCS1_PADDING,
             pss_saltlen: RSA_PSS_SALTLEN_DIGEST,
+            aid: None,
         })
     }
 
@@ -73,7 +121,103 @@ impl SignatureContext {
             operation: 0,
             padding: 0,
             pss_saltlen: 0,
+            aid: None,
         })
+    }
+
+    /// Compute DER-encoded algorithm identifier for X.509 operations
+    /// Based on key type, digest, and padding mode
+    fn compute_algorithm_id(&mut self) -> bool {
+        let md_name = match &self.md_name {
+            Some(name) => name.as_str(),
+            None => {
+                log::debug!("compute_algorithm_id: no digest set");
+                return false;
+            }
+        };
+
+        // Determine the signature algorithm NID
+        let sig_nid = match self.keytype {
+            KeyType::Rsa => {
+                if self.padding == RSA_PSS_PADDING {
+                    // For RSA-PSS, use rsassaPss NID (TODO: encode PSS parameters properly)
+                    log::debug!("compute_algorithm_id: RSA-PSS not fully implemented, using basic NID");
+                    NID_rsassaPss
+                } else {
+                    // For PKCS#1 v1.5, combine digest + RSA encryption
+                    match md_name {
+                        "sha256" | "SHA256" | "SHA2-256" => NID_sha256WithRSAEncryption,
+                        "sha384" | "SHA384" | "SHA2-384" => NID_sha384WithRSAEncryption,
+                        "sha512" | "SHA512" | "SHA2-512" => NID_sha512WithRSAEncryption,
+                        _ => {
+                            log::error!("compute_algorithm_id: unsupported RSA digest {}", md_name);
+                            return false;
+                        }
+                    }
+                }
+            }
+            KeyType::Ec => {
+                // For ECDSA, combine digest + ECDSA
+                match md_name {
+                    "sha256" | "SHA256" | "SHA2-256" => NID_ecdsa_with_SHA256,
+                    "sha384" | "SHA384" | "SHA2-384" => NID_ecdsa_with_SHA384,
+                    "sha512" | "SHA512" | "SHA2-512" => NID_ecdsa_with_SHA512,
+                    _ => {
+                        log::error!("compute_algorithm_id: unsupported ECDSA digest {}", md_name);
+                        return false;
+                    }
+                }
+            }
+        };
+
+        unsafe {
+            // Create X509_ALGOR structure
+            let algor = X509_ALGOR_new();
+            if algor.is_null() {
+                log::error!("compute_algorithm_id: X509_ALGOR_new failed");
+                return false;
+            }
+
+            // Set algorithm OID
+            if X509_ALGOR_set0(algor, OBJ_nid2obj(sig_nid), V_ASN1_NULL, ptr::null_mut()) != 1 {
+                log::error!("compute_algorithm_id: X509_ALGOR_set0 failed");
+                X509_ALGOR_free(algor);
+                return false;
+            }
+
+            // Get DER encoding size
+            let der_len = i2d_X509_ALGOR(algor, ptr::null_mut());
+            if der_len <= 0 {
+                log::error!("compute_algorithm_id: i2d_X509_ALGOR size failed");
+                X509_ALGOR_free(algor);
+                return false;
+            }
+
+            // Allocate Vec for DER encoding
+            let mut der_vec: Vec<u8> = vec![0u8; der_len as usize];
+            let mut der_ptr = der_vec.as_mut_ptr();
+            
+            // Encode to DER
+            let actual_len = i2d_X509_ALGOR(algor, &mut der_ptr);
+            if actual_len != der_len {
+                log::error!("compute_algorithm_id: i2d_X509_ALGOR encode failed");
+                X509_ALGOR_free(algor);
+                return false;
+            }
+
+            // Free OpenSSL structure
+            X509_ALGOR_free(algor);
+
+            // Store in context
+            self.aid = Some(der_vec);
+
+            log::debug!(
+                "compute_algorithm_id: generated {} bytes for sig_nid={} (md={}, keytype={:?}, padding={})",
+                der_len, sig_nid, md_name, self.keytype, self.padding
+            );
+
+            true
+        }
     }
 
     /// Get the Azure algorithm name based on context
@@ -433,6 +577,9 @@ pub unsafe extern "C" fn akv_signature_digest_sign_init(
             log::debug!("akv_signature_digest_sign_init: digest name={}", name);
             ctx.md_name = Some(name.to_string());
             
+            // Compute algorithm identifier for X.509 operations
+            ctx.compute_algorithm_id();
+            
             // Create and initialize hasher with the digest algorithm
             log::debug!("akv_signature_digest_sign_init: creating hasher for {}", name);
             let md = match MessageDigest::from_name(name) {
@@ -493,6 +640,9 @@ pub unsafe extern "C" fn akv_signature_digest_verify_init(
     if !mdname.is_null() {
         if let Ok(name) = CStr::from_ptr(mdname).to_str() {
             ctx.md_name = Some(name.to_string());
+            
+            // Compute algorithm identifier for X.509 operations
+            ctx.compute_algorithm_id();
             
             // Create and initialize hasher with the digest algorithm
             let md = match MessageDigest::from_name(name) {
@@ -658,10 +808,54 @@ pub unsafe extern "C" fn akv_signature_digest_verify_final(
 /// Get context parameters
 #[no_mangle]
 pub unsafe extern "C" fn akv_signature_get_ctx_params(
-    _vctx: *mut c_void,
-    _params: *mut OsslParam,
+    vctx: *mut c_void,
+    params: *mut OsslParam,
 ) -> c_int {
-    // No parameters to get currently
+    if vctx.is_null() || params.is_null() {
+        return 1; // Nothing to get
+    }
+
+    let ctx = &*(vctx as *const SignatureContext);
+
+    // Log all requested parameters
+    let mut current = params;
+    while !(*current).key.is_null() {
+        if let Ok(key) = CStr::from_ptr((*current).key).to_str() {
+            log::trace!("akv_signature_get_ctx_params requested: {}", key);
+        }
+        current = current.add(1);
+    }
+
+    // Find and handle ALGORITHM_ID parameter
+    let aid_key = b"algorithm-id\0".as_ptr() as *const c_char;
+    let aid_param = OsslParam::locate(params, aid_key);
+    if !aid_param.is_null() {
+        if let Some(ref aid_vec) = ctx.aid {
+            log::debug!("akv_signature_get_ctx_params returning ALGORITHM_ID ({} bytes)", aid_vec.len());
+            if OSSL_PARAM_set_octet_string(aid_param, aid_vec.as_ptr() as *const c_void, aid_vec.len()) != 1 {
+                log::error!("akv_signature_get_ctx_params failed to set ALGORITHM_ID");
+                return 0;
+            }
+        } else {
+            log::debug!("akv_signature_get_ctx_params ALGORITHM_ID requested but not available");
+            // Don't fail - just skip setting it
+        }
+    }
+
+    // Find and handle DIGEST parameter
+    let digest_key = b"digest\0".as_ptr() as *const c_char;
+    let digest_param = OsslParam::locate(params, digest_key);
+    if !digest_param.is_null() {
+        let mdname = ctx.md_name.as_deref().unwrap_or("");
+        let mdname_cstr = std::ffi::CString::new(mdname).unwrap();
+        if !(*digest_param).set_utf8_ptr(mdname_cstr.as_ptr()) {
+            log::error!("akv_signature_get_ctx_params failed to set digest");
+            return 0;
+        }
+        // Keep the CString alive by leaking it (OpenSSL expects the pointer to remain valid)
+        std::mem::forget(mdname_cstr);
+    }
+
     1
 }
 
@@ -746,6 +940,8 @@ pub unsafe extern "C" fn akv_signature_set_ctx_params(
                         if let Ok(md_name) = CStr::from_ptr(value_ptr).to_str() {
                             log::debug!("  Setting digest={}", md_name);
                             ctx.md_name = Some(md_name.to_string());
+                            // Compute algorithm identifier when digest changes
+                            ctx.compute_algorithm_id();
                             param_count += 1;
                         }
                     }
@@ -884,6 +1080,7 @@ pub unsafe extern "C" fn akv_signature_dupctx(vctx: *mut c_void) -> *mut c_void 
         padding: src_ctx.padding,
         pss_saltlen: src_ctx.pss_saltlen,
         operation: src_ctx.operation,
+        aid: src_ctx.aid.clone(),
     });
     
     let dup_ptr = Box::into_raw(dup_ctx) as *mut c_void;
@@ -906,11 +1103,85 @@ pub unsafe extern "C" fn akv_signature_digest_sign(
         vctx, sig, siglen, sigsize, tbslen
     );
     
-    // This is a convenience function that combines digest_init, update, and final
-    // For now, we'll use the existing digest_sign_final after hashing
     if vctx.is_null() {
         return 0;
     }
+    
+    let ctx = &mut *(vctx as *mut SignatureContext);
+    
+    // Check if digest_sign_init was already called (for X.509 operations)
+    if ctx.hasher.is_some() && ctx.md_name.is_some() {
+        log::trace!("akv_signature_digest_sign: using pre-initialized digest context");
+        
+        // For size query, just return expected size
+        if sig.is_null() {
+            let expected = ctx.expected_size();
+            if !siglen.is_null() {
+                *siglen = expected;
+            }
+            return 1;
+        }
+        
+        // For actual signing, create a FRESH hasher to avoid any state issues
+        let md_name = ctx.md_name.as_ref().unwrap();
+        let md = match MessageDigest::from_name(md_name) {
+            Some(md) => md,
+            None => {
+                log::error!("Unknown digest algorithm: {}", md_name);
+                return 0;
+            }
+        };
+        
+        let mut fresh_hasher = match Hasher::new(md) {
+            Ok(h) => h,
+            Err(e) => {
+                log::error!("Failed to create fresh hasher: {}", e);
+                return 0;
+            }
+        };
+        
+        // Hash the TBS data
+        if fresh_hasher.update(std::slice::from_raw_parts(tbs, tbslen)).is_err() {
+            log::error!("akv_signature_digest_sign: hasher update failed");
+            return 0;
+        }
+        
+        // Finalize and sign
+        let digest = match fresh_hasher.finish() {
+            Ok(d) => d,
+            Err(e) => {
+                log::error!("Digest final failed: {}", e);
+                return 0;
+            }
+        };
+        
+        log::debug!("Digest finalized: {} bytes", digest.len());
+        
+        // Sign the digest
+        match ctx.sign_remote(&digest) {
+            Ok(signature) => {
+                let expected = ctx.expected_size();
+                if sigsize < expected {
+                    *siglen = expected;
+                    return 0;
+                }
+                if signature.len() > sigsize {
+                    return 0;
+                }
+                ptr::copy_nonoverlapping(signature.as_ptr(), sig, signature.len());
+                *siglen = signature.len();
+                log::info!("akv_signature_digest_sign -> 1 (signature {} bytes)", signature.len());
+                return 1;
+            }
+            Err(e) => {
+                log::error!("Sign failed: {}", e);
+                return 0;
+            }
+        }
+    }
+    
+    // Otherwise, this is a standalone digest_sign call - do the full operation
+    log::trace!("akv_signature_digest_sign: standalone operation (no pre-init)");
     
     // Initialize digest if not already done
     if akv_signature_digest_sign_init(vctx, ptr::null(), ptr::null_mut(), ptr::null()) == 0 {
@@ -918,10 +1189,12 @@ pub unsafe extern "C" fn akv_signature_digest_sign(
         return 0;
     }
     
-    // Update with data
-    if akv_signature_digest_update(vctx, tbs, tbslen) == 0 {
-        log::error!("akv_signature_digest_sign: update failed");
-        return 0;
+    // Update with data (if not a size query)
+    if !sig.is_null() {
+        if akv_signature_digest_update(vctx, tbs, tbslen) == 0 {
+            log::error!("akv_signature_digest_sign: update failed");
+            return 0;
+        }
     }
     
     // Finalize

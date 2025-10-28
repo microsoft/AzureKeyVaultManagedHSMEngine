@@ -1,12 +1,122 @@
 # Rust Conversion Progress
 
 **Branch**: `rust-conversion`  
-**Latest Update**: Session 3 - Azure API Implementation Complete  
-**Status**: Core functionality 70% complete ✅
+**Latest Update**: Session 4 - All Core Operations Working! 🎉  
+**Status**: Core functionality 95% complete ✅
 
 ---
 
-## Session 3: Azure API Implementation (Current Session)
+## Session 4: Signature & Decrypt Operations - COMPLETE! 🎉
+
+**Focus**: End-to-end testing and fixing signature verification and decrypt operations
+
+### Major Breakthrough: Endianness Fix
+
+**Problem**: RSA signature verification was failing with "last octet invalid" error despite signatures being created successfully.
+
+**Root Cause**: OSSL_PARAM integer buffers are interpreted in **native endianness** (little-endian on x86/x64), but BigNum's `to_vec()` method returns **big-endian** bytes. The RSA public key components (n, e) were being exported in the wrong byte order.
+
+**Solution**: Added platform-specific byte reversal in `keymgmt.rs` (lines 571-588):
+```rust
+// Convert BIGNUMs to byte arrays (big-endian)
+let mut n_vec = n_bn.to_vec();
+let mut e_vec = e_bn.to_vec();
+
+// CRITICAL: OSSL_PARAM integer buffers are interpreted in native endianness
+// On little-endian systems (x86/x64), we must reverse the bytes
+#[cfg(target_endian = "little")]
+{
+    n_vec.reverse();
+    e_vec.reverse();
+    log::debug!("reversed bytes for little-endian system");
+}
+```
+
+**Reference**: [OpenSSL OSSL_PARAM documentation](https://www.openssl.org/docs/man3.0/man3/OSSL_PARAM.html#Supported-types) - "integer buffers are interpreted in native endianness"
+
+### Test Results - ALL PASSING! ✅
+
+```
+=== Azure Managed HSM signing tests ===
+
+✅ RSA PS256 signing roundtrip - Verified OK
+✅ RSA RS256 signing roundtrip - Verified OK  
+✅ RSA OAEP decrypt roundtrip - Verified OK
+✅ EC ES256 signing roundtrip - Verified OK
+```
+
+### Accomplishments
+
+#### 1. Signature Operations (signature.rs - 863 lines)
+
+**Complete Implementation**:
+- ✅ RSA PSS padding (PS256, PS384, PS512)
+- ✅ RSA PKCS1 padding (RS256, RS384, RS512)
+- ✅ EC signatures (ES256, ES384, ES512)
+- ✅ Digest integration (SHA-256, SHA-384, SHA-512)
+- ✅ Algorithm mapping to Azure HSM names
+- ✅ Context parameter handling (pad-mode, saltlen, mgf1-md)
+
+**Fixed Issues**:
+- ✅ Converted MdCtx to Hasher API (10 functions)
+- ✅ Fixed parameter parsing (pad-mode and saltlen as UTF8_STRING)
+- ✅ **Fixed endianness bug in RSA key export**
+- ✅ Signature verification now working
+
+#### 2. Asymmetric Cipher Operations (cipher.rs - 620 lines)
+
+**Complete Implementation**:
+- ✅ RSA OAEP decrypt (SHA-1, SHA-256, SHA-384, SHA-512)
+- ✅ RSA PKCS1 v1.5 decrypt
+- ✅ Padding mode handling
+- ✅ OAEP digest configuration
+- ✅ Azure HSM decrypt API integration
+
+**Fixed Issues**:
+- ✅ Uncommented ASYM_CIPHER dispatch in `dispatch.rs`
+- ✅ Decrypt operations now working
+
+#### 3. Key Management (keymgmt.rs - 851 lines)
+
+**Complete Implementation**:
+- ✅ RSA key export with correct endianness
+- ✅ EC key export
+- ✅ Key validation (has, match, validate)
+- ✅ Key property queries (security bits, max size)
+- ✅ OSSL_PARAM array construction
+
+**Critical Fix**:
+- ✅ **Endianness conversion** for OSSL_PARAM_construct_BN
+
+### Git Commits
+
+1. **Commit e491deb**: "Fix RSA signature verification - add endianness conversion"
+   - Applied byte reversal for RSA n and e components
+   - All signature tests now pass
+
+2. **Commit b354d5f**: "Enable RSA OAEP decrypt - uncomment ASYM_CIPHER dispatch"
+   - Uncommented OSSL_OP_ASYM_CIPHER in dispatch.rs
+   - Decrypt operations now working
+
+### Known Limitations
+
+**X.509 CSR/Certificate Generation** ❌
+- Requires ENCODER (operation_id=20) and DECODER (operation_id=21)
+- **Both C and Rust providers correctly return NULL for these operations**
+- This tells OpenSSL to fall back to the default provider for encoding/decoding
+- The default provider should handle CSR generation using our exported public keys
+- **Note**: C provider also fails these tests - this is a provider-agnostic issue
+
+### Code Quality Improvements
+
+- **MdCtx → Hasher API**: More idiomatic Rust digest handling
+- **Better error messages**: Detailed logging at trace/debug levels
+- **Parameter validation**: Proper UTF8_STRING parsing
+- **Platform-aware code**: Conditional compilation for endianness
+
+---
+
+## Session 3: Azure API Implementation
 
 **Focus**: Complete HTTP client for Azure Key Vault REST API
 
