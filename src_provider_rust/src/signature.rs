@@ -3,13 +3,13 @@
 
 use crate::auth::AccessToken;
 use crate::http_client::AkvHttpClient;
+use crate::openssl_ffi;
 use crate::ossl_param::{OsslParam, OSSL_PARAM_UTF8_STRING, OSSL_PARAM_OCTET_STRING};
 use crate::provider::{AkvKey, ProviderContext};
 use openssl::bn::BigNum;
 use openssl::ecdsa::EcdsaSig;
 use openssl::hash::{MessageDigest, Hasher};
-use openssl::rsa::Padding;
-use openssl::sign::Verifier;
+use foreign_types::ForeignTypeRef;
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_int, c_uchar, c_void};
 use std::ptr;
@@ -310,43 +310,124 @@ impl SignatureContext {
         let key = self.key.as_ref().ok_or("No key set")?;
         let pkey = key.public_key.as_ref().ok_or("No public key")?;
 
-        let md_name = self.md_name.as_ref().ok_or("No message digest set")?;
-        
-        // Map digest name to MessageDigest
-        let md = match md_name.as_str() {
-            "SHA256" | "SHA2-256" => MessageDigest::sha256(),
-            "SHA384" | "SHA2-384" => MessageDigest::sha384(),
-            "SHA512" | "SHA2-512" => MessageDigest::sha512(),
-            _ => return Err(format!("Unsupported digest: {}", md_name)),
+        let md = match &self.md_name {
+            Some(md_name) => MessageDigest::from_name(md_name)
+                .or_else(|| MessageDigest::from_name(&md_name.to_lowercase()))
+                .ok_or_else(|| format!("Unsupported digest: {}", md_name))?,
+            None => match tbs.len() {
+                32 => MessageDigest::sha256(),
+                48 => MessageDigest::sha384(),
+                64 => MessageDigest::sha512(),
+                _ => {
+                    return Err(format!(
+                        "Unable to infer digest algorithm for length {}",
+                        tbs.len()
+                    ))
+                }
+            },
         };
 
-        let mut verifier = Verifier::new(md, pkey)
-            .map_err(|e| format!("Failed to create verifier: {}", e))?;
+        let md_label = self
+            .md_name
+            .as_deref()
+            .unwrap_or(match tbs.len() {
+                32 => "sha256",
+                48 => "sha384",
+                64 => "sha512",
+                _ => "<unknown>",
+            });
 
-        if matches!(self.keytype, KeyType::Rsa) && self.padding == RSA_PSS_PADDING {
-            verifier
-                .set_rsa_padding(Padding::PKCS1_PSS)
-                .map_err(|e| format!("Failed to set PSS padding: {}", e))?;
-            verifier
-                .set_rsa_pss_saltlen(openssl::sign::RsaPssSaltlen::DIGEST_LENGTH)
-                .map_err(|e| format!("Failed to set PSS salt length: {}", e))?;
+        log::debug!(
+            "verify_local: keytype={:?} padding={} sig_len={} digest_len={} md={}",
+            self.keytype,
+            self.padding,
+            sig.len(),
+            tbs.len(),
+            md_label
+        );
 
-            if let Some(mgf1_name) = &self.mgf1_md_name {
-                let mgf1_md = match mgf1_name.as_str() {
-                    "SHA256" | "SHA2-256" => MessageDigest::sha256(),
-                    "SHA384" | "SHA2-384" => MessageDigest::sha384(),
-                    "SHA512" | "SHA2-512" => MessageDigest::sha512(),
-                    _ => return Err(format!("Unsupported MGF1 digest: {}", mgf1_name)),
+    let pkey_ptr = pkey.as_ref().as_ptr() as *mut openssl_ffi::EVP_PKEY;
+    let verify_ctx = unsafe {
+            openssl_ffi::EVP_PKEY_CTX_new_from_pkey(ptr::null_mut(), pkey_ptr, ptr::null())
+        };
+
+        if verify_ctx.is_null() {
+            return Err("EVP_PKEY_CTX_new_from_pkey failed".to_string());
+        }
+
+        let mut result = unsafe { openssl_ffi::EVP_PKEY_verify_init(verify_ctx) };
+        if result <= 0 {
+            unsafe { openssl_ffi::EVP_PKEY_CTX_free(verify_ctx) };
+            openssl_ffi::log_openssl_errors("EVP_PKEY_verify_init");
+            return Err("EVP_PKEY_verify_init failed".to_string());
+        }
+
+        result = unsafe { openssl_ffi::EVP_PKEY_CTX_set_signature_md(verify_ctx, md.as_ptr()) };
+        if result <= 0 {
+            unsafe { openssl_ffi::EVP_PKEY_CTX_free(verify_ctx) };
+            openssl_ffi::log_openssl_errors("EVP_PKEY_CTX_set_signature_md");
+            return Err("Failed to set signature digest".to_string());
+        }
+
+        if matches!(self.keytype, KeyType::Rsa) {
+            result = unsafe { openssl_ffi::EVP_PKEY_CTX_set_rsa_padding(verify_ctx, self.padding) };
+            if result <= 0 {
+                unsafe { openssl_ffi::EVP_PKEY_CTX_free(verify_ctx) };
+                openssl_ffi::log_openssl_errors("EVP_PKEY_CTX_set_rsa_padding");
+                return Err("Failed to set RSA padding".to_string());
+            }
+
+            if self.padding == RSA_PSS_PADDING {
+                let saltlen = if self.pss_saltlen >= 0 {
+                    self.pss_saltlen
+                } else {
+                    md.size() as c_int
                 };
-                verifier
-                    .set_rsa_mgf1_md(mgf1_md)
-                    .map_err(|e| format!("Failed to set MGF1 digest: {}", e))?;
+
+                result = unsafe { openssl_ffi::EVP_PKEY_CTX_set_rsa_pss_saltlen(verify_ctx, saltlen) };
+                if result <= 0 {
+                    unsafe { openssl_ffi::EVP_PKEY_CTX_free(verify_ctx) };
+                    openssl_ffi::log_openssl_errors("EVP_PKEY_CTX_set_rsa_pss_saltlen");
+                    return Err("Failed to set RSA-PSS salt length".to_string());
+                }
+
+                if let Some(mgf1_name) = &self.mgf1_md_name {
+                    let mgf1_md = MessageDigest::from_name(mgf1_name)
+                        .or_else(|| MessageDigest::from_name(&mgf1_name.to_lowercase()))
+                        .ok_or_else(|| format!("Unsupported MGF1 digest: {}", mgf1_name))?;
+
+                    result = unsafe {
+                        openssl_ffi::EVP_PKEY_CTX_set_rsa_mgf1_md(verify_ctx, mgf1_md.as_ptr())
+                    };
+                    if result <= 0 {
+                        unsafe { openssl_ffi::EVP_PKEY_CTX_free(verify_ctx) };
+                        openssl_ffi::log_openssl_errors("EVP_PKEY_CTX_set_rsa_mgf1_md");
+                        return Err("Failed to set RSA-PSS MGF1 digest".to_string());
+                    }
+                }
             }
         }
 
-        verifier
-            .verify_oneshot(sig, tbs)
-            .map_err(|e| format!("Verification failed: {}", e))
+        result = unsafe {
+            openssl_ffi::EVP_PKEY_verify(
+                verify_ctx,
+                sig.as_ptr(),
+                sig.len(),
+                tbs.as_ptr(),
+                tbs.len(),
+            )
+        };
+
+        unsafe { openssl_ffi::EVP_PKEY_CTX_free(verify_ctx) };
+
+        if result < 0 {
+            openssl_ffi::log_openssl_errors("EVP_PKEY_verify");
+            return Err("Verification failed".to_string());
+        }
+
+        log::debug!("verify_local: EVP_PKEY_verify -> {}", result);
+
+        Ok(result == 1)
     }
 
     /// Get expected signature size

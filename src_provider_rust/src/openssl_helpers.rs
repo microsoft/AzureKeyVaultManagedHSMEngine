@@ -8,23 +8,55 @@ use openssl::pkey::{PKey, Public};
 use openssl::nid::Nid;
 
 /// Build RSA public key from modulus (n) and exponent (e)
+/// Bytes are already reversed to little-endian from Azure's big-endian
 pub fn build_rsa_public_key(n: &[u8], e: &[u8]) -> Result<PKey<Public>, String> {
+    use std::ptr;
+    use std::ffi::CString;
+    use crate::openssl_ffi::{EVP_PKEY, EVP_PKEY_CTX_new_from_name, EVP_PKEY_CTX_free, EVP_PKEY_fromdata_init, EVP_PKEY_fromdata};
+    use crate::ossl_param::OsslParam;
+    
     log::trace!("build_rsa_public_key n_len={} e_len={}", n.len(), e.len());
     
-    let n_bn = BigNum::from_slice(n)
-        .map_err(|e| format!("Failed to create BigNum from n: {}", e))?;
+    // Bytes are already in native endianness (little-endian on Windows), reversed from Azure.
+    // Use EVP_PKEY_fromdata with OSSL_PARAM_construct_BN like the C code does.
     
-    let e_bn = BigNum::from_slice(e)
-        .map_err(|e| format!("Failed to create BigNum from e: {}", e))?;
-    
-    let rsa = Rsa::from_public_components(n_bn, e_bn)
-        .map_err(|e| format!("Failed to create RSA public key: {}", e))?;
-    
-    let pkey = PKey::from_rsa(rsa)
-        .map_err(|e| format!("Failed to create PKey from RSA: {}", e))?;
-    
-    log::debug!("Successfully built RSA public key");
-    Ok(pkey)
+    unsafe {
+        let rsa_str = CString::new("RSA").unwrap();
+        let provider_default = CString::new("provider=default").unwrap();
+        
+        let ctx = EVP_PKEY_CTX_new_from_name(ptr::null_mut(), rsa_str.as_ptr(), provider_default.as_ptr());
+        if ctx.is_null() {
+            return Err("Failed to create RSA EVP context".to_string());
+        }
+        
+        if EVP_PKEY_fromdata_init(ctx) <= 0 {
+            EVP_PKEY_CTX_free(ctx);
+            return Err("EVP_PKEY_fromdata_init failed for RSA".to_string());
+        }
+        
+        // Build OSSL_PARAM array with native-endian bytes
+        let params = vec![
+            OsslParam::construct_big_number(c"n".as_ptr() as *const i8, n.as_ptr() as *mut u8, n.len()),
+            OsslParam::construct_big_number(c"e".as_ptr() as *const i8, e.as_ptr() as *mut u8, e.len()),
+            OsslParam::end(),
+        ];
+        
+        let mut pkey: *mut EVP_PKEY = ptr::null_mut();
+        let selection = 1; // OSSL_KEYMGMT_SELECT_PUBLIC_KEY
+        
+        if EVP_PKEY_fromdata(ctx, &mut pkey, selection, params.as_ptr() as *mut OsslParam) <= 0 {
+            EVP_PKEY_CTX_free(ctx);
+            return Err("EVP_PKEY_fromdata failed to materialize RSA key".to_string());
+        }
+        
+        EVP_PKEY_CTX_free(ctx);
+        
+        // Wrap the EVP_PKEY in PKey<Public>
+        let pkey_wrapped: PKey<Public> = std::mem::transmute(pkey);
+        
+        log::debug!("Successfully built RSA public key via EVP_PKEY_fromdata");
+        Ok(pkey_wrapped)
+    }
 }
 
 /// Build EC public key from x, y coordinates and curve name

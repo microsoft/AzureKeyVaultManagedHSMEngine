@@ -1,15 +1,18 @@
 // FFI bindings for OpenSSL functions not available in openssl-rs crate
 // These are needed for provider implementation
 
-use std::os::raw::{c_char, c_int, c_void};
+use std::os::raw::{c_char, c_int, c_uchar, c_void};
 use crate::ossl_param::OsslParam;
+use openssl_sys::EVP_MD;
 
 // Opaque types from OpenSSL
+#[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct EVP_PKEY_CTX {
     _private: [u8; 0],
 }
 
+#[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct EVP_PKEY {
     _private: [u8; 0],
@@ -56,6 +59,37 @@ extern "C" {
 
     /// Compare two EVP_PKEY objects
     pub fn EVP_PKEY_eq(a: *const EVP_PKEY, b: *const EVP_PKEY) -> c_int;
+
+    /// Create a new EVP_PKEY_CTX from an existing EVP_PKEY
+    pub fn EVP_PKEY_CTX_new_from_pkey(
+        libctx: *mut c_void,
+        pkey: *mut EVP_PKEY,
+        propquery: *const c_char,
+    ) -> *mut EVP_PKEY_CTX;
+
+    /// Initialize context for verification
+    pub fn EVP_PKEY_verify_init(ctx: *mut EVP_PKEY_CTX) -> c_int;
+
+    /// Perform a verification using raw digest input
+    pub fn EVP_PKEY_verify(
+        ctx: *mut EVP_PKEY_CTX,
+        sig: *const c_uchar,
+        siglen: usize,
+        tbs: *const c_uchar,
+        tbslen: usize,
+    ) -> c_int;
+
+    /// Set the expected signature digest algorithm
+    pub fn EVP_PKEY_CTX_set_signature_md(ctx: *mut EVP_PKEY_CTX, md: *const EVP_MD) -> c_int;
+
+    /// Configure RSA padding mode
+    pub fn EVP_PKEY_CTX_set_rsa_padding(ctx: *mut EVP_PKEY_CTX, pad_mode: c_int) -> c_int;
+
+    /// Configure RSA-PSS salt length
+    pub fn EVP_PKEY_CTX_set_rsa_pss_saltlen(ctx: *mut EVP_PKEY_CTX, saltlen: c_int) -> c_int;
+
+    /// Configure RSA-PSS MGF1 digest
+    pub fn EVP_PKEY_CTX_set_rsa_mgf1_md(ctx: *mut EVP_PKEY_CTX, md: *const EVP_MD) -> c_int;
     
     /// Get the last error from the OpenSSL error queue
     pub fn ERR_get_error() -> c_ulong;

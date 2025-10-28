@@ -562,36 +562,32 @@ pub unsafe extern "C" fn akv_keymgmt_export(
         return 0;
     }
 
-    // Manual export: Build OSSL_PARAM array from public key components
-    // This avoids the EVP_PKEY pointer extraction issue
+    // Manual export: Extract key components and build OSSL_PARAM
+    // Note: We reverse bytes only when importing from Azure, not when exporting
     log::debug!("akv_keymgmt_export: extracting key components");
     
     let pkey = key.public_key.as_ref().unwrap();
     
     // Try to get RSA key
     if let Ok(rsa_key) = pkey.rsa() {
-        // Extract n and e from RSA key
         let n_bn = rsa_key.n();
         let e_bn = rsa_key.e();
         
-        // Convert BIGNUMs to byte arrays (big-endian)
+        // Convert BIGNUMs to byte arrays
         let mut n_vec = n_bn.to_vec();
         let mut e_vec = e_bn.to_vec();
         
-        // CRITICAL: OSSL_PARAM integer buffers are interpreted in native endianness
-        // (see https://www.openssl.org/docs/man3.0/man3/OSSL_PARAM.html#Supported-types)
-        // On little-endian systems (x86/x64), we must reverse the bytes from big-endian
-        #[cfg(target_endian = "little")]
-        {
+        // BigNum::to_vec() returns big-endian. OSSL_PARAM expects native endianness.
+        // Since we're on little-endian Windows, we need to reverse.
+        if cfg!(target_endian = "little") {
             n_vec.reverse();
             e_vec.reverse();
-            log::debug!("akv_keymgmt_export: reversed bytes for little-endian system");
+            log::debug!("akv_keymgmt_export: reversed to native endianness for OSSL_PARAM");
         }
         
         log::debug!("akv_keymgmt_export: RSA n_len={}, e_len={}", n_vec.len(), e_vec.len());
         
         // Build OSSL_PARAM array
-        // Note: We need to keep these in scope until callback completes
         let params_vec = vec![
             OsslParam::construct_big_number(
                 c"n".as_ptr() as *const i8, 
@@ -617,7 +613,6 @@ pub unsafe extern "C" fn akv_keymgmt_export(
     
     // Try to get EC key
     if let Ok(ec_key) = pkey.ec_key() {
-        // Get the public key point
         let group = ec_key.group();
         let pub_key_point = ec_key.public_key();
         
@@ -637,7 +632,6 @@ pub unsafe extern "C" fn akv_keymgmt_export(
         log::debug!("akv_keymgmt_export: EC curve={}", curve_name);
         
         // Build OSSL_PARAM array for EC key
-        // pub_key_bytes format: [0x04, x_bytes..., y_bytes...]
         let params_vec = vec![
             OsslParam::construct_octet_string(
                 c"pub".as_ptr() as *const i8,

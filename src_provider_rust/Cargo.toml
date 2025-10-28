@@ -35,6 +35,7 @@ anyhow = "1.0"
 
 # C interop
 libc = "0.2"
+foreign-types = "0.3"
 
 [dev-dependencies]
 # Testing utilities

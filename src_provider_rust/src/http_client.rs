@@ -243,8 +243,17 @@ impl AkvHttpClient {
                 let n = key.n.ok_or("Missing RSA modulus (n)")?;
                 let e = key.e.ok_or("Missing RSA exponent (e)")?;
                 
-                let n_bytes = decode_url_safe(&n)?;
-                let e_bytes = decode_url_safe(&e)?;
+                let mut n_bytes = decode_url_safe(&n)?;
+                let mut e_bytes = decode_url_safe(&e)?;
+                
+                // Azure returns big-endian bytes. On little-endian systems (Windows),
+                // reverse to native endianness. This is the ONLY place we reverse.
+                // Matches C implementation in curl.c:340-366
+                if cfg!(target_endian = "little") {
+                    n_bytes.reverse();
+                    e_bytes.reverse();
+                    log::debug!("parse_key_material: reversed RSA bytes to native endianness");
+                }
                 
                 log::debug!("RSA key: n={} bytes, e={} bytes", n_bytes.len(), e_bytes.len());
                 
