@@ -94,7 +94,6 @@ pub struct SignatureContext {
 
 impl SignatureContext {
     fn new_rsa(provctx: *mut ProviderContext) -> Box<Self> {
-        log::trace!("SignatureContext::new_rsa");
         Box::new(SignatureContext {
             provctx,
             keytype: KeyType::Rsa,
@@ -110,7 +109,6 @@ impl SignatureContext {
     }
 
     fn new_ec(provctx: *mut ProviderContext) -> Box<Self> {
-        log::trace!("SignatureContext::new_ec");
         Box::new(SignatureContext {
             provctx,
             keytype: KeyType::Ec,
@@ -452,7 +450,6 @@ pub unsafe extern "C" fn akv_rsa_signature_newctx(
     provctx: *mut c_void,
     _propq: *const c_char,
 ) -> *mut c_void {
-    log::trace!("akv_rsa_signature_newctx");
     let ctx = SignatureContext::new_rsa(provctx as *mut ProviderContext);
     Box::into_raw(ctx) as *mut c_void
 }
@@ -463,7 +460,6 @@ pub unsafe extern "C" fn akv_ecdsa_signature_newctx(
     provctx: *mut c_void,
     _propq: *const c_char,
 ) -> *mut c_void {
-    log::trace!("akv_ecdsa_signature_newctx");
     let ctx = SignatureContext::new_ec(provctx as *mut ProviderContext);
     Box::into_raw(ctx) as *mut c_void
 }
@@ -471,10 +467,8 @@ pub unsafe extern "C" fn akv_ecdsa_signature_newctx(
 /// Free signature context
 #[no_mangle]
 pub unsafe extern "C" fn akv_signature_freectx(vctx: *mut c_void) {
-    log::trace!("akv_signature_freectx");
     if !vctx.is_null() {
         let _ctx = Box::from_raw(vctx as *mut SignatureContext);
-        // Drop happens automatically
     }
 }
 
@@ -485,7 +479,6 @@ pub unsafe extern "C" fn akv_signature_sign_init(
     vkey: *mut c_void,
     _params: *const OsslParam,
 ) -> c_int {
-    log::trace!("akv_signature_sign_init");
     if vctx.is_null() || vkey.is_null() {
         return 0;
     }
@@ -513,7 +506,6 @@ pub unsafe extern "C" fn akv_signature_verify_init(
     vkey: *mut c_void,
     _params: *const OsslParam,
 ) -> c_int {
-    log::trace!("akv_signature_verify_init");
     if vctx.is_null() || vkey.is_null() {
         return 0;
     }
@@ -544,8 +536,6 @@ pub unsafe extern "C" fn akv_signature_sign(
     tbs: *const c_uchar,
     tbslen: usize,
 ) -> c_int {
-    log::trace!("akv_signature_sign sigsize={} tbslen={}", sigsize, tbslen);
-
     if vctx.is_null() || siglen.is_null() {
         return 0;
     }
@@ -595,8 +585,6 @@ pub unsafe extern "C" fn akv_signature_verify(
     tbs: *const c_uchar,
     tbslen: usize,
 ) -> c_int {
-    log::trace!("akv_signature_verify siglen={} tbslen={}", siglen, tbslen);
-
     if vctx.is_null() || sig.is_null() || tbs.is_null() {
         return 0;
     }
@@ -623,13 +611,6 @@ pub unsafe extern "C" fn akv_signature_digest_sign_init(
     vkey: *mut c_void,
     _params: *const OsslParam,
 ) -> c_int {
-    log::trace!(
-        "akv_signature_digest_sign_init vctx={:p} mdname={:p} vkey={:p}",
-        vctx,
-        mdname,
-        vkey
-    );
-
     if vctx.is_null() {
         log::error!("akv_signature_digest_sign_init: vctx is null");
         return 0;
@@ -640,15 +621,8 @@ pub unsafe extern "C" fn akv_signature_digest_sign_init(
         return 0;
     }
 
-    log::debug!("akv_signature_digest_sign_init: casting pointers");
     let ctx = &mut *(vctx as *mut SignatureContext);
     let key_ref = &*(vkey as *const AkvKey);
-
-    log::debug!(
-        "akv_signature_digest_sign_init: cloning key (vault={}, name={})",
-        key_ref.keyvault_name.as_deref().unwrap_or("<none>"),
-        key_ref.key_name.as_deref().unwrap_or("<none>")
-    );
 
     // Clone the key
     ctx.key = Some(Box::new(AkvKey {
@@ -659,23 +633,17 @@ pub unsafe extern "C" fn akv_signature_digest_sign_init(
         public_key: key_ref.public_key.clone(),
     }));
 
-    log::debug!("akv_signature_digest_sign_init: key cloned successfully");
     ctx.operation = EVP_PKEY_OP_SIGN;
 
     // Set digest if provided
     if !mdname.is_null() {
         if let Ok(name) = CStr::from_ptr(mdname).to_str() {
-            log::debug!("akv_signature_digest_sign_init: digest name={}", name);
             ctx.md_name = Some(name.to_string());
 
             // Compute algorithm identifier for X.509 operations
             ctx.compute_algorithm_id();
 
             // Create and initialize hasher with the digest algorithm
-            log::debug!(
-                "akv_signature_digest_sign_init: creating hasher for {}",
-                name
-            );
             let md = match MessageDigest::from_name(name) {
                 Some(md) => md,
                 None => {
@@ -687,7 +655,6 @@ pub unsafe extern "C" fn akv_signature_digest_sign_init(
             match Hasher::new(md) {
                 Ok(hasher) => {
                     ctx.hasher = Some(hasher);
-                    log::debug!("akv_signature_digest_sign_init: hasher created and initialized");
                 }
                 Err(e) => {
                     log::error!("Failed to create hasher: {}", e);
@@ -695,11 +662,8 @@ pub unsafe extern "C" fn akv_signature_digest_sign_init(
                 }
             }
         }
-    } else {
-        log::debug!("akv_signature_digest_sign_init: no digest name provided");
     }
 
-    log::info!("akv_signature_digest_sign_init -> 1 (success)");
     1
 }
 
@@ -711,8 +675,6 @@ pub unsafe extern "C" fn akv_signature_digest_verify_init(
     vkey: *mut c_void,
     _params: *const OsslParam,
 ) -> c_int {
-    log::trace!("akv_signature_digest_verify_init");
-
     if vctx.is_null() || vkey.is_null() {
         return 0;
     }
@@ -785,13 +747,7 @@ pub unsafe extern "C" fn akv_signature_digest_update(
     if let Some(ref mut hasher) = ctx.hasher {
         let data_slice = std::slice::from_raw_parts(data, datalen);
         match hasher.update(data_slice) {
-            Ok(_) => {
-                log::debug!(
-                    "akv_signature_digest_update -> 1 (success, {} bytes)",
-                    datalen
-                );
-                1
-            }
+            Ok(_) => 1,
             Err(e) => {
                 log::error!("Digest update failed: {}", e);
                 0
@@ -811,8 +767,6 @@ pub unsafe extern "C" fn akv_signature_digest_sign_final(
     siglen: *mut usize,
     sigsize: usize,
 ) -> c_int {
-    log::trace!("akv_signature_digest_sign_final sigsize={}", sigsize);
-
     if vctx.is_null() || siglen.is_null() {
         return 0;
     }
@@ -835,8 +789,6 @@ pub unsafe extern "C" fn akv_signature_digest_sign_final(
     if let Some(ref mut hasher) = ctx.hasher {
         match hasher.finish() {
             Ok(digest) => {
-                log::debug!("Digest finalized: {} bytes", digest.len());
-
                 // Sign the digest
                 match ctx.sign_remote(&digest) {
                     Ok(signature) => {
@@ -845,10 +797,6 @@ pub unsafe extern "C" fn akv_signature_digest_sign_final(
                         }
                         ptr::copy_nonoverlapping(signature.as_ptr(), sig, signature.len());
                         *siglen = signature.len();
-                        log::info!(
-                            "akv_signature_digest_sign_final -> 1 (signature {} bytes)",
-                            signature.len()
-                        );
                         1
                     }
                     Err(e) => {
@@ -875,8 +823,6 @@ pub unsafe extern "C" fn akv_signature_digest_verify_final(
     sig: *const c_uchar,
     siglen: usize,
 ) -> c_int {
-    log::trace!("akv_signature_digest_verify_final siglen={}", siglen);
-
     if vctx.is_null() || sig.is_null() {
         return 0;
     }

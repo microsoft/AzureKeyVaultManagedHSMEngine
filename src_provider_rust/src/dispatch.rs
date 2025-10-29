@@ -721,47 +721,11 @@ pub static AKV_DISPATCH_TABLE: [OsslDispatch; 5] = [
 
 /// Query operation and return appropriate algorithm table
 pub unsafe fn query_operation_impl(operation_id: c_int) -> *const OsslAlgorithm {
-    log::trace!("query_operation_impl operation_id={}", operation_id);
-
-    let (result, op_name) = match operation_id {
+    let (result, _op_name) = match operation_id {
         OSSL_OP_STORE => (AKV_STORE_ALGS.as_ptr(), "STORE"),
-        OSSL_OP_KEYMGMT => {
-            log::debug!(
-                "Returning KEYMGMT algorithms: RSA dispatch table at {:p}",
-                AKV_RSA_KEYMGMT_FUNCTIONS.as_ptr()
-            );
-            log::debug!("  RSA KEYMGMT functions:");
-            for (i, dispatch) in AKV_RSA_KEYMGMT_FUNCTIONS.iter().enumerate() {
-                log::debug!(
-                    "    [{}] function_id={}, function={:p}",
-                    i,
-                    dispatch.function_id,
-                    dispatch.function
-                );
-            }
-            (AKV_KEYMGMT_ALGS.as_ptr(), "KEYMGMT")
-        }
-        OSSL_OP_SIGNATURE => {
-            log::debug!("Returning SIGNATURE algorithms:");
-            for (i, alg) in AKV_SIGNATURE_ALGS.iter().enumerate() {
-                if !alg.algorithm_names.is_null() {
-                    let names = std::ffi::CStr::from_ptr(alg.algorithm_names)
-                        .to_str()
-                        .unwrap_or("<invalid>");
-                    log::debug!(
-                        "  [{}] algorithm_names='{}', impl={:p}",
-                        i,
-                        names,
-                        alg.implementation
-                    );
-                }
-            }
-            (AKV_SIGNATURE_ALGS.as_ptr(), "SIGNATURE")
-        }
-        OSSL_OP_ASYM_CIPHER => {
-            log::debug!("Returning ASYM_CIPHER algorithms:");
-            (AKV_ASYM_CIPHER_ALGS.as_ptr(), "ASYM_CIPHER")
-        }
+        OSSL_OP_KEYMGMT => (AKV_KEYMGMT_ALGS.as_ptr(), "KEYMGMT"),
+        OSSL_OP_SIGNATURE => (AKV_SIGNATURE_ALGS.as_ptr(), "SIGNATURE"),
+        OSSL_OP_ASYM_CIPHER => (AKV_ASYM_CIPHER_ALGS.as_ptr(), "ASYM_CIPHER"),
         _ => {
             log::warn!(
                 "query_operation_impl: UNKNOWN operation_id={} (0x{:x})",
@@ -771,7 +735,5 @@ pub unsafe fn query_operation_impl(operation_id: c_int) -> *const OsslAlgorithm 
             (ptr::null(), "UNKNOWN")
         }
     };
-
-    log::debug!("query_operation_impl({}) -> {:p}", op_name, result);
     result
 }

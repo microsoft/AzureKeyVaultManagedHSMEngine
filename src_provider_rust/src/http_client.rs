@@ -141,8 +141,6 @@ pub struct AkvHttpClient {
 
 impl AkvHttpClient {
     pub fn new(vault_name: String, access_token: AccessToken) -> Result<Self, String> {
-        log::trace!("AkvHttpClient::new vault={}", vault_name);
-
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
@@ -173,10 +171,7 @@ impl AkvHttpClient {
     /// Get key type (without fetching full key material)
     /// Corresponds to AkvGetKeyType in C
     pub fn get_key_type(&self, key_name: &str) -> Result<(KeyType, Option<usize>), String> {
-        log::trace!("AkvHttpClient::get_key_type key={}", key_name);
-
         let url = self.key_url(key_name, None);
-        log::debug!("GET {}", url);
 
         let response = self
             .client
@@ -204,8 +199,6 @@ impl AkvHttpClient {
             None
         };
 
-        log::debug!("Key type: {:?}, size: {:?}", key_type, key_size);
-
         Ok((key_type, key_size))
     }
 
@@ -216,14 +209,7 @@ impl AkvHttpClient {
         key_name: &str,
         key_version: Option<&str>,
     ) -> Result<PublicKeyMaterial, String> {
-        log::trace!(
-            "AkvHttpClient::get_key key={} version={:?}",
-            key_name,
-            key_version
-        );
-
         let url = self.key_url(key_name, key_version);
-        log::debug!("GET {}", url);
 
         let response = self
             .client
@@ -246,8 +232,6 @@ impl AkvHttpClient {
 
     /// Parse key material from Azure response
     fn parse_key_material(&self, key: AkvKeyMaterial) -> Result<PublicKeyMaterial, String> {
-        log::trace!("parse_key_material kty={}", key.kty);
-
         match key.kty.as_str() {
             "RSA" | "RSA-HSM" => {
                 let n = key.n.ok_or("Missing RSA modulus (n)")?;
@@ -264,14 +248,7 @@ impl AkvHttpClient {
                 if cfg!(target_endian = "little") {
                     n_bytes.reverse();
                     e_bytes.reverse();
-                    log::debug!("parse_key_material: reversed RSA bytes to native endianness");
                 }
-
-                log::debug!(
-                    "RSA key: n={} bytes, e={} bytes",
-                    n_bytes.len(),
-                    e_bytes.len()
-                );
 
                 Ok(PublicKeyMaterial::Rsa(RsaPublicKey {
                     n: n_bytes,
@@ -286,13 +263,6 @@ impl AkvHttpClient {
                 let x_bytes = decode_url_safe(&x)?;
                 let y_bytes = decode_url_safe(&y)?;
 
-                log::debug!(
-                    "EC key: curve={}, x={} bytes, y={} bytes",
-                    curve,
-                    x_bytes.len(),
-                    y_bytes.len()
-                );
-
                 Ok(PublicKeyMaterial::Ec(EcPublicKey {
                     x: x_bytes,
                     y: y_bytes,
@@ -301,7 +271,6 @@ impl AkvHttpClient {
             }
             "oct" | "oct-HSM" => {
                 // Symmetric key - we don't get the actual key material
-                log::debug!("Symmetric key detected");
                 Ok(PublicKeyMaterial::Symmetric { _bits: 256 })
             }
             _ => Err(format!("Unsupported key type: {}", key.kty)),
@@ -311,10 +280,7 @@ impl AkvHttpClient {
     /// Sign a digest
     /// Corresponds to AkvSign in C
     pub fn sign(&self, key_name: &str, algorithm: &str, digest: &[u8]) -> Result<Vec<u8>, String> {
-        log::trace!("AkvHttpClient::sign key={} alg={}", key_name, algorithm);
-
         let url = format!("{}/sign?api-version=7.2", self.key_url(key_name, None));
-        log::debug!("POST {} (digest {} bytes)", url, digest.len());
 
         let request = SignRequest {
             alg: algorithm.to_string(),
@@ -340,8 +306,6 @@ impl AkvHttpClient {
 
         let signature = decode_url_safe(&sign_response.value)?;
 
-        log::debug!("Signature received: {} bytes", signature.len());
-
         Ok(signature)
     }
 
@@ -353,10 +317,7 @@ impl AkvHttpClient {
         algorithm: &str,
         ciphertext: &[u8],
     ) -> Result<Vec<u8>, String> {
-        log::trace!("AkvHttpClient::decrypt key={} alg={}", key_name, algorithm);
-
         let url = format!("{}/decrypt?api-version=7.2", self.key_url(key_name, None));
-        log::debug!("POST {} (ciphertext {} bytes)", url, ciphertext.len());
 
         let request = DecryptRequest {
             alg: algorithm.to_string(),
@@ -395,10 +356,7 @@ impl AkvHttpClient {
         algorithm: &str,
         key_to_wrap: &[u8],
     ) -> Result<Vec<u8>, String> {
-        log::trace!("AkvHttpClient::wrap_key key={} alg={}", key_name, algorithm);
-
         let url = format!("{}/wrapkey?api-version=7.2", self.key_url(key_name, None));
-        log::debug!("POST {} (key {} bytes)", url, key_to_wrap.len());
 
         let request = WrapKeyRequest {
             alg: algorithm.to_string(),
@@ -424,8 +382,6 @@ impl AkvHttpClient {
 
         let wrapped_key = decode_url_safe(&wrap_response.value)?;
 
-        log::debug!("Wrapped key received: {} bytes", wrapped_key.len());
-
         Ok(wrapped_key)
     }
 
@@ -437,14 +393,7 @@ impl AkvHttpClient {
         algorithm: &str,
         wrapped_key: &[u8],
     ) -> Result<Vec<u8>, String> {
-        log::trace!(
-            "AkvHttpClient::unwrap_key key={} alg={}",
-            key_name,
-            algorithm
-        );
-
         let url = format!("{}/unwrapkey?api-version=7.2", self.key_url(key_name, None));
-        log::debug!("POST {} (wrapped key {} bytes)", url, wrapped_key.len());
 
         let request = UnwrapKeyRequest {
             alg: algorithm.to_string(),
@@ -469,8 +418,6 @@ impl AkvHttpClient {
             .map_err(|e| format!("Failed to parse unwrap response: {}", e))?;
 
         let unwrapped_key = decode_url_safe(&unwrap_response.value)?;
-
-        log::debug!("Unwrapped key received: {} bytes", unwrapped_key.len());
 
         Ok(unwrapped_key)
     }

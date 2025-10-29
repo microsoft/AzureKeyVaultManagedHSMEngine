@@ -42,7 +42,6 @@ pub struct RsaCipherContext {
 
 impl RsaCipherContext {
     fn new(provctx: *mut ProviderContext) -> Box<Self> {
-        log::trace!("RsaCipherContext::new");
         Box::new(RsaCipherContext {
             provctx,
             key: None,
@@ -78,13 +77,6 @@ impl RsaCipherContext {
         let vault_name = key.keyvault_name.as_ref().ok_or("No vault name")?;
         let key_name = key.key_name.as_ref().ok_or("No key name")?;
 
-        log::trace!(
-            "decrypt_remote key={} algorithm={} ciphertext_len={}",
-            key_name,
-            algorithm,
-            ciphertext.len()
-        );
-
         let token =
             AccessToken::from_env().map_err(|e| format!("Failed to get access token: {}", e))?;
         let client = AkvHttpClient::new(vault_name.clone(), token)
@@ -113,7 +105,6 @@ pub struct AesCipherContext {
 
 impl AesCipherContext {
     fn new(provctx: *mut ProviderContext) -> Box<Self> {
-        log::trace!("AesCipherContext::new");
         Box::new(AesCipherContext {
             provctx,
             key: None,
@@ -149,13 +140,6 @@ impl AesCipherContext {
         let vault_name = key.keyvault_name.as_ref().ok_or("No vault name")?;
         let key_name = key.key_name.as_ref().ok_or("No key name")?;
 
-        log::trace!(
-            "wrap_key_remote key={} algorithm={} plaintext_len={}",
-            key_name,
-            algorithm,
-            plaintext.len()
-        );
-
         let token =
             AccessToken::from_env().map_err(|e| format!("Failed to get access token: {}", e))?;
         let client = AkvHttpClient::new(vault_name.clone(), token)
@@ -173,13 +157,6 @@ impl AesCipherContext {
 
         let vault_name = key.keyvault_name.as_ref().ok_or("No vault name")?;
         let key_name = key.key_name.as_ref().ok_or("No key name")?;
-
-        log::trace!(
-            "unwrap_key_remote key={} algorithm={} ciphertext_len={}",
-            key_name,
-            algorithm,
-            ciphertext.len()
-        );
 
         let token =
             AccessToken::from_env().map_err(|e| format!("Failed to get access token: {}", e))?;
@@ -202,7 +179,6 @@ pub unsafe extern "C" fn akv_rsa_cipher_newctx(
     provctx: *mut c_void,
     _propq: *const c_char,
 ) -> *mut c_void {
-    log::trace!("akv_rsa_cipher_newctx");
     let ctx = RsaCipherContext::new(provctx as *mut ProviderContext);
     Box::into_raw(ctx) as *mut c_void
 }
@@ -210,10 +186,8 @@ pub unsafe extern "C" fn akv_rsa_cipher_newctx(
 /// Free RSA cipher context
 #[no_mangle]
 pub unsafe extern "C" fn akv_rsa_cipher_freectx(vctx: *mut c_void) {
-    log::trace!("akv_rsa_cipher_freectx");
     if !vctx.is_null() {
         let _ctx = Box::from_raw(vctx as *mut RsaCipherContext);
-        // Drop happens automatically
     }
 }
 
@@ -224,7 +198,6 @@ pub unsafe extern "C" fn akv_rsa_cipher_decrypt_init(
     vkey: *mut c_void,
     _params: *const OsslParam,
 ) -> c_int {
-    log::trace!("akv_rsa_cipher_decrypt_init");
     if vctx.is_null() || vkey.is_null() {
         return 0;
     }
@@ -251,7 +224,6 @@ pub unsafe extern "C" fn akv_rsa_cipher_encrypt_init(
     vkey: *mut c_void,
     _params: *const OsslParam,
 ) -> c_int {
-    log::trace!("akv_rsa_cipher_encrypt_init");
     // Same as decrypt_init for key setup
     akv_rsa_cipher_decrypt_init(vctx, vkey, _params)
 }
@@ -266,8 +238,6 @@ pub unsafe extern "C" fn akv_rsa_cipher_decrypt(
     input: *const c_uchar,
     inlen: usize,
 ) -> c_int {
-    log::trace!("akv_rsa_cipher_decrypt outsize={} inlen={}", outsize, inlen);
-
     if vctx.is_null() || outlen.is_null() {
         return 0;
     }
@@ -318,8 +288,6 @@ pub unsafe extern "C" fn akv_rsa_cipher_encrypt(
     _input: *const c_uchar,
     _inlen: usize,
 ) -> c_int {
-    log::trace!("akv_rsa_cipher_encrypt");
-
     if vctx.is_null() || outlen.is_null() {
         return 0;
     }
@@ -434,7 +402,6 @@ pub unsafe extern "C" fn akv_aes_cipher_newctx(
     provctx: *mut c_void,
     _propq: *const c_char,
 ) -> *mut c_void {
-    log::trace!("akv_aes_cipher_newctx");
     let ctx = AesCipherContext::new(provctx as *mut ProviderContext);
     Box::into_raw(ctx) as *mut c_void
 }
@@ -442,10 +409,8 @@ pub unsafe extern "C" fn akv_aes_cipher_newctx(
 /// Free AES cipher context
 #[no_mangle]
 pub unsafe extern "C" fn akv_aes_cipher_freectx(vctx: *mut c_void) {
-    log::trace!("akv_aes_cipher_freectx");
     if !vctx.is_null() {
         let _ctx = Box::from_raw(vctx as *mut AesCipherContext);
-        // Drop happens automatically
     }
 }
 
@@ -456,7 +421,6 @@ pub unsafe extern "C" fn akv_aes_cipher_encrypt_init(
     vkey: *mut c_void,
     _params: *const OsslParam,
 ) -> c_int {
-    log::trace!("akv_aes_cipher_encrypt_init");
     if vctx.is_null() || vkey.is_null() {
         return 0;
     }
@@ -483,7 +447,6 @@ pub unsafe extern "C" fn akv_aes_cipher_decrypt_init(
     vkey: *mut c_void,
     _params: *const OsslParam,
 ) -> c_int {
-    log::trace!("akv_aes_cipher_decrypt_init");
     // Same as encrypt_init for key setup
     akv_aes_cipher_encrypt_init(vctx, vkey, _params)
 }
@@ -498,8 +461,6 @@ pub unsafe extern "C" fn akv_aes_cipher_encrypt(
     input: *const c_uchar,
     inlen: usize,
 ) -> c_int {
-    log::trace!("akv_aes_cipher_encrypt outsize={} inlen={}", outsize, inlen);
-
     if vctx.is_null() || outlen.is_null() || input.is_null() {
         return 0;
     }
@@ -541,8 +502,6 @@ pub unsafe extern "C" fn akv_aes_cipher_decrypt(
     input: *const c_uchar,
     inlen: usize,
 ) -> c_int {
-    log::trace!("akv_aes_cipher_decrypt outsize={} inlen={}", outsize, inlen);
-
     if vctx.is_null() || outlen.is_null() || input.is_null() {
         return 0;
     }

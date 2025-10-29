@@ -25,7 +25,6 @@ pub struct StoreContext {
 
 impl StoreContext {
     pub fn new(provctx: *mut ProviderContext) -> Self {
-        log::trace!("StoreContext::new provctx={:p}", provctx);
         Self {
             provctx,
             keyvault_name: None,
@@ -37,52 +36,38 @@ impl StoreContext {
 
     /// Parse and set URI metadata
     pub fn parse_uri(&mut self, uri: &str) -> bool {
-        log::trace!("StoreContext::parse_uri uri={}", uri);
-
         match parse_uri(uri) {
             Ok(parsed) => {
                 self.keyvault_name = Some(parsed.vault_name);
                 self.key_name = Some(parsed.key_name);
                 self.key_version = parsed.key_version;
-                log::debug!(
-                    "StoreContext::parse_uri -> true (vault={:?} name={:?} version={:?})",
-                    self.keyvault_name,
-                    self.key_name,
-                    self.key_version
-                );
                 true
             }
-            Err(e) => {
-                log::debug!("StoreContext::parse_uri -> false ({})", e);
-                false
-            }
+            Err(_) => false,
         }
     }
 
     /// Log the URL that would be used for curl GET key operation
     pub fn log_curl_get_key_url(&self) {
-        log::trace!("log_curl_get_key_url");
-
-        if let (Some(vault), Some(name)) = (&self.keyvault_name, &self.key_name) {
-            let url = if let Some(version) = &self.key_version {
-                format!(
-                    "https://{}.managedhsm.azure.net/keys/{}/{}",
-                    vault, name, version
-                )
-            } else {
-                format!("https://{}.managedhsm.azure.net/keys/{}", vault, name)
-            };
-            log::debug!("curl.c AkvGetKey URL: {}", url);
-        } else {
-            log::debug!("log_curl_get_key_url skipped (incomplete metadata)");
+        if log::log_enabled!(log::Level::Debug) {
+            if let (Some(vault), Some(name)) = (&self.keyvault_name, &self.key_name) {
+                let url = if let Some(version) = &self.key_version {
+                    format!(
+                        "https://{}.managedhsm.azure.net/keys/{}/{}",
+                        vault, name, version
+                    )
+                } else {
+                    format!("https://{}.managedhsm.azure.net/keys/{}", vault, name)
+                };
+                log::debug!("curl.c AkvGetKey URL: {}", url);
+            }
         }
     }
 }
 
 impl Drop for StoreContext {
     fn drop(&mut self) {
-        log::trace!("StoreContext::drop");
-        log::debug!("StoreContext::drop complete");
+        // Cleanup handled automatically
     }
 }
 
