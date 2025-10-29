@@ -32,6 +32,7 @@ use std::os::raw::{c_char, c_int, c_void};
 
 // Provider name and version constants
 const PROVIDER_NAME: &str = "Azure Managed HSM Provider";
+#[allow(dead_code)]
 const PROVIDER_VERSION: &str = "0.1.0";
 // C string constants for parameters
 static PROVIDER_NAME_CSTR: &[u8] = b"Azure Managed HSM Provider\0";

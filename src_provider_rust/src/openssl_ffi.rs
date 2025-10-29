@@ -52,6 +52,7 @@ extern "C" {
     pub fn OSSL_PARAM_free(params: *mut OsslParam);
 
     /// Get parameters from EVP_PKEY
+    #[allow(dead_code)]
     pub fn EVP_PKEY_get_params(pkey: *const EVP_PKEY, params: *mut OsslParam) -> c_int;
 
     /// Set parameters on EVP_PKEY

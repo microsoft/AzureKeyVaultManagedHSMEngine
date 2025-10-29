@@ -40,7 +40,7 @@ pub fn init_logging() -> Result<(), String> {
                 {
                     Ok(file) => {
                         builder.target(env_logger::Target::Pipe(Box::new(file)));
-                        eprintln!("AKV Provider: Logging to file: {}", path);
+                        // File logging configured - don't spam stderr
                     }
                     Err(e) => {
                         eprintln!("AKV Provider: Failed to open log file {}: {}", path, e);

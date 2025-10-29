@@ -5,7 +5,6 @@ use openssl::bn::BigNum;
 use openssl::ec::{EcGroup, EcKey, EcPoint};
 use openssl::nid::Nid;
 use openssl::pkey::{PKey, Public};
-use openssl::rsa::Rsa;
 
 /// Build RSA public key from modulus (n) and exponent (e)
 /// Bytes are in native endianness (reversed from Azure's big-endian on Windows)
