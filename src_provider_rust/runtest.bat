@@ -5,11 +5,13 @@ REM ============================================================================
 REM Azure Managed HSM OpenSSL Provider Test Suite
 REM ============================================================================
 REM
-REM Usage: runtest.bat [/SKIPVALIDATION]
+REM Usage: runtest.bat [/VALIDATE]
 REM
 REM Options:
-REM   /SKIPVALIDATION  Skip Azure Managed HSM and key validation checks
-REM                    (faster, but won't verify prerequisites)
+REM   /VALIDATE  Run full validation of Azure Managed HSM and keys
+REM              (slower, but verifies all prerequisites)
+REM
+REM By default, validation is SKIPPED for faster testing.
 REM
 REM Environment Variables (optional):
 REM   AKV_VAULT    - Managed HSM name (default: ManagedHSMOpenSSLEngine)
@@ -34,10 +36,11 @@ echo.
 echo Azure Managed HSM OpenSSL Provider Test Suite
 echo ==============================================
 echo.
-echo Usage: runtest.bat [/SKIPVALIDATION]
+echo Usage: runtest.bat [/VALIDATE]
 echo.
 echo Options:
-echo   /SKIPVALIDATION  Skip Azure Managed HSM and key validation checks
+echo   /VALIDATE  Run full validation of Azure Managed HSM and keys
+echo              (default is to skip validation for faster testing)
 echo.
 echo Environment Variables (optional):
 echo   AKV_VAULT    - Managed HSM name (default: ManagedHSMOpenSSLEngine)
@@ -46,8 +49,8 @@ echo   AKV_EC_KEY   - EC key name (default: ecckey)
 echo   AKV_AES_KEY  - AES key name (default: myaeskey)
 echo.
 echo Examples:
-echo   runtest.bat                    # Run all tests with validation
-echo   runtest.bat /SKIPVALIDATION    # Run tests without validation (faster)
+echo   runtest.bat              # Run tests (fast, skips validation)
+echo   runtest.bat /VALIDATE    # Run tests with full validation
 echo   set AKV_VAULT=MyVault ^& runtest.bat  # Use custom vault name
 echo.
 goto :end
@@ -185,17 +188,21 @@ echo Using vault '%AKV_VAULT%' with RSA key '%AKV_RSA_KEY%', EC key '%AKV_EC_KEY
 echo.
 
 REM ============================================================================
-REM Validate Managed HSM and Keys (can be skipped with /SKIPVALIDATION)
+REM Validate Managed HSM and Keys (skipped by default, use /VALIDATE to enable)
 REM ============================================================================
 
-if /i "%1"=="/SKIPVALIDATION" (
-    echo --- Skipping Managed HSM validation (use at your own risk^) ---
+if /i "%1"=="/VALIDATE" (
     echo.
-    goto :skip_validation
+    echo [INFO] Validating Managed HSM and keys (this may take 20-30 seconds)
+    goto :run_validation
 )
 
 echo.
-echo --- Validating Managed HSM and keys (this may take 20-30 seconds^) ---
+echo [INFO] Skipping Managed HSM validation (use /VALIDATE for full checks)
+echo.
+goto :skip_validation
+
+:run_validation
 
 REM Check if vault exists and is accessible
 echo Checking access to vault '%AKV_VAULT%'...
@@ -206,8 +213,6 @@ if errorlevel 1 (
     echo   1. The Managed HSM name is correct
     echo   2. You have appropriate permissions
     echo   3. You are logged in with 'az login'
-    echo.
-    echo TIP: Use 'runtest.bat /SKIPVALIDATION' to skip these checks
     goto :error
 )
 echo [OK] Managed HSM '%AKV_VAULT%' is accessible
