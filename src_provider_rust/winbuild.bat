@@ -2,7 +2,7 @@
 REM ========================================
 REM Windows Build Script for Rust Provider
 REM ========================================
-REM This script checks dependencies and builds the provider
+REM This script checks dependencies, builds, and deploys the provider
 
 setlocal enabledelayedexpansion
 
@@ -16,13 +16,11 @@ echo.
 REM Parse command line arguments
 set BUILD_TYPE=release
 set SKIP_DEPS_CHECK=0
-set AUTO_DEPLOY=0
 
 :parse_args
 if "%~1"=="" goto args_done
 if /i "%~1"=="--debug" set BUILD_TYPE=debug
 if /i "%~1"=="--skip-deps" set SKIP_DEPS_CHECK=1
-if /i "%~1"=="--deploy" set AUTO_DEPLOY=1
 shift
 goto parse_args
 :args_done
@@ -207,21 +205,12 @@ if exist "%DLL_PATH%" (
     )
     echo.
     
-    REM Deploy if requested
-    if "%AUTO_DEPLOY%"=="1" (
-        call :deploy_provider "%DLL_PATH%"
-        if errorlevel 1 (
-            echo.
-            echo [WARNING] Deployment failed, but build was successful
-        )
-    ) else (
-        echo To deploy:
-        echo   winbuild.bat --deploy
-        echo   or manually: copy "%DLL_PATH%" "C:\OpenSSL\lib\ossl-modules\"
+    REM Always deploy after successful build
+    call :deploy_provider "%DLL_PATH%"
+    if errorlevel 1 (
         echo.
-        echo To test:
-        echo   cd "%~dp0"
-        echo   runtest.bat
+        echo [WARNING] Deployment failed, but build was successful
+        echo To deploy manually: copy "%DLL_PATH%" "C:\OpenSSL\lib\ossl-modules\"
     )
 )
 
@@ -271,8 +260,11 @@ if errorlevel 1 (
 
 echo [OK] Provider deployed successfully!
 echo.
-echo To test the deployment:
-echo   cd "%~dp0"
+echo ========================================
+echo Ready to Test!
+echo ========================================
+echo.
+echo Run tests with:
 echo   runtest.bat
 echo.
 

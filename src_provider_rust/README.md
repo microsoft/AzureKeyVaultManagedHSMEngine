@@ -10,27 +10,37 @@ This is a Rust implementation of the OpenSSL Provider for Azure Managed HSM, con
 - Visual Studio Build Tools (for Windows)
 - OpenSSL command-line tools
 
-### One-Step Build and Deploy
+### Build and Deploy (One Command!)
 
 The easiest way to build and deploy the provider:
 
 ```cmd
-winbuild.bat --deploy
+winbuild.bat
 ```
 
-This will:
-- Check for Rust toolchain
-- Detect or install OpenSSL dependencies
-- Configure Visual Studio environment
-- Build the provider in release mode
-- Deploy to OpenSSL modules directory
+That's it! This single command will:
+- ✅ Check for Rust toolchain
+- ✅ Detect or install OpenSSL dependencies
+- ✅ Configure Visual Studio environment
+- ✅ Build the provider in release mode
+- ✅ Deploy to OpenSSL modules directory
+- ✅ Ready to test with `runtest.bat`
 
 Options:
 - `--debug` - Build in debug mode instead of release
 - `--skip-deps` - Skip dependency checks (faster for rebuilds)
-- `--deploy` - Automatically deploy to OpenSSL modules directory
 
-### Manual Build Options
+### Testing
+
+After building with winbuild.bat, simply run:
+
+```cmd
+runtest.bat
+```
+
+This will execute all test cases (validation is skipped by default for speed).
+
+### Advanced Build Options
 
 #### Option 1: Use Parent Directory's OpenSSL (Recommended)
 
@@ -38,7 +48,12 @@ If you already have the C provider built with vcpkg:
 
 ```powershell
 .\bootstrap_openssl.ps1 -UseParent
-cargo build --release
+```
+
+Then build:
+
+```cmd
+winbuild.bat
 ```
 
 #### Option 2: Local OpenSSL Setup
@@ -49,34 +64,16 @@ To install OpenSSL locally in this directory:
 .\bootstrap_openssl.ps1
 ```
 
-Then build using winbuild.bat (which sets up environment variables):
-
-```cmd
-winbuild.bat
-```
-
-Or manually with environment variables:
-
-```powershell
-$env:OPENSSL_DIR = "Q:\src\AzureKeyVaultManagedHSMEngine\src_provider_rust\vcpkg_installed\x64-windows-static"
-$env:OPENSSL_STATIC = "1"
-cargo build --release
-```
-
 The bootstrap script will:
 - Clone and bootstrap vcpkg locally
 - Install OpenSSL static libraries (`x64-windows-static`)
 - Take ~5-10 minutes on first run
 
-### Building
+Then build with `winbuild.bat` (which handles environment setup automatically).
 
-**Recommended:** Use the unified build script (handles all environment setup):
+### Manual Build (Advanced)
 
-```cmd
-winbuild.bat
-```
-
-**Manual build:** Set environment variables first:
+If you prefer to build with cargo directly:
 
 ```powershell
 # Set OpenSSL location
@@ -85,34 +82,25 @@ $env:OPENSSL_STATIC = "1"
 
 # Build
 cargo build --release
+
+# Deploy manually
+copy target\release\akv_provider.dll C:\OpenSSL\lib\ossl-modules\
 ```
 
 The compiled provider DLL will be at: `target/release/akv_provider.dll`
 
-### Deploying
-
-Option 1 - Automatic (via winbuild.bat):
-```cmd
-winbuild.bat --deploy
-```
-
-Option 2 - Manual:
-```powershell
-copy target\release\akv_provider.dll C:\OpenSSL\lib\ossl-modules\
-```
-
-### Testing
+## Testing
 
 Run the full test suite:
 
-```powershell
-.\runtest.bat
+```cmd
+runtest.bat
 ```
 
-Or skip validation for faster testing:
+Use `/VALIDATE` flag for comprehensive Azure validation (slower):
 
-```powershell
-.\runtest.bat /SKIPVALIDATION
+```cmd
+runtest.bat /VALIDATE
 ```
 
 ## Project Structure
