@@ -29,7 +29,6 @@ pub struct AkvKey {
 impl AkvKey {
     /// Create a new AKV key with the given provider context
     pub fn new(provctx: *mut ProviderContext) -> Self {
-        log::trace!("akv_key_new provctx={:p}", provctx);
         Self {
             provctx,
             public_key: None,
@@ -41,33 +40,21 @@ impl AkvKey {
 
     /// Set key metadata (vault name, key name, version)
     pub fn set_metadata(&mut self, vault: &str, name: &str, version: Option<&str>) -> bool {
-        log::trace!(
-            "akv_key_set_metadata vault={} name={} version={:?}",
-            vault,
-            name,
-            version
-        );
-
         self.keyvault_name = Some(vault.to_string());
         self.key_name = Some(name.to_string());
         self.key_version = version.map(|v| v.to_string());
-
-        log::debug!("akv_key_set_metadata -> true");
         true
     }
 
     /// Set the public key
     pub fn set_public(&mut self, pkey: PKey<Public>) {
-        log::trace!("akv_key_set_public");
         self.public_key = Some(pkey);
-        log::debug!("akv_key_set_public complete");
     }
 }
 
 impl Drop for AkvKey {
     fn drop(&mut self) {
-        log::trace!("akv_key_free");
-        log::debug!("akv_key_free complete");
+        // Cleanup happens automatically
     }
 }
 
@@ -108,18 +95,12 @@ pub struct ParsedUri {
 
 /// Parse a Key Vault URI
 fn has_case_prefix(input: &str, prefix: &str) -> bool {
-    log::trace!("has_case_prefix input={} prefix={}", input, prefix);
-    let result = input.len() >= prefix.len() && input[..prefix.len()].eq_ignore_ascii_case(prefix);
-    log::debug!("has_case_prefix -> {}", result);
-    result
+    input.len() >= prefix.len() && input[..prefix.len()].eq_ignore_ascii_case(prefix)
 }
 
 /// Parse URI in key-value format: akv:type=managedhsm,vault=name,name=keyname,version=v1
 pub fn parse_uri_keyvalue(uri: &str) -> Result<ParsedUri, String> {
-    log::trace!("parse_uri_keyvalue uri={}", uri);
-
     if !has_case_prefix(uri, "akv:") {
-        log::debug!("parse_uri_keyvalue -> Err (missing akv prefix)");
         return Err("URI must start with 'akv:' prefix".to_string());
     }
 
@@ -137,7 +118,6 @@ pub fn parse_uri_keyvalue(uri: &str) -> Result<ParsedUri, String> {
             match key.to_lowercase().as_str() {
                 "keyvault_type" | "type" => {
                     if !value.eq_ignore_ascii_case("managedhsm") {
-                        log::debug!("parse_uri_keyvalue -> Err (unsupported keyvault type)");
                         return Err(format!("Unsupported keyvault type: {}", value));
                     }
                     type_validated = true;
@@ -164,32 +144,18 @@ pub fn parse_uri_keyvalue(uri: &str) -> Result<ParsedUri, String> {
     }
 
     match (type_validated, vault_name, key_name) {
-        (true, Some(vault), Some(name)) => {
-            log::debug!(
-                "parse_uri_keyvalue parsed vault={} name={} version={:?}",
-                vault,
-                name,
-                key_version
-            );
-            Ok(ParsedUri {
-                vault_name: vault,
-                key_name: name,
-                key_version,
-            })
-        }
-        _ => {
-            log::debug!("parse_uri_keyvalue -> Err (missing required fields)");
-            Err("Missing required fields (vault and name)".to_string())
-        }
+        (true, Some(vault), Some(name)) => Ok(ParsedUri {
+            vault_name: vault,
+            key_name: name,
+            key_version,
+        }),
+        _ => Err("Missing required fields (vault and name)".to_string()),
     }
 }
 
 /// Parse URI in simple format: managedhsm:vaultname:keyname
 pub fn parse_uri_simple(uri: &str) -> Result<ParsedUri, String> {
-    log::trace!("parse_uri_simple uri={}", uri);
-
     if !has_case_prefix(uri, "managedhsm:") {
-        log::debug!("parse_uri_simple -> Err (missing managedhsm prefix)");
         return Err("URI must start with 'managedhsm:' prefix".to_string());
     }
 
@@ -199,19 +165,12 @@ pub fn parse_uri_simple(uri: &str) -> Result<ParsedUri, String> {
         let vault_name = cursor[..sep_pos].to_string();
         let key_name = cursor[sep_pos + 1..].to_string();
 
-        log::debug!(
-            "parse_uri_simple parsed vault={} name={}",
-            vault_name,
-            key_name
-        );
-
         Ok(ParsedUri {
             vault_name,
             key_name,
             key_version: None,
         })
     } else {
-        log::debug!("parse_uri_simple -> Err (missing separator)");
         Err("Missing ':' separator between vault and key name".to_string())
     }
 }

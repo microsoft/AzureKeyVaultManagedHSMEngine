@@ -280,35 +280,22 @@ fn akv_aes_key_has_private(key: &AkvAesKey) -> bool {
 // ============================================================================
 
 /// Create a new key management context
-/// Corresponds to akv_keymgmt_new
-/// Create a new key management context
 /// Corresponds to akv_keymgmt_new in C
 #[no_mangle]
 pub unsafe extern "C" fn akv_keymgmt_new(provctx: *mut c_void) -> *mut c_void {
-    log::trace!("akv_keymgmt_new provctx={:p}", provctx);
-    log::info!("========== akv_keymgmt_new CALLED ==========");
-
     let key = Box::new(AkvKey::new(provctx as *mut ProviderContext));
-    let key_ptr = Box::into_raw(key) as *mut c_void;
-
-    log::debug!("akv_keymgmt_new -> {:p}", key_ptr);
-    key_ptr
+    Box::into_raw(key) as *mut c_void
 }
 
 /// Free a key management context
 /// Corresponds to akv_keymgmt_free
 #[no_mangle]
 pub unsafe extern "C" fn akv_keymgmt_free(vkey: *mut c_void) {
-    log::trace!("akv_keymgmt_free key={:p}", vkey);
-
     if !vkey.is_null() {
         let _ = Box::from_raw(vkey as *mut AkvKey);
     }
-
-    log::debug!("akv_keymgmt_free complete for {:p}", vkey);
 }
 
-/// Load a key from a reference (from store loader)
 /// Load a key from a reference
 /// Corresponds to akv_keymgmt_load in C
 #[no_mangle]
@@ -316,27 +303,14 @@ pub unsafe extern "C" fn akv_keymgmt_load(
     reference: *const c_void,
     reference_sz: usize,
 ) -> *mut c_void {
-    log::trace!(
-        "akv_keymgmt_load reference={:p} size={}",
-        reference,
-        reference_sz
-    );
-    log::info!("========== akv_keymgmt_load CALLED ==========");
-    log::debug!(
-        "akv_keymgmt_load called: reference={:p}, size={}, expected_size={}",
-        reference,
-        reference_sz,
-        std::mem::size_of::<*mut AkvKey>()
-    );
-
     if reference.is_null() {
-        log::error!("akv_keymgmt_load -> NULL (null reference)");
+        log::error!("akv_keymgmt_load: null reference");
         return ptr::null_mut();
     }
 
     if reference_sz != std::mem::size_of::<*mut AkvKey>() {
         log::error!(
-            "akv_keymgmt_load -> NULL (invalid reference size: {} != {})",
+            "akv_keymgmt_load: invalid reference size {} (expected {})",
             reference_sz,
             std::mem::size_of::<*mut AkvKey>()
         );
@@ -347,16 +321,13 @@ pub unsafe extern "C" fn akv_keymgmt_load(
     let key_ptr_ref = reference as *mut *mut AkvKey;
     let key_ptr = *key_ptr_ref;
 
-    log::debug!("akv_keymgmt_load extracted key pointer: {:p}", key_ptr);
-
     if key_ptr.is_null() {
-        log::error!("akv_keymgmt_load -> NULL (extracted null key pointer)");
+        log::error!("akv_keymgmt_load: extracted null key pointer");
         return ptr::null_mut();
     }
 
     *key_ptr_ref = ptr::null_mut(); // Clear the reference
 
-    log::info!("akv_keymgmt_load -> {:p} (success)", key_ptr as *mut c_void);
     key_ptr as *mut c_void
 }
 
@@ -364,14 +335,7 @@ pub unsafe extern "C" fn akv_keymgmt_load(
 /// Corresponds to akv_keymgmt_has
 #[no_mangle]
 pub unsafe extern "C" fn akv_keymgmt_has(vkey: *const c_void, selection: c_int) -> c_int {
-    log::trace!("akv_keymgmt_has key={:p} selection=0x{:x}", vkey, selection);
-    log::info!(
-        "========== akv_keymgmt_has CALLED (selection=0x{:x}) ==========",
-        selection
-    );
-
     if vkey.is_null() {
-        log::error!("akv_keymgmt_has -> 0 (null key)");
         return 0;
     }
 
@@ -379,17 +343,14 @@ pub unsafe extern "C" fn akv_keymgmt_has(vkey: *const c_void, selection: c_int) 
 
     // Check if public key is required and present
     if (selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0 && key.public_key.is_none() {
-        log::error!("akv_keymgmt_has -> 0 (missing public key)");
         return 0;
     }
 
     // Check if private key metadata is required and present
     if (selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0 && !akv_key_has_private(key) {
-        log::error!("akv_keymgmt_has -> 0 (missing private metadata)");
         return 0;
     }
 
-    log::debug!("akv_keymgmt_has -> 1");
     1
 }
 
@@ -401,15 +362,7 @@ pub unsafe extern "C" fn akv_keymgmt_match(
     vkey2: *const c_void,
     selection: c_int,
 ) -> c_int {
-    log::trace!(
-        "akv_keymgmt_match key1={:p} key2={:p} selection=0x{:x}",
-        vkey1,
-        vkey2,
-        selection
-    );
-
     if vkey1.is_null() || vkey2.is_null() {
-        log::debug!("akv_keymgmt_match -> 0 (null keys)");
         return 0;
     }
 
@@ -419,35 +372,22 @@ pub unsafe extern "C" fn akv_keymgmt_match(
     // Check if public keys match using EVP_PKEY_eq
     if (selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0 {
         if key1.public_key.is_none() || key2.public_key.is_none() {
-            log::debug!(
-                "akv_keymgmt_match -> 0 (missing public key, sel=0x{:x})",
-                selection
-            );
             return 0;
         }
 
         // Use OpenSSL's EVP_PKEY_eq to compare public keys
-        // Transmute the PKey reference to get the underlying EVP_PKEY pointer
         let pkey1_ptr =
             key1.public_key.as_ref().unwrap() as *const _ as *const openssl_ffi::EVP_PKEY;
         let pkey2_ptr =
             key2.public_key.as_ref().unwrap() as *const _ as *const openssl_ffi::EVP_PKEY;
 
         if openssl_ffi::EVP_PKEY_eq(pkey1_ptr, pkey2_ptr) <= 0 {
-            log::debug!(
-                "akv_keymgmt_match -> 0 (public key mismatch, sel=0x{:x})",
-                selection
-            );
             return 0;
         }
     }
     // Check if private keys match (same vault and key name)
     if (selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0 {
         if !akv_key_has_private(key1) || !akv_key_has_private(key2) {
-            log::debug!(
-                "akv_keymgmt_match -> 0 (private metadata missing, sel=0x{:x})",
-                selection
-            );
             return 0;
         }
 
@@ -455,10 +395,6 @@ pub unsafe extern "C" fn akv_keymgmt_match(
         let vault1 = key1.keyvault_name.as_ref().unwrap();
         let vault2 = key2.keyvault_name.as_ref().unwrap();
         if !vault1.eq_ignore_ascii_case(vault2) {
-            log::debug!(
-                "akv_keymgmt_match -> 0 (vault identity mismatch, sel=0x{:x})",
-                selection
-            );
             return 0;
         }
 
@@ -466,10 +402,6 @@ pub unsafe extern "C" fn akv_keymgmt_match(
         let name1 = key1.key_name.as_ref().unwrap();
         let name2 = key2.key_name.as_ref().unwrap();
         if !name1.eq_ignore_ascii_case(name2) {
-            log::debug!(
-                "akv_keymgmt_match -> 0 (key name mismatch, sel=0x{:x})",
-                selection
-            );
             return 0;
         }
 
@@ -477,18 +409,10 @@ pub unsafe extern "C" fn akv_keymgmt_match(
         match (&key1.key_version, &key2.key_version) {
             (Some(v1), Some(v2)) => {
                 if !v1.eq_ignore_ascii_case(v2) {
-                    log::debug!(
-                        "akv_keymgmt_match -> 0 (version mismatch, sel=0x{:x})",
-                        selection
-                    );
                     return 0;
                 }
             }
             (Some(_), None) | (None, Some(_)) => {
-                log::debug!(
-                    "akv_keymgmt_match -> 0 (version presence mismatch, sel=0x{:x})",
-                    selection
-                );
                 return 0;
             }
             (None, None) => {
@@ -497,7 +421,6 @@ pub unsafe extern "C" fn akv_keymgmt_match(
         }
     }
 
-    log::debug!("akv_keymgmt_match -> 1");
     1
 }
 

@@ -56,7 +56,29 @@ pub fn init_logging() -> Result<(), String> {
     Ok(())
 }
 
-/// Log a debug message
+/// Optimized trace logging - only evaluates arguments if trace is enabled
+/// Use this for very verbose logging in hot paths
+#[macro_export]
+macro_rules! trace_opt {
+    ($($arg:tt)*) => {
+        if log::log_enabled!(log::Level::Trace) {
+            log::trace!($($arg)*);
+        }
+    };
+}
+
+/// Optimized debug logging - only evaluates arguments if debug is enabled
+/// Use this for debug logging with expensive string formatting
+#[macro_export]
+macro_rules! debug_opt {
+    ($($arg:tt)*) => {
+        if log::log_enabled!(log::Level::Debug) {
+            log::debug!($($arg)*);
+        }
+    };
+}
+
+/// Log a debug message (kept for compatibility)
 #[macro_export]
 macro_rules! debug_log {
     ($($arg:tt)*) => {
