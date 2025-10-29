@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 // FFI bindings for OpenSSL functions not available in openssl-rs crate
 // These are needed for provider implementation
 

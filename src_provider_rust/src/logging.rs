@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 // Logging utilities
 // Corresponds to akv_logging.c
 

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 // OpenSSL helper functions for public key construction
 // Builds EVP_PKEY objects from Azure Key Vault key material
 

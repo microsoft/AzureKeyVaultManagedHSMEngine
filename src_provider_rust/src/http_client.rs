@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 // HTTP client for Azure Key Vault API
 // Corresponds to curl.c
 

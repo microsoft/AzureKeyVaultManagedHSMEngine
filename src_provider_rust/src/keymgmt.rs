@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 // Key management functionality
 // Corresponds to akv_keymgmt.c
 

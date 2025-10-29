@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 // OpenSSL OSSL_PARAM handling
 // Provides Rust-friendly wrappers for OpenSSL parameter structures
 

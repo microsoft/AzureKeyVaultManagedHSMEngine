@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 // Base64 encoding/decoding utilities
 // Corresponds to base64.c
 

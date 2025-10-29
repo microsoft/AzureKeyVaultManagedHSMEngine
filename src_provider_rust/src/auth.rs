@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 // Azure authentication utilities
 // Corresponds to GetAccessTokenFromEnv in C implementation
 

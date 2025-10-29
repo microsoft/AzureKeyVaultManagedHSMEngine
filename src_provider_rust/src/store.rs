@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 // Store loader functionality
 // Corresponds to akv_store_* functions in akv_provider.c
 

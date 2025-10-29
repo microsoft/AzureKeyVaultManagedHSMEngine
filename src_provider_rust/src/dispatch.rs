@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 // OpenSSL dispatch tables and algorithm definitions
 // Corresponds to OSSL_DISPATCH and OSSL_ALGORITHM structures in akv_provider.c
 

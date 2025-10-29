@@ -8,8 +8,31 @@ This is a Rust implementation of the OpenSSL Provider for Azure Managed HSM, con
 - Rust toolchain (1.70+)
 - Git (for vcpkg if setting up locally)
 - Visual Studio Build Tools (for Windows)
+- OpenSSL command-line tools
 
-### Option 1: Use Parent Directory's OpenSSL (Recommended)
+### One-Step Build and Deploy
+
+The easiest way to build and deploy the provider:
+
+```cmd
+winbuild.bat --deploy
+```
+
+This will:
+- Check for Rust toolchain
+- Detect or install OpenSSL dependencies
+- Configure Visual Studio environment
+- Build the provider in release mode
+- Deploy to OpenSSL modules directory
+
+Options:
+- `--debug` - Build in debug mode instead of release
+- `--skip-deps` - Skip dependency checks (faster for rebuilds)
+- `--deploy` - Automatically deploy to OpenSSL modules directory
+
+### Manual Build Options
+
+#### Option 1: Use Parent Directory's OpenSSL (Recommended)
 
 If you already have the C provider built with vcpkg:
 
@@ -18,26 +41,49 @@ If you already have the C provider built with vcpkg:
 cargo build --release
 ```
 
-### Option 2: Local OpenSSL Setup
+#### Option 2: Local OpenSSL Setup
 
 To install OpenSSL locally in this directory:
 
 ```powershell
 .\bootstrap_openssl.ps1
+```
+
+Then build using winbuild.bat (which sets up environment variables):
+
+```cmd
+winbuild.bat
+```
+
+Or manually with environment variables:
+
+```powershell
+$env:OPENSSL_DIR = "Q:\src\AzureKeyVaultManagedHSMEngine\src_provider_rust\vcpkg_installed\x64-windows-static"
+$env:OPENSSL_STATIC = "1"
 cargo build --release
 ```
 
-This will:
+The bootstrap script will:
 - Clone and bootstrap vcpkg locally
 - Install OpenSSL static libraries (`x64-windows-static`)
-- Configure `.cargo/config.toml` automatically
 - Take ~5-10 minutes on first run
 
 ### Building
 
-Once bootstrapped, simply run:
+**Recommended:** Use the unified build script (handles all environment setup):
+
+```cmd
+winbuild.bat
+```
+
+**Manual build:** Set environment variables first:
 
 ```powershell
+# Set OpenSSL location
+$env:OPENSSL_DIR = "path\to\vcpkg_installed\x64-windows-static"
+$env:OPENSSL_STATIC = "1"
+
+# Build
 cargo build --release
 ```
 
@@ -45,8 +91,12 @@ The compiled provider DLL will be at: `target/release/akv_provider.dll`
 
 ### Deploying
 
-Copy the provider to OpenSSL's modules directory:
+Option 1 - Automatic (via winbuild.bat):
+```cmd
+winbuild.bat --deploy
+```
 
+Option 2 - Manual:
 ```powershell
 copy target\release\akv_provider.dll C:\OpenSSL\lib\ossl-modules\
 ```

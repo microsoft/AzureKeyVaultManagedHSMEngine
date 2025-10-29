@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
 // Provider core functionality
 // Corresponds to akv_provider.c
 
