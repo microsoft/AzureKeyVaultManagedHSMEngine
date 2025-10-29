@@ -68,7 +68,8 @@ if (Test-Path (Join-Path $OpenSSLDir "lib\libssl.lib")) {
     Write-Host "Installing OpenSSL static libraries..." -ForegroundColor Yellow
     Write-Host "This may take several minutes..." -ForegroundColor Yellow
     
-    & "$VcpkgDir\vcpkg.exe" install openssl:x64-windows-static
+    $InstallRoot = Join-Path $ScriptDir "vcpkg_installed"
+    & "$VcpkgDir\vcpkg.exe" install openssl:x64-windows-static --x-install-root="$InstallRoot"
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[ERROR] Failed to install OpenSSL" -ForegroundColor Red
         exit 1
