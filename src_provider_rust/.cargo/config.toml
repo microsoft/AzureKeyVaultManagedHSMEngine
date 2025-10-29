@@ -1,0 +1,9 @@
+﻿# Cargo configuration for Azure Managed HSM OpenSSL Provider
+
+[env]
+# Use static linking for OpenSSL by default
+# This creates a self-contained DLL without external OpenSSL DLL dependencies
+OPENSSL_STATIC = "1"
+
+# Set OpenSSL directory to parent src_provider vcpkg installation
+OPENSSL_DIR = { value = "Q:/src/AzureKeyVaultManagedHSMEngine/src_provider/vcpkg_installed/x64-windows-static", relative = false }

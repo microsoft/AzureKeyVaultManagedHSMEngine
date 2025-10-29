@@ -2,6 +2,69 @@
 
 This is a Rust implementation of the OpenSSL Provider for Azure Managed HSM, converted from the original C implementation in `src_provider`.
 
+## Quick Start
+
+### Prerequisites
+- Rust toolchain (1.70+)
+- Git (for vcpkg if setting up locally)
+- Visual Studio Build Tools (for Windows)
+
+### Option 1: Use Parent Directory's OpenSSL (Recommended)
+
+If you already have the C provider built with vcpkg:
+
+```powershell
+.\bootstrap_openssl.ps1 -UseParent
+cargo build --release
+```
+
+### Option 2: Local OpenSSL Setup
+
+To install OpenSSL locally in this directory:
+
+```powershell
+.\bootstrap_openssl.ps1
+cargo build --release
+```
+
+This will:
+- Clone and bootstrap vcpkg locally
+- Install OpenSSL static libraries (`x64-windows-static`)
+- Configure `.cargo/config.toml` automatically
+- Take ~5-10 minutes on first run
+
+### Building
+
+Once bootstrapped, simply run:
+
+```powershell
+cargo build --release
+```
+
+The compiled provider DLL will be at: `target/release/akv_provider.dll`
+
+### Deploying
+
+Copy the provider to OpenSSL's modules directory:
+
+```powershell
+copy target\release\akv_provider.dll C:\OpenSSL\lib\ossl-modules\
+```
+
+### Testing
+
+Run the full test suite:
+
+```powershell
+.\runtest.bat
+```
+
+Or skip validation for faster testing:
+
+```powershell
+.\runtest.bat /SKIPVALIDATION
+```
+
 ## Project Structure
 
 - `src/lib.rs` - Main library entry point and OpenSSL provider initialization
