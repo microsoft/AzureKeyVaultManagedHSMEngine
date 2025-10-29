@@ -257,8 +257,10 @@ impl AkvHttpClient {
                 let mut e_bytes = decode_url_safe(&e)?;
 
                 // Azure returns big-endian bytes. On little-endian systems (Windows),
-                // reverse to native endianness. This is the ONLY place we reverse.
+                // reverse to native endianness for EVP_PKEY_fromdata.
+                // This is the ONLY place we reverse in the entire codebase.
                 // Matches C implementation in curl.c:340-366
+                // Export (keymgmt.rs) does NOT reverse - it uses big-endian directly.
                 if cfg!(target_endian = "little") {
                     n_bytes.reverse();
                     e_bytes.reverse();

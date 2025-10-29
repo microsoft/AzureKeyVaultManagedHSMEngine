@@ -8,7 +8,7 @@ use openssl::pkey::{PKey, Public};
 use openssl::rsa::Rsa;
 
 /// Build RSA public key from modulus (n) and exponent (e)
-/// Bytes are already reversed to little-endian from Azure's big-endian
+/// Bytes are in native endianness (reversed from Azure's big-endian on Windows)
 pub fn build_rsa_public_key(n: &[u8], e: &[u8]) -> Result<PKey<Public>, String> {
     use crate::openssl_ffi::{
         EVP_PKEY_CTX_free, EVP_PKEY_CTX_new_from_name, EVP_PKEY_fromdata, EVP_PKEY_fromdata_init,
@@ -20,8 +20,9 @@ pub fn build_rsa_public_key(n: &[u8], e: &[u8]) -> Result<PKey<Public>, String> 
 
     log::trace!("build_rsa_public_key n_len={} e_len={}", n.len(), e.len());
 
-    // Bytes are already in native endianness (little-endian on Windows), reversed from Azure.
+    // Bytes are in native endianness (little-endian on Windows), already reversed from Azure.
     // Use EVP_PKEY_fromdata with OSSL_PARAM_construct_BN like the C code does.
+    // Matches C implementation in curl.c:340-366
 
     unsafe {
         let rsa_str = CString::new("RSA").unwrap();

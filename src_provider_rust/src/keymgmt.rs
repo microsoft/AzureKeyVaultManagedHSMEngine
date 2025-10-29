@@ -4,6 +4,7 @@
 use crate::openssl_ffi;
 use crate::ossl_param::OsslParam;
 use crate::provider::{AkvAesKey, AkvKey, ProviderContext};
+use foreign_types::ForeignType;
 use openssl::pkey::PKey;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
@@ -674,110 +675,34 @@ pub unsafe extern "C" fn akv_keymgmt_export(
         return 0;
     }
 
-    // Manual export: Extract key components and build OSSL_PARAM
-    // Note: We reverse bytes only when importing from Azure, not when exporting
-    log::debug!("akv_keymgmt_export: extracting key components");
-
-    let pkey = key.public_key.as_ref().unwrap();
-
-    // Try to get RSA key
-    if let Ok(rsa_key) = pkey.rsa() {
-        let n_bn = rsa_key.n();
-        let e_bn = rsa_key.e();
-
-        // Convert BIGNUMs to byte arrays
-        let mut n_vec = n_bn.to_vec();
-        let mut e_vec = e_bn.to_vec();
-
-        // BigNum::to_vec() returns big-endian. OSSL_PARAM expects native endianness.
-        // Since we're on little-endian Windows, we need to reverse.
-        if cfg!(target_endian = "little") {
-            n_vec.reverse();
-            e_vec.reverse();
-            log::debug!("akv_keymgmt_export: reversed to native endianness for OSSL_PARAM");
-        }
-
-        log::debug!(
-            "akv_keymgmt_export: RSA n_len={}, e_len={}",
-            n_vec.len(),
-            e_vec.len()
-        );
-
-        // Build OSSL_PARAM array
-        let params_vec = vec![
-            OsslParam::construct_big_number(
-                c"n".as_ptr() as *const i8,
-                n_vec.as_ptr() as *mut u8,
-                n_vec.len(),
-            ),
-            OsslParam::construct_big_number(
-                c"e".as_ptr() as *const i8,
-                e_vec.as_ptr() as *mut u8,
-                e_vec.len(),
-            ),
-            OsslParam::end(),
-        ];
-
-        // Call the callback
-        type ExportCallback = unsafe extern "C" fn(*const OsslParam, *mut c_void) -> c_int;
-        let cb: ExportCallback = std::mem::transmute(callback);
-
-        let result = cb(params_vec.as_ptr(), cbarg);
-        log::debug!("akv_keymgmt_export -> {} (manual RSA export)", result);
-        return result;
+    // Use EVP_PKEY_todata to export key parameters (matches C implementation)
+    // This automatically handles endianness conversion, unlike manual BigNum extraction
+    use crate::openssl_ffi::{EVP_PKEY_todata, OSSL_PARAM_free};
+    
+    let pkey_ptr = key.public_key.as_ref().unwrap().as_ptr() as *const crate::openssl_ffi::EVP_PKEY;
+    let mut params_ptr: *mut OsslParam = std::ptr::null_mut();
+    
+    let result = EVP_PKEY_todata(pkey_ptr, selection, &mut params_ptr);
+    if result <= 0 {
+        log::error!("akv_keymgmt_export: EVP_PKEY_todata failed (selection=0x{:x})", selection);
+        return 0;
+    }
+    
+    if params_ptr.is_null() {
+        log::error!("akv_keymgmt_export: EVP_PKEY_todata returned null params");
+        return 0;
     }
 
-    // Try to get EC key
-    if let Ok(ec_key) = pkey.ec_key() {
-        let group = ec_key.group();
-        let pub_key_point = ec_key.public_key();
-
-        // Convert point to uncompressed form (0x04 || x || y)
-        use openssl::ec::PointConversionForm;
-        let pub_key_bytes = pub_key_point
-            .to_bytes(
-                group,
-                PointConversionForm::UNCOMPRESSED,
-                &mut openssl::bn::BigNumContext::new().unwrap(),
-            )
-            .unwrap();
-
-        log::debug!(
-            "akv_keymgmt_export: EC pub_key_bytes_len={}",
-            pub_key_bytes.len()
-        );
-
-        // Get curve NID and name
-        let nid = group.curve_name().unwrap();
-        let curve_name = nid.long_name().unwrap();
-        log::debug!("akv_keymgmt_export: EC curve={}", curve_name);
-
-        // Build OSSL_PARAM array for EC key
-        let params_vec = vec![
-            OsslParam::construct_octet_string(
-                c"pub".as_ptr() as *const i8,
-                pub_key_bytes.as_ptr() as *mut c_void,
-                pub_key_bytes.len(),
-            ),
-            OsslParam::construct_utf8_string(
-                c"group".as_ptr() as *const i8,
-                curve_name.as_ptr() as *mut i8,
-                curve_name.len(),
-            ),
-            OsslParam::end(),
-        ];
-
-        // Call the callback
-        type ExportCallback = unsafe extern "C" fn(*const OsslParam, *mut c_void) -> c_int;
-        let cb: ExportCallback = std::mem::transmute(callback);
-
-        let result = cb(params_vec.as_ptr(), cbarg);
-        log::debug!("akv_keymgmt_export -> {} (manual EC export)", result);
-        return result;
-    }
-
-    log::error!("akv_keymgmt_export: unknown key type");
-    0
+    // Call the callback with the parameters
+    type ExportCallback = unsafe extern "C" fn(*const OsslParam, *mut c_void) -> c_int;
+    let cb: ExportCallback = std::mem::transmute(callback);
+    let cb_result = cb(params_ptr, cbarg);
+    
+    // Free the params allocated by OpenSSL
+    OSSL_PARAM_free(params_ptr);
+    
+    log::debug!("akv_keymgmt_export -> {} (via EVP_PKEY_todata)", cb_result);
+    cb_result
 }
 
 // ============================================================================
