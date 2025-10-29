@@ -40,25 +40,9 @@ runtest.bat
 
 This will execute all test cases (validation is skipped by default for speed).
 
-### Advanced Build Options
+### Advanced: Manual OpenSSL Setup
 
-#### Option 1: Use Parent Directory's OpenSSL (Recommended)
-
-If you already have the C provider built with vcpkg:
-
-```powershell
-.\bootstrap_openssl.ps1 -UseParent
-```
-
-Then build:
-
-```cmd
-winbuild.bat
-```
-
-#### Option 2: Local OpenSSL Setup
-
-To install OpenSSL locally in this directory:
+If you want to pre-install OpenSSL before running winbuild.bat:
 
 ```powershell
 .\bootstrap_openssl.ps1
@@ -69,15 +53,15 @@ The bootstrap script will:
 - Install OpenSSL static libraries (`x64-windows-static`)
 - Take ~5-10 minutes on first run
 
-Then build with `winbuild.bat` (which handles environment setup automatically).
+Then build with `winbuild.bat` (which detects the installed OpenSSL automatically).
 
-### Manual Build (Advanced)
+### Advanced: Manual Build with Cargo
 
 If you prefer to build with cargo directly:
 
 ```powershell
 # Set OpenSSL location
-$env:OPENSSL_DIR = "path\to\vcpkg_installed\x64-windows-static"
+$env:OPENSSL_DIR = "Q:\src\AzureKeyVaultManagedHSMEngine\src_provider_rust\vcpkg_installed\x64-windows-static"
 $env:OPENSSL_STATIC = "1"
 
 # Build

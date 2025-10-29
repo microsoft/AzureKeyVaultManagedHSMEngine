@@ -63,15 +63,6 @@ if defined OPENSSL_DIR (
     )
 )
 
-REM Try parent directory's vcpkg installation
-set PARENT_OPENSSL=%~dp0..\src_provider\vcpkg_installed\x64-windows-static
-if exist "%PARENT_OPENSSL%\lib\libssl.lib" (
-    echo [OK] Found OpenSSL in parent directory
-    echo      %PARENT_OPENSSL%
-    set OPENSSL_DIR=%PARENT_OPENSSL%
-    goto :openssl_ok
-)
-
 REM Try local vcpkg installation
 set LOCAL_OPENSSL=%~dp0vcpkg_installed\x64-windows-static
 if exist "%LOCAL_OPENSSL%\lib\libssl.lib" (
@@ -85,14 +76,11 @@ REM OpenSSL not found - offer to install
 echo.
 echo [WARNING] OpenSSL not found!
 echo.
-echo Available options:
-echo   1. Install OpenSSL locally (takes ~10 minutes, ~500MB)
-echo   2. Use parent directory's OpenSSL (if src_provider is built)
-echo   3. Set OPENSSL_DIR environment variable manually
+echo This will install OpenSSL locally via vcpkg (~10 minutes, ~500MB)
 echo.
-choice /C 12 /N /M "Choose option (1 or 2): "
+choice /C YN /M "Install OpenSSL now?"
 
-if errorlevel 2 goto :use_parent
+if errorlevel 2 goto :error
 if errorlevel 1 goto :install_local
 
 :install_local
@@ -105,20 +93,6 @@ if exist "%~dp0bootstrap_openssl.ps1" (
     REM Reload config after bootstrap
     set LOCAL_OPENSSL=%~dp0vcpkg_installed\x64-windows-static
     set OPENSSL_DIR=%LOCAL_OPENSSL%
-    goto :openssl_ok
-) else (
-    echo [ERROR] bootstrap_openssl.ps1 not found!
-    goto :error
-)
-
-:use_parent
-echo.
-echo Using parent directory's OpenSSL...
-if exist "%~dp0bootstrap_openssl.ps1" (
-    powershell -ExecutionPolicy Bypass -File "%~dp0bootstrap_openssl.ps1" -UseParent
-    if errorlevel 1 goto :error
-    
-    set OPENSSL_DIR=%PARENT_OPENSSL%
     goto :openssl_ok
 ) else (
     echo [ERROR] bootstrap_openssl.ps1 not found!
