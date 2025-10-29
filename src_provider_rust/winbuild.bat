@@ -28,7 +28,7 @@ goto parse_args
 REM ========================================
 REM 1. Check Rust toolchain
 REM ========================================
-echo [1/4] Checking Rust toolchain...
+echo [1/3] Checking Rust toolchain...
 where cargo >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] Rust toolchain not found!
@@ -46,11 +46,11 @@ REM ========================================
 REM 2. Check/Setup OpenSSL
 REM ========================================
 if "%SKIP_DEPS_CHECK%"=="1" (
-    echo [2/4] Skipping dependency checks...
+    echo [2/3] Skipping dependency checks...
     goto :build
 )
 
-echo [2/4] Checking OpenSSL dependencies...
+echo [2/3] Checking OpenSSL dependencies...
 
 REM Check if OPENSSL_DIR is already set
 if defined OPENSSL_DIR (
@@ -105,40 +105,10 @@ set OPENSSL_STATIC=1
 echo [OK] OpenSSL configuration complete
 
 REM ========================================
-REM 3. Check Visual Studio Build Tools
-REM ========================================
-echo [3/4] Checking Visual Studio Build Tools...
-
-REM Check if we're already in a VS Developer environment
-if defined VSINSTALLDIR (
-    echo [OK] Visual Studio environment detected
-    goto :build
-)
-
-REM Try to find and run vcvarsall.bat
-set VS_YEAR=2022
-set VS_EDITION=Enterprise
-
-for %%e in (Enterprise Professional Community BuildTools) do (
-    set VS_PATH=C:\Program Files\Microsoft Visual Studio\%VS_YEAR%\%%e\VC\Auxiliary\Build\vcvarsall.bat
-    if exist "!VS_PATH!" (
-        echo [OK] Found Visual Studio %%e
-        call "!VS_PATH!" x64
-        goto :build
-    )
-)
-
-echo [WARNING] Visual Studio Build Tools not found
-echo           Build may fail if C/C++ compilation is required
-echo           Install from: https://visualstudio.microsoft.com/downloads/
-
-REM ========================================
-REM 4. Build
-REM ========================================
-REM 4. Build
+REM 3. Build
 REM ========================================
 :build
-echo [4/4] Building provider...
+echo [3/3] Building provider...
 echo.
 
 REM Set OpenSSL environment variables for cargo
