@@ -20,28 +20,21 @@ if ($UseParent -and (Test-Path $ParentOpenSSLDir)) {
     Write-Host "[INFO] Using parent directory's OpenSSL installation" -ForegroundColor Yellow
     $OpenSSLDir = (Resolve-Path $ParentOpenSSLDir).Path
     
-    # Update config.toml to point to parent directory
-    $ConfigDir = Join-Path $ScriptDir ".cargo"
-    if (-not (Test-Path $ConfigDir)) {
-        New-Item -ItemType Directory -Path $ConfigDir | Out-Null
-    }
-    
-    $ConfigContent = @"
-# Cargo configuration for Azure Managed HSM OpenSSL Provider
-
-[env]
-# Use static linking for OpenSSL by default
-# This creates a self-contained DLL without external OpenSSL DLL dependencies
-OPENSSL_STATIC = "1"
-
-# Set OpenSSL directory to parent src_provider vcpkg installation
-OPENSSL_DIR = { value = "$($OpenSSLDir -replace '\\', '/')", relative = false }
-"@
-    
-    $ConfigContent | Out-File -FilePath (Join-Path $ConfigDir "config.toml") -Encoding UTF8
-    Write-Host "[OK] Configuration updated to use parent OpenSSL" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host "Bootstrap Complete!" -ForegroundColor Green
+    Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "OpenSSL Location: $OpenSSLDir" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "To build, use winbuild.bat (recommended):" -ForegroundColor Yellow
+    Write-Host "     .\winbuild.bat" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Or set environment and build manually:" -ForegroundColor Yellow
+    Write-Host "     `$env:OPENSSL_DIR='$OpenSSLDir'" -ForegroundColor Gray
+    Write-Host "     `$env:OPENSSL_STATIC='1'" -ForegroundColor Gray
+    Write-Host "     cargo build --release" -ForegroundColor Gray
+    Write-Host ""
     exit 0
 }
 

@@ -50,29 +50,6 @@ if errorlevel 1 (
 
 echo [OK] OpenSSL installed successfully
 
-:update_config
-echo.
-echo Updating .cargo\config.toml...
-
-REM Create .cargo directory if it doesn't exist
-if not exist "%~dp0.cargo" mkdir "%~dp0.cargo"
-
-REM Write config.toml with local vcpkg path
-(
-echo # Cargo configuration for Azure Managed HSM OpenSSL Provider
-echo.
-echo [env]
-echo # Use static linking for OpenSSL by default
-echo # This creates a self-contained DLL without external OpenSSL DLL dependencies
-echo OPENSSL_STATIC = "1"
-echo.
-echo # Set OpenSSL directory to local vcpkg installation
-echo # This is set by bootstrap_openssl.bat
-echo OPENSSL_DIR = { value = "%OPENSSL_DIR:\=/%", relative = false }
-) > "%~dp0.cargo\config.toml"
-
-echo [OK] Configuration updated
-
 echo.
 echo ========================================
 echo Bootstrap Complete!
@@ -80,7 +57,13 @@ echo ========================================
 echo.
 echo OpenSSL Location: %OPENSSL_DIR%
 echo.
-echo You can now build with: cargo build --release
+echo To build, use winbuild.bat (recommended):
+echo      winbuild.bat
+echo.
+echo Or set environment and build manually:
+echo      set OPENSSL_DIR=%OPENSSL_DIR%
+echo      set OPENSSL_STATIC=1
+echo      cargo build --release
 echo.
 
 endlocal
