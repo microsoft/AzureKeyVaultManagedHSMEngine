@@ -52,7 +52,16 @@ if "%SKIP_DEPS_CHECK%"=="1" (
 
 echo [2/3] Checking OpenSSL dependencies...
 
-REM Check if OPENSSL_DIR is already set
+REM First check local vcpkg installation
+set LOCAL_OPENSSL=%~dp0vcpkg_installed\x64-windows-static
+if exist "%LOCAL_OPENSSL%\lib\libssl.lib" (
+    echo [OK] Found OpenSSL in local directory
+    echo      %LOCAL_OPENSSL%
+    set OPENSSL_DIR=%LOCAL_OPENSSL%
+    goto :openssl_ok
+)
+
+REM Then check if OPENSSL_DIR is already set
 if defined OPENSSL_DIR (
     echo [INFO] OPENSSL_DIR already set: %OPENSSL_DIR%
     if exist "%OPENSSL_DIR%\lib\libssl.lib" (
@@ -61,15 +70,6 @@ if defined OPENSSL_DIR (
     ) else (
         echo [WARNING] OPENSSL_DIR set but libssl.lib not found
     )
-)
-
-REM Try local vcpkg installation
-set LOCAL_OPENSSL=%~dp0vcpkg_installed\x64-windows-static
-if exist "%LOCAL_OPENSSL%\lib\libssl.lib" (
-    echo [OK] Found OpenSSL in local directory
-    echo      %LOCAL_OPENSSL%
-    set OPENSSL_DIR=%LOCAL_OPENSSL%
-    goto :openssl_ok
 )
 
 REM OpenSSL not found - offer to install
