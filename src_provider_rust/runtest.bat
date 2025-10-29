@@ -191,13 +191,8 @@ REM ============================================================================
 REM Validate Managed HSM and Keys (skipped by default, use /VALIDATE to enable)
 REM ============================================================================
 
-if /i "%1"=="/VALIDATE" (
-    echo.
-    echo [INFO] Validating Managed HSM and keys (this may take 20-30 seconds)
-    goto :run_validation
-)
-
 echo.
+if /i "%1"=="/VALIDATE" goto :run_validation
 echo [INFO] Skipping Managed HSM validation (use /VALIDATE for full checks)
 echo.
 goto :skip_validation
