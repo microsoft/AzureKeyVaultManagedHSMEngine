@@ -13,6 +13,10 @@ Cargo.lock
 *.pem
 test*.txt
 
+# vcpkg and OpenSSL (bootstrapped locally)
+/vcpkg/
+/vcpkg_installed/
+
 # IDE files
 .vscode/
 .idea/
