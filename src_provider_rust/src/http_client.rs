@@ -248,10 +248,17 @@ impl AkvHttpClient {
                 // OpenSSL's EVP_PKEY_fromdata expects these parameters in native endianness.
                 // On little-endian platforms (x86/x64 Windows), we must reverse the byte order.
                 // On big-endian platforms, no conversion is needed.
+                // 
+                // Reference: OpenSSL OSSL_PARAM documentation
+                // https://www.openssl.org/docs/man3.0/man3/OSSL_PARAM.html#Supported-types
+                // "For OSSL_PARAM_INTEGER and OSSL_PARAM_UNSIGNED_INTEGER, the integer 
+                //  buffers are interpreted in native endianness (CPU native byte order)."
+                // 
                 // This is the ONLY place we reverse in the entire codebase.
                 // Matches C implementation in curl.c:340-366
                 // Export (keymgmt.rs) uses EVP_PKEY_todata which handles endianness automatically.
-                if cfg!(target_endian = "little") {
+                #[cfg(target_endian = "little")]
+                {
                     n_bytes.reverse();
                     e_bytes.reverse();
                 }
