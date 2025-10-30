@@ -5,11 +5,13 @@ REM ============================================================================
 REM Azure Managed HSM OpenSSL Provider Test Suite
 REM ============================================================================
 REM
-REM Usage: runtest.bat [/VALIDATE]
+REM Usage: runtest.bat [/VALIDATE] [/NOENV]
 REM
 REM Options:
 REM   /VALIDATE  Run full validation of Azure Managed HSM and keys
 REM              (slower, but verifies all prerequisites)
+REM   /NOENV     Use DefaultAzureCredential instead of environment variable
+REM              (tests Azure SDK authentication chain)
 REM
 REM By default, validation is SKIPPED for faster testing.
 REM
@@ -36,11 +38,13 @@ echo.
 echo Azure Managed HSM OpenSSL Provider Test Suite
 echo ==============================================
 echo.
-echo Usage: runtest.bat [/VALIDATE]
+echo Usage: runtest.bat [/VALIDATE] [/NOENV]
 echo.
 echo Options:
 echo   /VALIDATE  Run full validation of Azure Managed HSM and keys
 echo              (default is to skip validation for faster testing)
+echo   /NOENV     Use DefaultAzureCredential instead of environment variable
+echo              (tests Azure SDK authentication chain)
 echo.
 echo Environment Variables (optional):
 echo   AKV_VAULT    - Managed HSM name (default: ManagedHSMOpenSSLEngine)
@@ -51,6 +55,8 @@ echo.
 echo Examples:
 echo   runtest.bat              # Run tests (fast, skips validation)
 echo   runtest.bat /VALIDATE    # Run tests with full validation
+echo   runtest.bat /NOENV       # Use DefaultAzureCredential
+echo   runtest.bat /VALIDATE /NOENV  # Full validation with DefaultAzureCredential
 echo   set AKV_VAULT=MyVault ^& runtest.bat  # Use custom vault name
 echo.
 goto :end
@@ -122,22 +128,35 @@ if errorlevel 1 (
 )
 echo [OK] akv_provider is loadable
 
+REM Check if /NOENV flag is set
+set USE_DEFAULT_CREDENTIAL=NO
+if /i "%1"=="/NOENV" set USE_DEFAULT_CREDENTIAL=YES
+if /i "%2"=="/NOENV" set USE_DEFAULT_CREDENTIAL=YES
+
 echo.
-echo --- Fetching Azure CLI access token ---
-for /f "tokens=2 delims=:," %%i in ('call az account get-access-token --output json --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47 --resource https://managedhsm.azure.net ^| findstr "accessToken"') do (
-    set AZURE_CLI_ACCESS_TOKEN=%%i
-)
+if "%USE_DEFAULT_CREDENTIAL%"=="YES" (
+    echo --- Using DefaultAzureCredential ---
+    echo [INFO] Skipping access token acquisition - will use Azure SDK authentication
+    echo [INFO] Make sure you are logged in with 'az login' or have other credentials configured
+    REM Ensure the environment variable is NOT set
+    set AZURE_CLI_ACCESS_TOKEN=
+) else (
+    echo --- Fetching Azure CLI access token ---
+    for /f "tokens=2 delims=:," %%i in ('call az account get-access-token --output json --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47 --resource https://managedhsm.azure.net ^| findstr "accessToken"') do (
+        set AZURE_CLI_ACCESS_TOKEN=%%i
+    )
 
-REM Remove quotes and spaces from token
-set AZURE_CLI_ACCESS_TOKEN=!AZURE_CLI_ACCESS_TOKEN:"=!
-set AZURE_CLI_ACCESS_TOKEN=!AZURE_CLI_ACCESS_TOKEN: =!
+    REM Remove quotes and spaces from token
+    set AZURE_CLI_ACCESS_TOKEN=!AZURE_CLI_ACCESS_TOKEN:"=!
+    set AZURE_CLI_ACCESS_TOKEN=!AZURE_CLI_ACCESS_TOKEN: =!
 
-if "%AZURE_CLI_ACCESS_TOKEN%"=="" (
-    echo ERROR: Failed to get access token
-    echo Please verify you are logged in with 'az login'
-    goto :error
+    if "!AZURE_CLI_ACCESS_TOKEN!"=="" (
+        echo ERROR: Failed to get access token
+        echo Please verify you are logged in with 'az login'
+        goto :error
+    )
+    echo [OK] Access token acquired
 )
-echo [OK] Access token acquired
 
 REM Set up logging
 set AKV_LOG_FILE=.\logs\akv_provider.log
