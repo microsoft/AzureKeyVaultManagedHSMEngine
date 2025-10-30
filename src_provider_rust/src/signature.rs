@@ -10,7 +10,7 @@ use foreign_types::ForeignTypeRef;
 use openssl::bn::BigNum;
 use openssl::ecdsa::EcdsaSig;
 use openssl::hash::{Hasher, MessageDigest};
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_uchar, c_void};
 use std::ptr;
 
@@ -85,6 +85,7 @@ pub struct SignatureContext {
     key: Option<Box<AkvKey>>,
     hasher: Option<Hasher>,
     md_name: Option<String>,
+    md_name_cstr: Option<CString>, // Owned CString for md_name to prevent memory leak
     mgf1_md_name: Option<String>,
     operation: c_int,
     padding: c_int,
@@ -100,6 +101,7 @@ impl SignatureContext {
             key: None,
             hasher: None,
             md_name: None,
+            md_name_cstr: None,
             mgf1_md_name: None,
             operation: 0,
             padding: RSA_PKCS1_PADDING,
@@ -115,6 +117,7 @@ impl SignatureContext {
             key: None,
             hasher: None,
             md_name: None,
+            md_name_cstr: None,
             mgf1_md_name: None,
             operation: 0,
             padding: 0,
@@ -904,14 +907,15 @@ pub unsafe extern "C" fn akv_signature_get_ctx_params(
     let digest_key = b"digest\0".as_ptr() as *const c_char;
     let digest_param = OsslParam::locate(params, digest_key);
     if !digest_param.is_null() {
-        let mdname = ctx.md_name.as_deref().unwrap_or("");
+        let ctx_mut = &mut *(vctx as *mut SignatureContext);
+        let mdname = ctx_mut.md_name.as_deref().unwrap_or("");
         let mdname_cstr = std::ffi::CString::new(mdname).unwrap();
         if !(*digest_param).set_utf8_ptr(mdname_cstr.as_ptr()) {
             log::error!("akv_signature_get_ctx_params failed to set digest");
             return 0;
         }
-        // Keep the CString alive by leaking it (OpenSSL expects the pointer to remain valid)
-        std::mem::forget(mdname_cstr);
+        // Store the CString in the context to keep it alive (OpenSSL expects the pointer to remain valid)
+        ctx_mut.md_name_cstr = Some(mdname_cstr);
     }
 
     1
@@ -1153,6 +1157,7 @@ pub unsafe extern "C" fn akv_signature_dupctx(vctx: *mut c_void) -> *mut c_void 
         key: key_clone,
         hasher: hasher_clone,
         md_name: src_ctx.md_name.clone(),
+        md_name_cstr: src_ctx.md_name_cstr.clone(),
         mgf1_md_name: src_ctx.mgf1_md_name.clone(),
         padding: src_ctx.padding,
         pss_saltlen: src_ctx.pss_saltlen,
@@ -1267,25 +1272,10 @@ pub unsafe extern "C" fn akv_signature_digest_sign(
         }
     }
 
-    // Otherwise, this is a standalone digest_sign call - do the full operation
-    log::trace!("akv_signature_digest_sign: standalone operation (no pre-init)");
-
-    // Initialize digest if not already done
-    if akv_signature_digest_sign_init(vctx, ptr::null(), ptr::null_mut(), ptr::null()) == 0 {
-        log::error!("akv_signature_digest_sign: init failed");
-        return 0;
-    }
-
-    // Update with data (if not a size query)
-    if !sig.is_null() {
-        if akv_signature_digest_update(vctx, tbs, tbslen) == 0 {
-            log::error!("akv_signature_digest_sign: update failed");
-            return 0;
-        }
-    }
-
-    // Finalize
-    akv_signature_digest_sign_final(vctx, sig, siglen, sigsize)
+    // If we reach here without a hasher or key, it's an error - digest_sign requires proper initialization
+    log::error!("akv_signature_digest_sign: called without prior initialization (no hasher or md_name)");
+    log::error!("akv_signature_digest_sign: must call digest_sign_init first");
+    0
 }
 
 /// Get list of gettable MD context parameters (GETTABLE_CTX_MD_PARAMS)

@@ -273,6 +273,7 @@ pub unsafe extern "C" fn akv_store_load(
             log::error!("AES object callback failed");
             crate::openssl_ffi::log_openssl_errors("AES object callback");
             // Free the key since callback failed
+            log::warn!("Freeing AkvAesKey object for '{}' due to callback failure", key_name);
             let _ = unsafe { Box::from_raw(key_ptr as *mut AkvAesKey) };
             ctx.exhausted = true;
             return 0;

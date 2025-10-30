@@ -4,6 +4,7 @@
 // OpenSSL helper functions for public key construction
 // Builds EVP_PKEY objects from Azure Key Vault key material
 
+use foreign_types::ForeignType;
 use openssl::bn::BigNum;
 use openssl::ec::{EcGroup, EcKey, EcPoint};
 use openssl::nid::Nid;
@@ -69,8 +70,15 @@ pub fn build_rsa_public_key(n: &[u8], e: &[u8]) -> Result<PKey<Public>, String> 
 
         EVP_PKEY_CTX_free(ctx);
 
-        // Wrap the EVP_PKEY in PKey<Public>
-        let pkey_wrapped: PKey<Public> = std::mem::transmute(pkey);
+        // Check for null pointer before wrapping
+        if pkey.is_null() {
+            return Err("EVP_PKEY_fromdata returned null pointer for RSA key".to_string());
+        }
+
+        // Wrap the EVP_PKEY in PKey<Public> using from_ptr (safe, takes ownership)
+        // Cast the pointer from our FFI type to openssl-sys EVP_PKEY type
+        let pkey_sys = pkey as *mut std::ffi::c_void as *mut _;
+        let pkey_wrapped = PKey::from_ptr(pkey_sys);
 
         log::debug!("Successfully built RSA public key via EVP_PKEY_fromdata");
         Ok(pkey_wrapped)

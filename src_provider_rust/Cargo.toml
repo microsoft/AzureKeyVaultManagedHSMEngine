@@ -40,6 +40,9 @@ env_logger = "0.11"
 thiserror = "1.0"
 anyhow = "1.0"
 
+# Lazy static initialization
+once_cell = "1.19"
+
 # C interop
 libc = "0.2"
 foreign-types = "0.3"

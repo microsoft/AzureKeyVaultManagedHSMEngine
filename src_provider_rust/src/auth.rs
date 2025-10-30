@@ -7,8 +7,16 @@
 use std::env;
 use azure_identity::DefaultAzureCredential;
 use azure_core::auth::TokenCredential;
+use once_cell::sync::Lazy;
+use tokio::runtime::Runtime;
 
 const MANAGED_HSM_SCOPE: &str = "https://managedhsm.azure.net/.default";
+
+// Lazily-initialized Tokio runtime (reused across all token acquisitions)
+// Using a current-thread runtime is sufficient for token acquisition and reduces overhead
+static TOKIO_RUNTIME: Lazy<Runtime> = Lazy::new(|| {
+    Runtime::new().expect("Failed to create Tokio runtime for Azure authentication")
+});
 
 /// Memory structure for access token (corresponds to MemoryStruct in C)
 #[derive(Debug, Clone)]
@@ -60,12 +68,8 @@ impl AccessToken {
     pub fn from_default_credential() -> Result<Self, String> {
         log::trace!("AccessToken::from_default_credential");
 
-        // Create a Tokio runtime for the async operation
-        let runtime = tokio::runtime::Runtime::new()
-            .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
-
-        // Use the runtime to block on the async credential acquisition
-        let token = runtime.block_on(async {
+        // Use the lazily-initialized static runtime (reused across calls for efficiency)
+        let token = TOKIO_RUNTIME.block_on(async {
             let credential = DefaultAzureCredential::create(Default::default())
                 .map_err(|e| {
                     log::error!("Failed to create DefaultAzureCredential: {}", e);

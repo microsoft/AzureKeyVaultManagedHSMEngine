@@ -482,25 +482,37 @@ pub unsafe extern "C" fn akv_keymgmt_get_params(
 
         match key_str.as_ref() {
             "bits" => {
-                // For RSA 3072-bit key
+                // Extract actual key size from the public key
                 if (*current_param).data_type == 1 && !(*current_param).data.is_null() {
                     let bits_ptr = (*current_param).data as *mut c_int;
-                    *bits_ptr = 3072; // Azure Managed HSM uses 3072-bit RSA keys
-                    log::debug!("  Set bits=3072");
+                    // Get the actual key size from the EVP_PKEY
+                    let pkey_ptr = key.public_key.as_ref().unwrap().as_ptr() as *const openssl_ffi::EVP_PKEY;
+                    let actual_bits = openssl_ffi::EVP_PKEY_get_bits(pkey_ptr);
+                    *bits_ptr = actual_bits;
+                    log::debug!("  Set bits={}", actual_bits);
                 }
             }
             "security-bits" => {
                 if (*current_param).data_type == 1 && !(*current_param).data.is_null() {
                     let sec_bits_ptr = (*current_param).data as *mut c_int;
-                    *sec_bits_ptr = 128; // Security level for 3072-bit RSA
-                    log::debug!("  Set security-bits=128");
+                    // Get actual key size and compute security level
+                    let pkey_ptr = key.public_key.as_ref().unwrap().as_ptr() as *const openssl_ffi::EVP_PKEY;
+                    let actual_bits = openssl_ffi::EVP_PKEY_get_bits(pkey_ptr);
+                    // Security level mapping for RSA: 2048->112, 3072->128, 4096->128, etc.
+                    let sec_bits = openssl_ffi::EVP_PKEY_get_security_bits(pkey_ptr);
+                    *sec_bits_ptr = sec_bits;
+                    log::debug!("  Set security-bits={} (for {} bit key)", sec_bits, actual_bits);
                 }
             }
             "max-size" => {
                 if (*current_param).data_type == 1 && !(*current_param).data.is_null() {
                     let max_size_ptr = (*current_param).data as *mut c_int;
-                    *max_size_ptr = 384; // 3072 bits = 384 bytes
-                    log::debug!("  Set max-size=384");
+                    // Get actual key size in bytes
+                    let pkey_ptr = key.public_key.as_ref().unwrap().as_ptr() as *const openssl_ffi::EVP_PKEY;
+                    let actual_bits = openssl_ffi::EVP_PKEY_get_bits(pkey_ptr);
+                    let max_bytes = (actual_bits + 7) / 8; // Round up to nearest byte
+                    *max_size_ptr = max_bytes;
+                    log::debug!("  Set max-size={}", max_bytes);
                 }
             }
             _ => {
@@ -763,9 +775,20 @@ unsafe fn akv_keymgmt_import_common(
         return 0;
     }
 
-    // Wrap the EVP_PKEY in an openssl-rs PKey
-    // We need to transfer ownership from the raw pointer to Rust
-    let pkey = std::mem::transmute::<*mut openssl_ffi::EVP_PKEY, PKey<openssl::pkey::Public>>(tmp);
+    // Check for null pointer before wrapping
+    if tmp.is_null() {
+        log::error!(
+            "akv_keymgmt_import_common EVP_PKEY_fromdata returned null for {}",
+            algorithm
+        );
+        openssl_ffi::EVP_PKEY_CTX_free(ctx);
+        return 0;
+    }
+
+    // Wrap the EVP_PKEY in an openssl-rs PKey using from_ptr (safe, takes ownership)
+    // Cast the pointer from our FFI type to openssl-sys EVP_PKEY type  
+    let pkey_sys = tmp as *mut std::ffi::c_void as *mut _;
+    let pkey = PKey::from_ptr(pkey_sys);
     key.set_public(pkey);
 
     openssl_ffi::EVP_PKEY_CTX_free(ctx);

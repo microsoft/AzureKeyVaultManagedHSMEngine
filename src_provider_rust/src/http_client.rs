@@ -243,11 +243,14 @@ impl AkvHttpClient {
                 let mut n_bytes = decode_url_safe(&n)?;
                 let mut e_bytes = decode_url_safe(&e)?;
 
-                // Azure returns big-endian bytes. On little-endian systems (Windows),
-                // reverse to native endianness for EVP_PKEY_fromdata.
+                // ENDIANNESS HANDLING:
+                // Azure Managed HSM returns RSA key parameters (n, e) as big-endian byte arrays.
+                // OpenSSL's EVP_PKEY_fromdata expects these parameters in native endianness.
+                // On little-endian platforms (x86/x64 Windows), we must reverse the byte order.
+                // On big-endian platforms, no conversion is needed.
                 // This is the ONLY place we reverse in the entire codebase.
                 // Matches C implementation in curl.c:340-366
-                // Export (keymgmt.rs) does NOT reverse - it uses big-endian directly.
+                // Export (keymgmt.rs) uses EVP_PKEY_todata which handles endianness automatically.
                 if cfg!(target_endian = "little") {
                     n_bytes.reverse();
                     e_bytes.reverse();
