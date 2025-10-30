@@ -40,6 +40,15 @@ runtest.bat
 
 This will execute all test cases (validation is skipped by default for speed).
 
+#### Test Options
+
+- `runtest.bat` - Run all tests (fast, uses environment variable authentication)
+- `runtest.bat /VALIDATE` - Run with full Azure HSM validation (slower)
+- `runtest.bat /NOENV` - Use DefaultAzureCredential instead of environment variable
+- `runtest.bat /VALIDATE /NOENV` - Full validation with Azure SDK authentication
+
+The `/NOENV` flag tests the Azure SDK DefaultAzureCredential authentication chain (Managed Identity → Azure CLI → Azure PowerShell) instead of using the `AZURE_CLI_ACCESS_TOKEN` environment variable.
+
 ### Advanced: Manual OpenSSL Setup
 
 If you want to pre-install OpenSSL before running winbuild.bat:
@@ -96,11 +105,25 @@ runtest.bat /VALIDATE
 - `src/keymgmt.rs` - Key management operations (from `akv_keymgmt.c`, `akv_keymgmt_aes.c`)
 - `src/signature.rs` - Signature operations for RSA and EC (from `akv_signature.c`)
 - `src/cipher.rs` - AES cipher operations (from `akv_cipher.c`, `akv_cipher_aes.c`)
+- `src/auth.rs` - Azure authentication (environment variable + DefaultAzureCredential)
 - `src/logging.rs` - Logging utilities (from `akv_logging.c`)
 - `src/base64.rs` - Base64 encoding/decoding (from `base64.c`)
 - `src/http_client.rs` - HTTP client for Azure Key Vault API (from `curl.c`)
+- `Cargo.toml` - Rust dependencies and build configuration
+- `build.rs` - Build script for OpenSSL bindings
+- `winbuild.bat` - Windows build and deploy script
+- `runtest.bat` - Comprehensive test suite
 
 ## Current Implementation Status
+
+### Recent Update (2025-10-29)
+- **Added Azure SDK Authentication**: Implemented DefaultAzureCredential support with automatic fallback
+  - Environment variable authentication (fast path, <1ms)
+  - DefaultAzureCredential fallback (Managed Identity → Azure CLI → Azure PowerShell)
+  - Smart `AccessToken::acquire()` method checks env var first, then falls back to SDK
+  - Added `azure_core`, `azure_identity`, and `tokio` dependencies
+- **Enhanced Test Suite**: Added `/NOENV` flag to `runtest.bat` for testing Azure SDK authentication
+- **Performance Optimization**: Environment variable authentication is checked first to avoid SDK overhead
 
 ### Recent Update (2025-10-27)
 - Reworked RSA/ECDSA verification to call the low-level `EVP_PKEY_verify*` APIs directly, preventing OpenSSL from double hashing pre-digested data.
@@ -121,7 +144,14 @@ runtest.bat /VALIDATE
      - `parse_uri()` - Try both formats
    - Helper functions for case-insensitive string operations
 
-2. **Store Loader** (`store.rs`)
+2. **Authentication** (`auth.rs`)
+   - `AccessToken` structure for Azure authentication
+   - `from_env()` - Fast path using AZURE_CLI_ACCESS_TOKEN environment variable
+   - `from_default_credential()` - Azure SDK DefaultAzureCredential with Tokio runtime
+   - `acquire()` - Smart method: env var first, DefaultAzureCredential fallback
+   - Support for Managed Identity, Azure CLI, and Azure PowerShell authentication
+
+3. **Store Loader** (`store.rs`)
    - `StoreContext` structure (corresponds to `AKV_STORE_CTX`)
    - Store C FFI functions:
      - `akv_store_open()` - Open store from URI
@@ -132,7 +162,7 @@ runtest.bat /VALIDATE
      - `akv_store_eof()` - Check if exhausted
      - `akv_store_close()` - Close and free context
 
-3. **Dispatch Tables** (`dispatch.rs`)
+4. **Dispatch Tables** (`dispatch.rs`)
    - `OsslDispatch` structure matching OpenSSL's definition
    - `OsslAlgorithm` structure matching OpenSSL's definition
    - `AKV_STORE_FUNCTIONS` - Store loader dispatch table
@@ -299,12 +329,37 @@ copy target\release\akv_provider.dll "C:\OpenSSL\lib\ossl-modules\"
 
 ## Configuration
 
-The provider requires the following environment variables:
+The provider supports two authentication methods:
+
+### 1. Environment Variable Authentication (Default - Fast)
+
+Set the access token directly via environment variable:
+
+```powershell
+# Get access token from Azure CLI
+$token = (az account get-access-token --output json --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47 --resource https://managedhsm.azure.net | ConvertFrom-Json).accessToken
+$env:AZURE_CLI_ACCESS_TOKEN = $token
+```
+
+**Note**: `runtest.bat` automatically acquires and sets this token for you.
+
+### 2. Azure SDK DefaultAzureCredential (Fallback)
+
+If no environment variable is set, the provider automatically falls back to Azure SDK's DefaultAzureCredential, which tries:
+1. **Managed Identity** - For Azure VMs, App Service, Functions
+2. **Azure CLI** - Uses `az login` credentials
+3. **Azure PowerShell** - Uses `Connect-AzAccount` credentials
+
+No configuration needed - just ensure you're logged in with `az login` or `Connect-AzAccount`.
+
+**Performance Note**: DefaultAzureCredential has ~2-3 seconds overhead per operation due to runtime initialization. Use environment variable authentication for best performance.
+
+### Optional Configuration
 
 - `AZURE_MANAGEDHSM_URL` - Your Azure Managed HSM URL (optional, parsed from URI)
-- `AZURE_CLI_ACCESS_TOKEN` - Access token for authentication
 - `AKV_LOG_LEVEL` - Log level (0=Error, 1=Info, 2=Debug, 3=Trace)
-- `AKV_LOG_FILE` - Log file path (optional)
+- `AKV_LOG_FILE` - Log file path (optional, e.g., `.\logs\akv_provider.log`)
+- `RUST_LOG` - Rust logging filter (e.g., `akv_provider=debug,reqwest=warn`)
 
 ## Key Differences from C Implementation
 
@@ -327,6 +382,8 @@ The provider requires the following environment variables:
    - `reqwest` for HTTP instead of libcurl
    - `serde_json` for JSON instead of json-c
    - `base64` crate instead of custom base64
+   - `azure_core` and `azure_identity` for Azure SDK authentication
+   - `tokio` async runtime for Azure SDK integration
    - Less code to maintain
 
 5. **Testing**: Built-in test framework
