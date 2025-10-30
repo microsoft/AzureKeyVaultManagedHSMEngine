@@ -163,8 +163,8 @@ pub unsafe extern "C" fn akv_store_load(
         return 0;
     }
 
-    // Get access token from environment
-    let access_token = match AccessToken::from_env() {
+    // Get access token using DefaultAzureCredential (with fallback to environment)
+    let access_token = match AccessToken::acquire() {
         Ok(token) => token,
         Err(e) => {
             log::error!("Failed to get access token: {}", e);

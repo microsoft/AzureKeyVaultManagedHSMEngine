@@ -273,7 +273,7 @@ impl SignatureContext {
         );
 
         let token =
-            AccessToken::from_env().map_err(|e| format!("Failed to get access token: {}", e))?;
+            AccessToken::acquire().map_err(|e| format!("Failed to get access token: {}", e))?;
         let client = AkvHttpClient::new(vault_name.clone(), token)
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
