@@ -273,6 +273,8 @@ pub unsafe extern "C" fn akv_store_load(
             log::error!("AES object callback failed");
             crate::openssl_ffi::log_openssl_errors("AES object callback");
             // Free the key since callback failed
+            // Reconstruct the Box from the raw pointer so it will be dropped and memory reclaimed
+            // The let _ = pattern intentionally ignores the Box value while allowing Drop to run
             log::warn!("Freeing AkvAesKey object for '{}' due to callback failure", key_name);
             let _ = unsafe { Box::from_raw(key_ptr as *mut AkvAesKey) };
             ctx.exhausted = true;
@@ -367,6 +369,8 @@ pub unsafe extern "C" fn akv_store_load(
                 log::error!("RSA object callback failed (returned 0)");
                 crate::openssl_ffi::log_openssl_errors("Object callback");
                 log::debug!("Freeing rejected key at {:p}", key_ptr);
+                // Reconstruct the Box from the raw pointer so it will be dropped and memory reclaimed
+                // The let _ = pattern intentionally ignores the Box value while allowing Drop to run
                 let _ = unsafe { Box::from_raw(key_ptr as *mut AkvKey) };
                 ctx.exhausted = true;
                 return 0;
@@ -434,6 +438,8 @@ pub unsafe extern "C" fn akv_store_load(
 
             if cb_result == 0 {
                 log::error!("EC object callback failed");
+                // Reconstruct the Box from the raw pointer so it will be dropped and memory reclaimed
+                // The let _ = pattern intentionally ignores the Box value while allowing Drop to run
                 let _ = unsafe { Box::from_raw(key_ptr as *mut AkvKey) };
                 ctx.exhausted = true;
                 return 0;
@@ -477,6 +483,8 @@ pub unsafe extern "C" fn akv_store_close(loaderctx: *mut c_void) -> c_int {
     log::trace!("akv_store_close loaderctx={:p}", loaderctx);
 
     if !loaderctx.is_null() {
+        // Reconstruct the Box from the raw pointer so it will be dropped and memory reclaimed
+        // This frees the StoreContext when the store loader is closed
         let _ = Box::from_raw(loaderctx as *mut StoreContext);
     }
 
