@@ -623,6 +623,7 @@ pub unsafe extern "C" fn akv_keymgmt_export(
     let result = EVP_PKEY_todata(pkey_ptr, selection, &mut params_ptr);
     if result <= 0 {
         log::error!("akv_keymgmt_export: EVP_PKEY_todata failed (selection=0x{:x})", selection);
+        crate::openssl_ffi::log_openssl_errors("EVP_PKEY_todata");
         return 0;
     }
     
