@@ -15,7 +15,10 @@ const MANAGED_HSM_SCOPE: &str = "https://managedhsm.azure.net/.default";
 // Lazily-initialized Tokio runtime (reused across all token acquisitions)
 // Using a current-thread runtime is sufficient for token acquisition and reduces overhead
 static TOKIO_RUNTIME: Lazy<Runtime> = Lazy::new(|| {
-    Runtime::new().expect("Failed to create Tokio runtime for Azure authentication")
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create Tokio runtime for Azure authentication")
 });
 
 /// Memory structure for access token (corresponds to MemoryStruct in C)
