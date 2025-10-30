@@ -476,6 +476,17 @@ pub unsafe extern "C" fn akv_keymgmt_get_params(
 
     let mut param_idx = 0;
     let mut current_param = params;
+    
+    // Get the public key once, with safe unwrapping
+    let pkey = match key.public_key.as_ref() {
+        Some(pk) => pk,
+        None => {
+            log::error!("akv_keymgmt_get_params: public_key is None, should have been caught earlier");
+            return 0;
+        }
+    };
+    let pkey_ptr = pkey.as_ptr() as *const openssl_ffi::EVP_PKEY;
+    
     while !(*current_param).key.is_null() {
         let key_cstr = std::ffi::CStr::from_ptr((*current_param).key);
         let key_str = key_cstr.to_string_lossy();
@@ -485,8 +496,6 @@ pub unsafe extern "C" fn akv_keymgmt_get_params(
                 // Extract actual key size from the public key
                 if (*current_param).data_type == 1 && !(*current_param).data.is_null() {
                     let bits_ptr = (*current_param).data as *mut c_int;
-                    // Get the actual key size from the EVP_PKEY
-                    let pkey_ptr = key.public_key.as_ref().unwrap().as_ptr() as *const openssl_ffi::EVP_PKEY;
                     let actual_bits = openssl_ffi::EVP_PKEY_get_bits(pkey_ptr);
                     *bits_ptr = actual_bits;
                     log::debug!("  Set bits={}", actual_bits);
@@ -495,8 +504,6 @@ pub unsafe extern "C" fn akv_keymgmt_get_params(
             "security-bits" => {
                 if (*current_param).data_type == 1 && !(*current_param).data.is_null() {
                     let sec_bits_ptr = (*current_param).data as *mut c_int;
-                    // Get actual key size and compute security level
-                    let pkey_ptr = key.public_key.as_ref().unwrap().as_ptr() as *const openssl_ffi::EVP_PKEY;
                     let actual_bits = openssl_ffi::EVP_PKEY_get_bits(pkey_ptr);
                     // Security level mapping for RSA: 2048->112, 3072->128, 4096->128, etc.
                     let sec_bits = openssl_ffi::EVP_PKEY_get_security_bits(pkey_ptr);
@@ -507,8 +514,6 @@ pub unsafe extern "C" fn akv_keymgmt_get_params(
             "max-size" => {
                 if (*current_param).data_type == 1 && !(*current_param).data.is_null() {
                     let max_size_ptr = (*current_param).data as *mut c_int;
-                    // Get actual key size in bytes
-                    let pkey_ptr = key.public_key.as_ref().unwrap().as_ptr() as *const openssl_ffi::EVP_PKEY;
                     let actual_bits = openssl_ffi::EVP_PKEY_get_bits(pkey_ptr);
                     let max_bytes = (actual_bits + 7) / 8; // Round up to nearest byte
                     *max_size_ptr = max_bytes;
@@ -558,7 +563,15 @@ pub unsafe extern "C" fn akv_keymgmt_set_params(
     }
 
     // Delegate to OpenSSL's EVP_PKEY_set_params
-    let pkey_ptr = key.public_key.as_ref().unwrap() as *const _ as *mut openssl_ffi::EVP_PKEY;
+    // Safe to unwrap here because we checked is_none() above
+    let pkey = match key.public_key.as_ref() {
+        Some(pk) => pk,
+        None => {
+            log::error!("akv_keymgmt_set_params: public_key is None, should have been caught earlier");
+            return 0;
+        }
+    };
+    let pkey_ptr = pkey as *const _ as *mut openssl_ffi::EVP_PKEY;
     let result = openssl_ffi::EVP_PKEY_set_params(pkey_ptr, params);
 
     if result <= 0 {
@@ -617,7 +630,15 @@ pub unsafe extern "C" fn akv_keymgmt_export(
     // This automatically handles endianness conversion, unlike manual BigNum extraction
     use crate::openssl_ffi::{EVP_PKEY_todata, OSSL_PARAM_free};
     
-    let pkey_ptr = key.public_key.as_ref().unwrap().as_ptr() as *const crate::openssl_ffi::EVP_PKEY;
+    // Safe to unwrap here because we checked is_none() above
+    let pkey = match key.public_key.as_ref() {
+        Some(pk) => pk,
+        None => {
+            log::error!("akv_keymgmt_export: public_key is None, should have been caught earlier");
+            return 0;
+        }
+    };
+    let pkey_ptr = pkey.as_ptr() as *const crate::openssl_ffi::EVP_PKEY;
     let mut params_ptr: *mut OsslParam = std::ptr::null_mut();
     
     let result = EVP_PKEY_todata(pkey_ptr, selection, &mut params_ptr);
