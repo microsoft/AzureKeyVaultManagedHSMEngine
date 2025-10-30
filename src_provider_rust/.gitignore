@@ -1,0 +1,29 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+
+# Cargo.lock (keep for applications, ignore for libraries)
+Cargo.lock
+
+# Test artifacts and logs
+/logs/
+/temp_*/
+*.sig
+*.pem
+test*.txt
+
+# vcpkg and OpenSSL (bootstrapped locally)
+/vcpkg/
+/vcpkg_installed/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
