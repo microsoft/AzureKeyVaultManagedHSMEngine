@@ -695,12 +695,6 @@ pub static AKV_ASYM_CIPHER_ALGS: [OsslAlgorithm; 5] = [
     OsslAlgorithm::end(),
 ];
 
-// TODO: Signature algorithm tables
-// pub static AKV_SIGNATURE_ALGS: [OsslAlgorithm; N] = [...];
-
-// TODO: Asymmetric cipher algorithm tables
-// pub static AKV_ASYM_CIPHER_ALGS: [OsslAlgorithm; N] = [...];
-
 // Main provider dispatch table
 pub static AKV_DISPATCH_TABLE: [OsslDispatch; 5] = [
     OsslDispatch::new(

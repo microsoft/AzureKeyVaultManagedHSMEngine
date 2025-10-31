@@ -64,13 +64,7 @@ extern "C" {
     /// Compare two EVP_PKEY objects
     pub fn EVP_PKEY_eq(a: *const EVP_PKEY, b: *const EVP_PKEY) -> c_int;
 
-    /// Get the key size in bits
-    pub fn EVP_PKEY_get_bits(pkey: *const EVP_PKEY) -> c_int;
-
-    /// Get the security bits (effective strength)
-    pub fn EVP_PKEY_get_security_bits(pkey: *const EVP_PKEY) -> c_int;
-
-    /// Create a new EVP_PKEY_CTX from an existing EVP_PKEY
+    // OSSL_PARAM functions
     pub fn EVP_PKEY_CTX_new_from_pkey(
         libctx: *mut c_void,
         pkey: *mut EVP_PKEY,
