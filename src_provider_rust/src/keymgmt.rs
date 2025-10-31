@@ -470,19 +470,11 @@ pub unsafe extern "C" fn akv_keymgmt_get_params(
         current_param = current_param.add(1);
     }
 
-    // Get key parameters
-    // Current approach: Manually handle each parameter using individual OpenSSL functions.
+    // Delegate to OpenSSL's EVP_PKEY_get_params (matches C provider implementation)
     // The C provider (akv_keymgmt.c:293) simply calls EVP_PKEY_get_params() to delegate
-    // all parameter handling to OpenSSL. We could try the same approach:
-    //   if openssl_ffi::EVP_PKEY_get_params(pkey_ptr, params) <= 0 { return 0; }
-    // However, early testing showed this failed with the Rust openssl wrapper (see SESSION_4).
-    // The manual approach works reliably and gives us explicit control, so we keep it for now.
-    // TODO: Revisit delegation approach with newer openssl crate versions.
-
-    let mut param_idx = 0;
-    let mut current_param = params;
+    // all parameter handling to OpenSSL. This is simpler and more maintainable than
+    // manually handling each parameter type.
     
-    // Get the public key once, with safe unwrapping
     let pkey = match key.public_key.as_ref() {
         Some(pk) => pk,
         None => {
@@ -492,52 +484,14 @@ pub unsafe extern "C" fn akv_keymgmt_get_params(
     };
     let pkey_ptr = pkey.as_ptr() as *const openssl_ffi::EVP_PKEY;
     
-    while !(*current_param).key.is_null() {
-        let key_cstr = std::ffi::CStr::from_ptr((*current_param).key);
-        let key_str = key_cstr.to_string_lossy();
-
-        match key_str.as_ref() {
-            "bits" => {
-                // Extract actual key size from the public key
-                if (*current_param).data_type == 1 && !(*current_param).data.is_null() {
-                    let bits_ptr = (*current_param).data as *mut c_int;
-                    let actual_bits = openssl_ffi::EVP_PKEY_get_bits(pkey_ptr);
-                    *bits_ptr = actual_bits;
-                    log::debug!("  Set bits={}", actual_bits);
-                }
-            }
-            "security-bits" => {
-                if (*current_param).data_type == 1 && !(*current_param).data.is_null() {
-                    let sec_bits_ptr = (*current_param).data as *mut c_int;
-                    let actual_bits = openssl_ffi::EVP_PKEY_get_bits(pkey_ptr);
-                    // Security level mapping for RSA: 2048->112, 3072->128, 4096->128, etc.
-                    let sec_bits = openssl_ffi::EVP_PKEY_get_security_bits(pkey_ptr);
-                    *sec_bits_ptr = sec_bits;
-                    log::debug!("  Set security-bits={} (for {} bit key)", sec_bits, actual_bits);
-                }
-            }
-            "max-size" => {
-                if (*current_param).data_type == 1 && !(*current_param).data.is_null() {
-                    let max_size_ptr = (*current_param).data as *mut c_int;
-                    let actual_bits = openssl_ffi::EVP_PKEY_get_bits(pkey_ptr);
-                    let max_bytes = (actual_bits + 7) / 8; // Round up to nearest byte
-                    *max_size_ptr = max_bytes;
-                    log::debug!("  Set max-size={}", max_bytes);
-                }
-            }
-            _ => {
-                log::debug!("  Skipping unknown parameter '{}'", key_str);
-            }
-        }
-
-        param_idx += 1;
-        current_param = current_param.add(1);
+    // Delegate to OpenSSL
+    if openssl_ffi::EVP_PKEY_get_params(pkey_ptr, params) <= 0 {
+        log::error!("akv_keymgmt_get_params: EVP_PKEY_get_params failed");
+        openssl_ffi::log_openssl_errors("EVP_PKEY_get_params");
+        return 0;
     }
 
-    log::info!(
-        "akv_keymgmt_get_params -> 1 (success, set {} params)",
-        param_idx
-    );
+    log::info!("akv_keymgmt_get_params -> 1 (delegated to EVP_PKEY_get_params)");
     1
 }
 
