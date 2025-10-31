@@ -471,8 +471,13 @@ pub unsafe extern "C" fn akv_keymgmt_get_params(
     }
 
     // Get key parameters
-    // For now, manually handle the common parameters OpenSSL requests
-    // TODO: Properly delegate to EVP_PKEY_get_params once we figure out pointer extraction
+    // Current approach: Manually handle each parameter using individual OpenSSL functions.
+    // The C provider (akv_keymgmt.c:293) simply calls EVP_PKEY_get_params() to delegate
+    // all parameter handling to OpenSSL. We could try the same approach:
+    //   if openssl_ffi::EVP_PKEY_get_params(pkey_ptr, params) <= 0 { return 0; }
+    // However, early testing showed this failed with the Rust openssl wrapper (see SESSION_4).
+    // The manual approach works reliably and gives us explicit control, so we keep it for now.
+    // TODO: Revisit delegation approach with newer openssl crate versions.
 
     let mut param_idx = 0;
     let mut current_param = params;
