@@ -528,3 +528,69 @@ When converting C code to Rust:
 ## License
 
 MIT License - Copyright (c) Microsoft Corporation
+
+## Test Environment Configuration
+
+### Azure Managed HSM Test Resources
+
+The following Azure resources are used for testing:
+
+| Resource | Value | Description |
+|----------|-------|-------------|
+| **HSM Vault Name** | `ManagedHSMOpenSSLEngine` | Azure Managed HSM instance |
+| **HSM URL** | `https://ManagedHSMOpenSSLEngine.managedhsm.azure.net` | Full HSM endpoint URL |
+
+### Test Keys
+
+| Key Name | Key Type | Algorithm Support | Description |
+|----------|----------|-------------------|-------------|
+| `myrsakey` | RSA-3072 | RS256, RS384, RS512, PS256, PS384, PS512 | RSA signing and encryption |
+| `ecckey` | EC P-256 | ES256 | ECDSA signing |
+| `myaeskey` | AES-256 | A256KW | AES key wrap/unwrap |
+
+### URI Formats
+
+Keys can be referenced using either format:
+
+```bash
+# Simple format (recommended)
+managedhsm:<vault>:<keyname>
+managedhsm:ManagedHSMOpenSSLEngine:myrsakey
+
+# With version
+managedhsm:ManagedHSMOpenSSLEngine:myrsakey?version=<version>
+
+# Key-value format
+akv:vault=ManagedHSMOpenSSLEngine,name=myrsakey,version=<version>
+```
+
+### Environment Variables
+
+```bash
+# Required: Access token for Azure Managed HSM
+export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token --resource https://managedhsm.azure.net --query accessToken -o tsv)
+
+# Optional: Default vault (if not specified in URI)
+export AKV_DEFAULT_VAULT=ManagedHSMOpenSSLEngine
+
+# Optional: Logging
+export AKV_PROVIDER_LOG=/tmp/akv.log
+export RUST_LOG=akv_provider=debug
+```
+
+### Quick Test Commands
+
+```bash
+# Set up environment
+export OPENSSL_CONF=/path/to/testOpenssl.cnf
+export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token --resource https://managedhsm.azure.net --query accessToken -o tsv)
+
+# Generate CSR with RSA key
+openssl req -new -key "managedhsm:ManagedHSMOpenSSLEngine:myrsakey" -subj "/CN=Test" -out test.csr
+
+# Generate CSR with EC key
+openssl req -new -key "managedhsm:ManagedHSMOpenSSLEngine:ecckey" -subj "/CN=Test" -out test-ec.csr
+
+# List available keys in HSM
+az keyvault key list --hsm-name ManagedHSMOpenSSLEngine --query "[].{name:name, kty:kty}" -o table
+```

@@ -380,7 +380,7 @@ pub static AKV_KEYMGMT_ALGS: [OsslAlgorithm; 6] = [
 ];
 
 /// RSA signature dispatch functions
-pub static AKV_RSA_SIGNATURE_FUNCTIONS: [OsslDispatch; 22] = [
+pub static AKV_RSA_SIGNATURE_FUNCTIONS: [OsslDispatch; 23] = [
     OsslDispatch::new(
         OSSL_FUNC_SIGNATURE_NEWCTX,
         crate::signature::akv_rsa_signature_newctx as *mut c_void,
@@ -389,7 +389,10 @@ pub static AKV_RSA_SIGNATURE_FUNCTIONS: [OsslDispatch; 22] = [
         OSSL_FUNC_SIGNATURE_FREECTX,
         crate::signature::akv_signature_freectx as *mut c_void,
     ),
-    // DUPCTX not implemented - hash state cannot be duplicated mid-stream
+    OsslDispatch::new(
+        OSSL_FUNC_SIGNATURE_DUPCTX,
+        crate::signature::akv_signature_dupctx as *mut c_void,
+    ),
     OsslDispatch::new(
         OSSL_FUNC_SIGNATURE_SIGN_INIT,
         crate::signature::akv_signature_sign_init as *mut c_void,
@@ -470,7 +473,7 @@ pub static AKV_RSA_SIGNATURE_FUNCTIONS: [OsslDispatch; 22] = [
 ];
 
 /// EC/ECDSA signature dispatch functions
-pub static AKV_ECDSA_SIGNATURE_FUNCTIONS: [OsslDispatch; 22] = [
+pub static AKV_ECDSA_SIGNATURE_FUNCTIONS: [OsslDispatch; 23] = [
     OsslDispatch::new(
         OSSL_FUNC_SIGNATURE_NEWCTX,
         crate::signature::akv_ecdsa_signature_newctx as *mut c_void,
@@ -479,7 +482,10 @@ pub static AKV_ECDSA_SIGNATURE_FUNCTIONS: [OsslDispatch; 22] = [
         OSSL_FUNC_SIGNATURE_FREECTX,
         crate::signature::akv_signature_freectx as *mut c_void,
     ),
-    // OsslDispatch::new(OSSL_FUNC_SIGNATURE_DUPCTX, crate::signature::akv_signature_dupctx as *mut c_void),
+    OsslDispatch::new(
+        OSSL_FUNC_SIGNATURE_DUPCTX,
+        crate::signature::akv_signature_dupctx as *mut c_void,
+    ),
     OsslDispatch::new(
         OSSL_FUNC_SIGNATURE_SIGN_INIT,
         crate::signature::akv_signature_sign_init as *mut c_void,
