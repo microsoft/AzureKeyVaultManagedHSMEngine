@@ -1,0 +1,13 @@
+# Force LF line endings for shell scripts (prevents Windows CRLF issues)
+*.sh text eol=lf
+
+# Keep batch files with CRLF for Windows
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Rust source files
+*.rs text eol=lf
+
+# Config files
+*.toml text eol=lf
+*.cnf text eol=lf
