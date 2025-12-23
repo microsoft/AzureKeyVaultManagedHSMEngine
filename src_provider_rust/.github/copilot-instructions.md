@@ -11,152 +11,6 @@ This is a **Rust conversion** of the C-based OpenSSL provider. The Rust implemen
 - Improved maintainability and testability
 - Full compatibility with the C provider's functionality
 
-## Building
-
-### Windows
-
-```cmd
-cd src_provider_rust
-winbuild.bat
-```
-
-This will:
-- Build the provider in release mode
-- Automatically copy `akv_provider.dll` to the OpenSSL modules directory
-
-The build will produce: `target/release/akv_provider.dll`
-
-### Ubuntu/Linux
-
-```bash
-cd src_provider_rust
-./ubuntubuild.sh
-```
-
-This will:
-- Check for Rust toolchain and OpenSSL development packages
-- Build the provider in release mode
-- Deploy `libakv_provider.so` to `/usr/lib/x86_64-linux-gnu/ossl-modules/`
-
-**Prerequisites for Ubuntu:**
-```bash
-# Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Install OpenSSL development packages
-sudo apt-get install libssl-dev pkg-config
-
-# Install Azure CLI
-curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
-```
-
-## Deploying
-
-### Windows
-
-Check your OpenSSL modules directory:
-
-```cmd
-openssl version -a | findstr MODULESDIR
-```
-
-Copy the provider DLL to that directory:
-
-```powershell
-Copy-Item -Path .\target\release\akv_provider.dll -Destination "C:\OpenSSL\lib\ossl-modules\" -Force
-```
-
-### Ubuntu/Linux
-
-The build script automatically deploys to the modules directory. To verify:
-
-```bash
-openssl version -a | grep MODULESDIR
-# Should show: MODULESDIR: "/usr/lib/x86_64-linux-gnu/ossl-modules"
-
-ls -la /usr/lib/x86_64-linux-gnu/ossl-modules/akv_provider.so
-```
-
-## Testing
-
-### Windows
-
-```cmd
-cd src_provider_rust
-runtest.bat
-```
-
-With full Azure HSM validation:
-
-```cmd
-runtest.bat /VALIDATE
-```
-
-### Ubuntu/Linux
-
-```bash
-cd src_provider_rust
-./runtest.sh
-```
-
-With full Azure HSM validation:
-
-```bash
-./runtest.sh --validate
-```
-
-**By default, Azure HSM validation is SKIPPED** for faster testing. The scripts will:
-- Check local prerequisites (OpenSSL, Azure CLI, provider library)
-- Acquire access token automatically
-- Run all cryptographic tests
-
-The test suite covers:
-- RSA signing (PS256, RS256) and decryption
-- EC signing (ES256)
-- X.509 CSR and certificate generation (RSA and EC)
-- AES key wrap/unwrap operations
-
-### Manual Token Setup
-
-The test scripts automatically acquire the access token. If you need to manually set it:
-
-**Windows (PowerShell):**
-```powershell
-$s=(az account get-access-token --output json --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47 --resource https://managedhsm.azure.net)
-$t=$s | ConvertFrom-Json
-$Env:AZURE_CLI_ACCESS_TOKEN=$t.accessToken
-```
-
-**Ubuntu/Linux (Bash):**
-```bash
-export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token --output tsv --query accessToken --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47 --resource https://managedhsm.azure.net)
-```
-
-### Logging
-
-The provider supports detailed logging via environment variables:
-
-**Windows:**
-```powershell
-$env:AKV_LOG_FILE=".\logs\akv_provider.log"
-$env:AKV_LOG_LEVEL="3"
-$env:RUST_LOG="akv_provider=trace,reqwest=warn"
-```
-
-**Ubuntu/Linux:**
-```bash
-export AKV_LOG_FILE="./logs/akv_provider.log"
-export AKV_LOG_LEVEL="3"
-export RUST_LOG="akv_provider=trace,reqwest=warn"
-```
-
-Log levels:
-- `trace` - Very detailed function entry/exit
-- `debug` - Debugging information
-- `info` - General information
-- `warn` - Warnings
-- `error` - Errors only
-
 ## Project Structure
 
 ```
@@ -218,6 +72,206 @@ All tests passing on Windows and Ubuntu:
 - ✅ AES key wrap/unwrap roundtrip
 - ✅ AES tamper detection
 
+---
+
+## Windows
+
+### Prerequisites
+
+- Rust toolchain (install from https://rustup.rs)
+- OpenSSL 3.x (via vcpkg or standalone installer)
+- Azure CLI
+
+### Building
+
+```cmd
+cd src_provider_rust
+winbuild.bat
+```
+
+This will:
+- Build the provider in release mode
+- Automatically copy `akv_provider.dll` to the OpenSSL modules directory
+
+Output: `target/release/akv_provider.dll`
+
+### Deploying
+
+Check your OpenSSL modules directory:
+
+```cmd
+openssl version -a | findstr MODULESDIR
+```
+
+Copy the provider DLL to that directory:
+
+```powershell
+Copy-Item -Path .\target\release\akv_provider.dll -Destination "C:\OpenSSL\lib\ossl-modules\" -Force
+```
+
+### Testing
+
+Run the test suite:
+
+```cmd
+cd src_provider_rust
+runtest.bat
+```
+
+With full Azure HSM validation (slower, ~20-30 seconds):
+
+```cmd
+runtest.bat /VALIDATE
+```
+
+### Manual Token Setup
+
+```powershell
+$s=(az account get-access-token --output json --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47 --resource https://managedhsm.azure.net)
+$t=$s | ConvertFrom-Json
+$Env:AZURE_CLI_ACCESS_TOKEN=$t.accessToken
+```
+
+### Logging
+
+```powershell
+$env:AKV_LOG_FILE=".\logs\akv_provider.log"
+$env:AKV_LOG_LEVEL="3"
+$env:RUST_LOG="akv_provider=trace,reqwest=warn"
+
+# Run tests to generate logs
+.\runtest.bat
+
+# View logs
+Get-Content .\logs\akv_provider.log
+```
+
+### Troubleshooting (Windows)
+
+**Provider not loading:**
+```cmd
+openssl version -a | findstr MODULESDIR
+dir "C:\OpenSSL\lib\ossl-modules\akv_provider.dll"
+openssl list -providers -provider akv_provider -provider default
+```
+
+**Authentication errors:**
+```cmd
+az login
+az account show
+az account get-access-token --resource https://managedhsm.azure.net
+```
+
+---
+
+## Ubuntu/Linux
+
+### Prerequisites
+
+```bash
+# Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env
+
+# Install OpenSSL development packages
+sudo apt-get update
+sudo apt-get install libssl-dev pkg-config
+
+# Install Azure CLI
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+```
+
+### Building
+
+```bash
+cd src_provider_rust
+./ubuntubuild.sh
+```
+
+This will:
+- Check for Rust toolchain and OpenSSL development packages
+- Build the provider in release mode
+- Deploy `libakv_provider.so` to `/usr/lib/x86_64-linux-gnu/ossl-modules/`
+
+Output: `target/release/libakv_provider.so`
+
+### Deploying
+
+The build script automatically deploys. To verify:
+
+```bash
+openssl version -a | grep MODULESDIR
+# Should show: MODULESDIR: "/usr/lib/x86_64-linux-gnu/ossl-modules"
+
+ls -la /usr/lib/x86_64-linux-gnu/ossl-modules/akv_provider.so
+```
+
+### Testing
+
+Run the test suite:
+
+```bash
+cd src_provider_rust
+./runtest.sh
+```
+
+With full Azure HSM validation:
+
+```bash
+./runtest.sh --validate
+```
+
+### Manual Token Setup
+
+```bash
+export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token \
+    --output tsv --query accessToken \
+    --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47 \
+    --resource https://managedhsm.azure.net)
+```
+
+### Logging
+
+```bash
+export AKV_LOG_FILE="./logs/akv_provider.log"
+export AKV_LOG_LEVEL="3"
+export RUST_LOG="akv_provider=trace,reqwest=warn"
+
+# Run tests to generate logs
+./runtest.sh
+
+# View logs
+cat ./logs/akv_provider.log
+```
+
+### Troubleshooting (Ubuntu/Linux)
+
+**CRLF line ending errors:**
+```bash
+# Fix shell script line endings
+sed -i 's/\r$//' ubuntubuild.sh runtest.sh
+```
+The `.gitattributes` file prevents this for new checkouts.
+
+**Provider not loading:**
+```bash
+openssl version -a | grep MODULESDIR
+ls -la /usr/lib/x86_64-linux-gnu/ossl-modules/akv_provider.so
+openssl list -providers -provider akv_provider -provider default
+```
+
+**Authentication errors:**
+```bash
+az login
+az account show
+az account get-access-token --resource https://managedhsm.azure.net
+```
+
+**TLS/HTTP errors:**
+The provider rejects foreign keys (keys without HSM metadata) to prevent a circular dependency where the provider tries to use itself for TLS connections. This is handled in `keymgmt.rs`.
+
+---
+
 ## Development Guidelines
 
 1. **Use logging extensively** - File logging is configured, use it for debugging
@@ -227,66 +281,14 @@ All tests passing on Windows and Ubuntu:
 5. **Memory management** - Use Box for heap allocation, careful with pointer ownership
 6. **Testing** - Run test scripts frequently during development (validation is skipped by default for speed)
 7. **Cross-platform** - Test on both Windows and Ubuntu before merging
+8. **Line endings** - Shell scripts (.sh) must use LF; batch files (.bat) use CRLF
 
-## Platform-Specific Notes
+## Log Levels
 
-### Windows
-- Provider file: `akv_provider.dll`
-- Use `winbuild.bat` and `runtest.bat`
-- OpenSSL typically installed via vcpkg or standalone installer
-
-### Ubuntu/Linux
-- Provider file: `akv_provider.so` (deployed as `libakv_provider.so`)
-- Use `./ubuntubuild.sh` and `./runtest.sh`
-- OpenSSL from system packages (`libssl-dev`)
-- **Shell scripts must use LF line endings** (enforced by `.gitattributes`)
-
-## Troubleshooting
-
-### Common Issues
-
-**CRLF line ending errors on Linux:**
-```bash
-# Fix shell script line endings
-sed -i 's/\r$//' ubuntubuild.sh runtest.sh
-```
-The `.gitattributes` file prevents this for new checkouts.
-
-**Provider not loading:**
-```bash
-# Check if provider is in correct location
-openssl version -a | grep MODULESDIR
-ls -la $(openssl version -a | grep MODULESDIR | cut -d'"' -f2)/akv_provider.so
-
-# Test provider loading
-openssl list -providers -provider akv_provider -provider default
-```
-
-**Authentication errors:**
-```bash
-# Ensure Azure CLI is logged in
-az login
-az account show
-
-# Test token acquisition
-az account get-access-token --resource https://managedhsm.azure.net
-```
-
-**TLS/HTTP errors on Ubuntu:**
-The provider rejects foreign keys (keys without HSM metadata) to prevent a circular dependency where the provider tries to use itself for TLS connections. This is handled in `keymgmt.rs`.
-
-### Debug Logging
-
-Enable verbose logging to diagnose issues:
-```bash
-export AKV_LOG_FILE="./akv_debug.log"
-export AKV_LOG_LEVEL="3"
-export RUST_LOG="akv_provider=trace"
-
-# Run your OpenSSL command
-openssl pkey -provider akv_provider -provider default \
-    -in managedhsm:ManagedHSMOpenSSLEngine:myrsakey -pubout
-
-# Check logs
-cat ./akv_debug.log
-```
+| Level | Description |
+|-------|-------------|
+| `trace` | Very detailed function entry/exit |
+| `debug` | Debugging information |
+| `info` | General information |
+| `warn` | Warnings |
+| `error` | Errors only |
