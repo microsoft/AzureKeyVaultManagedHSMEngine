@@ -2,15 +2,37 @@
 
 This is a Rust implementation of the OpenSSL Provider for Azure Managed HSM, converted from the original C implementation in `src_provider`.
 
+## Supported Platforms
+
+| Platform | Build Script | Test Script | Output |
+|----------|-------------|-------------|--------|
+| Windows  | `winbuild.bat` | `runtest.bat` | `akv_provider.dll` |
+| Ubuntu/Linux | `./ubuntubuild.sh` | `./runtest.sh` | `libakv_provider.so` |
+
 ## Quick Start
 
 ### Prerequisites
-- Rust toolchain (1.70+)
-- Git (for vcpkg if setting up locally)
-- Visual Studio Build Tools (for Windows)
-- OpenSSL command-line tools
 
-### Build and Deploy (One Command!)
+**Common:**
+- Rust toolchain (1.70+)
+- Azure CLI (`az`)
+- OpenSSL 3.x command-line tools
+
+**Windows:**
+- Visual Studio Build Tools
+- Git (for vcpkg if setting up OpenSSL locally)
+
+**Ubuntu/Linux:**
+- OpenSSL development headers (`libssl-dev`)
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install openssl libssl-dev
+```
+
+---
+
+## Windows Build and Deploy
 
 The easiest way to build and deploy the provider:
 
@@ -30,7 +52,7 @@ Options:
 - `--debug` - Build in debug mode instead of release
 - `--skip-deps` - Skip dependency checks (faster for rebuilds)
 
-### Testing
+### Windows Testing
 
 After building with winbuild.bat, simply run:
 
@@ -38,18 +60,14 @@ After building with winbuild.bat, simply run:
 runtest.bat
 ```
 
-This will execute all test cases (validation is skipped by default for speed).
-
-#### Test Options
+#### Windows Test Options
 
 - `runtest.bat` - Run all tests (fast, uses environment variable authentication)
 - `runtest.bat /VALIDATE` - Run with full Azure HSM validation (slower)
 - `runtest.bat /NOENV` - Use DefaultAzureCredential instead of environment variable
 - `runtest.bat /VALIDATE /NOENV` - Full validation with Azure SDK authentication
 
-The `/NOENV` flag tests the Azure SDK DefaultAzureCredential authentication chain (Managed Identity → Azure CLI → Azure PowerShell) instead of using the `AZURE_CLI_ACCESS_TOKEN` environment variable.
-
-### Advanced: Manual OpenSSL Setup
+### Windows Advanced: Manual OpenSSL Setup
 
 If you want to pre-install OpenSSL before running winbuild.bat:
 
@@ -64,7 +82,7 @@ The bootstrap script will:
 
 Then build with `winbuild.bat` (which detects the installed OpenSSL automatically).
 
-### Advanced: Manual Build with Cargo
+### Windows Advanced: Manual Build with Cargo
 
 If you prefer to build with cargo directly:
 
@@ -82,18 +100,74 @@ copy target\release\akv_provider.dll C:\OpenSSL\lib\ossl-modules\
 
 The compiled provider DLL will be at: `target/release/akv_provider.dll`
 
-## Testing
+---
 
-Run the full test suite:
+## Ubuntu/Linux Build and Deploy
 
-```cmd
-runtest.bat
+Build and deploy on Ubuntu/Linux:
+
+```bash
+./ubuntubuild.sh
 ```
 
-Use `/VALIDATE` flag for comprehensive Azure validation (slower):
+This will:
+- ✅ Check for Rust toolchain
+- ✅ Verify OpenSSL 3.x installation
+- ✅ Build the provider in release mode
+- ✅ Deploy to OpenSSL modules directory (`/usr/lib/x86_64-linux-gnu/ossl-modules/`)
+- ✅ Ready to test with `./runtest.sh`
 
-```cmd
-runtest.bat /VALIDATE
+Options:
+- `--debug` - Build in debug mode instead of release
+- `--skip-deps` - Skip dependency checks (faster for rebuilds)
+
+### Linux Testing
+
+After building with ubuntubuild.sh, simply run:
+
+```bash
+./runtest.sh
+```
+
+#### Linux Test Options
+
+- `./runtest.sh` - Run all tests (fast, uses environment variable authentication)
+- `./runtest.sh --validate` - Run with full Azure HSM validation (slower)
+- `./runtest.sh --noenv` - Use DefaultAzureCredential instead of environment variable
+- `./runtest.sh --validate --noenv` - Full validation with Azure SDK authentication
+
+### Linux Advanced: Manual Build with Cargo
+
+```bash
+# Build
+cargo build --release
+
+# Deploy manually (requires sudo)
+sudo cp target/release/libakv_provider.so /usr/lib/x86_64-linux-gnu/ossl-modules/akv_provider.so
+```
+
+The compiled provider library will be at: `target/release/libakv_provider.so`
+
+---
+
+## Testing Overview
+
+Both platforms support the same test suite covering:
+- RSA PS256/RS256 signing roundtrip
+- RSA OAEP decrypt roundtrip  
+- EC ES256 signing roundtrip
+- X.509 CSR generation and verification
+- Self-signed certificate generation
+- AES key wrap/unwrap
+
+The `--noenv`/`/NOENV` flag tests the Azure SDK DefaultAzureCredential authentication chain (Managed Identity → Azure CLI → Azure PowerShell) instead of using the `AZURE_CLI_ACCESS_TOKEN` environment variable.
+
+### Verify Provider Installation
+
+After building and deploying, verify the provider is loadable:
+
+```bash
+openssl list -providers -provider akv_provider -provider default
 ```
 
 ## Project Structure
@@ -112,7 +186,9 @@ runtest.bat /VALIDATE
 - `Cargo.toml` - Rust dependencies and build configuration
 - `build.rs` - Build script for OpenSSL bindings
 - `winbuild.bat` - Windows build and deploy script
-- `runtest.bat` - Comprehensive test suite
+- `runtest.bat` - Windows comprehensive test suite
+- `ubuntubuild.sh` - Ubuntu/Linux build and deploy script
+- `runtest.sh` - Ubuntu/Linux comprehensive test suite
 
 ## Current Implementation Status
 
