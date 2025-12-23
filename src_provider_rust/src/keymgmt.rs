@@ -306,6 +306,8 @@ pub unsafe extern "C" fn akv_keymgmt_load(
     reference: *const c_void,
     reference_sz: usize,
 ) -> *mut c_void {
+    log::debug!("akv_keymgmt_load: reference={:p}, size={}", reference, reference_sz);
+    
     if reference.is_null() {
         log::error!("akv_keymgmt_load: null reference");
         return ptr::null_mut();
@@ -331,6 +333,7 @@ pub unsafe extern "C" fn akv_keymgmt_load(
 
     *key_ptr_ref = ptr::null_mut(); // Clear the reference
 
+    log::debug!("akv_keymgmt_load -> {:p}", key_ptr);
     key_ptr as *mut c_void
 }
 
@@ -687,14 +690,25 @@ unsafe fn akv_keymgmt_import_common(
         params
     );
 
-    // Reject unmanaged public-only imports (let default provider handle them)
-    if (selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0
-        && (selection & !OSSL_KEYMGMT_SELECT_PUBLIC_KEY) == 0
-        && !akv_key_has_private(key)
-    {
-        log::debug!("akv_keymgmt_import_common -> 0 (public import without metadata)");
+    // Only accept imports for keys that were loaded via our store (have HSM metadata).
+    // Keys without metadata are foreign keys (e.g., TLS certificate chains) that should
+    // be handled by the default provider. This prevents circular dependencies when
+    // our provider makes HTTPS calls to Azure - the TLS certificate verification
+    // must use the default provider, not us.
+    if !akv_key_has_private(key) {
+        log::debug!(
+            "akv_keymgmt_import_common -> 0 (rejecting {} key import: no HSM metadata, letting default provider handle)",
+            algorithm
+        );
         return 0;
     }
+
+    log::debug!(
+        "akv_keymgmt_import_common: accepting {} key import for HSM key vault={:?} name={:?}",
+        algorithm,
+        key.keyvault_name,
+        key.key_name
+    );
 
     // Create EVP_PKEY_CTX using default or base provider to avoid recursion
     let algo_cstr = match CString::new(algorithm) {

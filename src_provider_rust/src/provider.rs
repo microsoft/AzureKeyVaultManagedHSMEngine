@@ -156,7 +156,7 @@ pub fn parse_uri_keyvalue(uri: &str) -> Result<ParsedUri, String> {
     }
 }
 
-/// Parse URI in simple format: managedhsm:vaultname:keyname
+/// Parse URI in simple format: managedhsm:vaultname:keyname or managedhsm:vaultname:keyname?version=xxx
 pub fn parse_uri_simple(uri: &str) -> Result<ParsedUri, String> {
     if !has_case_prefix(uri, "managedhsm:") {
         return Err("URI must start with 'managedhsm:' prefix".to_string());
@@ -166,12 +166,33 @@ pub fn parse_uri_simple(uri: &str) -> Result<ParsedUri, String> {
 
     if let Some(sep_pos) = cursor.find(':') {
         let vault_name = cursor[..sep_pos].to_string();
-        let key_name = cursor[sep_pos + 1..].to_string();
+        let rest = &cursor[sep_pos + 1..];
+        
+        // Check for query parameters (e.g., ?version=xxx)
+        let (key_name, key_version) = if let Some(query_pos) = rest.find('?') {
+            let name = rest[..query_pos].to_string();
+            let query = &rest[query_pos + 1..];
+            
+            // Parse query parameters
+            let mut version = None;
+            for param in query.split('&') {
+                if let Some(eq_pos) = param.find('=') {
+                    let key = &param[..eq_pos];
+                    let value = &param[eq_pos + 1..];
+                    if key.eq_ignore_ascii_case("version") {
+                        version = Some(value.to_string());
+                    }
+                }
+            }
+            (name, version)
+        } else {
+            (rest.to_string(), None)
+        };
 
         Ok(ParsedUri {
             vault_name,
             key_name,
-            key_version: None,
+            key_version,
         })
     } else {
         Err("Missing ':' separator between vault and key name".to_string())
@@ -212,6 +233,15 @@ mod tests {
         assert_eq!(result.vault_name, "myvault");
         assert_eq!(result.key_name, "mykey");
         assert_eq!(result.key_version, None);
+    }
+
+    #[test]
+    fn test_parse_uri_simple_with_version() {
+        let uri = "managedhsm:myvault:mykey?version=abc123";
+        let result = parse_uri_simple(uri).unwrap();
+        assert_eq!(result.vault_name, "myvault");
+        assert_eq!(result.key_name, "mykey");
+        assert_eq!(result.key_version, Some("abc123".to_string()));
     }
 
     #[test]

@@ -44,6 +44,9 @@ impl AccessToken {
             "AZURE_CLI_ACCESS_TOKEN environment variable not set".to_string()
         })?;
 
+        // Trim whitespace and newlines that may be included from shell output
+        let token = token.trim().to_string();
+
         if token.is_empty() {
             log::error!("AZURE_CLI_ACCESS_TOKEN is empty");
             return Err("AZURE_CLI_ACCESS_TOKEN is empty".to_string());

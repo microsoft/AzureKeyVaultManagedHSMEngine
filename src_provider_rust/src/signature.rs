@@ -457,8 +457,11 @@ pub unsafe extern "C" fn akv_rsa_signature_newctx(
     provctx: *mut c_void,
     _propq: *const c_char,
 ) -> *mut c_void {
+    log::debug!("akv_rsa_signature_newctx: provctx={:p}", provctx);
     let ctx = SignatureContext::new_rsa(provctx as *mut ProviderContext);
-    Box::into_raw(ctx) as *mut c_void
+    let ctx_ptr = Box::into_raw(ctx) as *mut c_void;
+    log::debug!("akv_rsa_signature_newctx -> {:p}", ctx_ptr);
+    ctx_ptr
 }
 
 /// Create new EC signature context
@@ -467,16 +470,21 @@ pub unsafe extern "C" fn akv_ecdsa_signature_newctx(
     provctx: *mut c_void,
     _propq: *const c_char,
 ) -> *mut c_void {
+    log::debug!("akv_ecdsa_signature_newctx: provctx={:p}", provctx);
     let ctx = SignatureContext::new_ec(provctx as *mut ProviderContext);
-    Box::into_raw(ctx) as *mut c_void
+    let ctx_ptr = Box::into_raw(ctx) as *mut c_void;
+    log::debug!("akv_ecdsa_signature_newctx -> {:p}", ctx_ptr);
+    ctx_ptr
 }
 
 /// Free signature context
 #[no_mangle]
 pub unsafe extern "C" fn akv_signature_freectx(vctx: *mut c_void) {
+    log::info!(">>> akv_signature_freectx CALLED: vctx={:p}", vctx);
     if !vctx.is_null() {
         let _ctx = Box::from_raw(vctx as *mut SignatureContext);
     }
+    log::info!("<<< akv_signature_freectx done");
 }
 
 /// Initialize for signing
@@ -486,7 +494,15 @@ pub unsafe extern "C" fn akv_signature_sign_init(
     vkey: *mut c_void,
     _params: *const OsslParam,
 ) -> c_int {
-    if vctx.is_null() || vkey.is_null() {
+    log::info!(">>> akv_signature_sign_init CALLED: vctx={:p}, vkey={:p}", vctx, vkey);
+    
+    if vctx.is_null() {
+        log::error!("akv_signature_sign_init: vctx is null");
+        return 0;
+    }
+    
+    if vkey.is_null() {
+        log::error!("akv_signature_sign_init: vkey is null");
         return 0;
     }
 
@@ -503,6 +519,7 @@ pub unsafe extern "C" fn akv_signature_sign_init(
     }));
     ctx.operation = EVP_PKEY_OP_SIGN;
 
+    log::debug!("akv_signature_sign_init -> 1");
     1
 }
 
@@ -618,6 +635,8 @@ pub unsafe extern "C" fn akv_signature_digest_sign_init(
     vkey: *mut c_void,
     _params: *const OsslParam,
 ) -> c_int {
+    let md_str = if mdname.is_null() { "<null>".to_string() } else { CStr::from_ptr(mdname).to_string_lossy().to_string() };
+    log::info!(">>> akv_signature_digest_sign_init CALLED: vctx={:p}, mdname={}, vkey={:p}", vctx, md_str, vkey);
     if vctx.is_null() {
         log::error!("akv_signature_digest_sign_init: vctx is null");
         return 0;
@@ -738,8 +757,8 @@ pub unsafe extern "C" fn akv_signature_digest_update(
     data: *const c_uchar,
     datalen: usize,
 ) -> c_int {
-    log::trace!(
-        "akv_signature_digest_update vctx={:p} datalen={}",
+    log::info!(
+        ">>> akv_signature_digest_update CALLED: vctx={:p} datalen={}",
         vctx,
         datalen
     );
@@ -774,6 +793,7 @@ pub unsafe extern "C" fn akv_signature_digest_sign_final(
     siglen: *mut usize,
     sigsize: usize,
 ) -> c_int {
+    log::info!(">>> akv_signature_digest_sign_final CALLED: vctx={:p} sig={:p} sigsize={}", vctx, sig, sigsize);
     if vctx.is_null() || siglen.is_null() {
         return 0;
     }
@@ -868,6 +888,7 @@ pub unsafe extern "C" fn akv_signature_get_ctx_params(
     vctx: *mut c_void,
     params: *mut OsslParam,
 ) -> c_int {
+    log::info!(">>> akv_signature_get_ctx_params CALLED: vctx={:p} params={:p}", vctx, params);
     if vctx.is_null() || params.is_null() {
         return 1; // Nothing to get
     }
@@ -985,8 +1006,8 @@ pub unsafe extern "C" fn akv_signature_set_ctx_params(
     vctx: *mut c_void,
     params: *const OsslParam,
 ) -> c_int {
-    log::trace!(
-        "akv_signature_set_ctx_params vctx={:p} params={:p}",
+    log::info!(
+        ">>> akv_signature_set_ctx_params CALLED: vctx={:p} params={:p}",
         vctx,
         params
     );
@@ -1134,26 +1155,12 @@ pub unsafe extern "C" fn akv_signature_dupctx(vctx: *mut c_void) -> *mut c_void 
         None
     };
 
-    // Try to duplicate the hasher
-    let hasher_clone = if let Some(ref md_name) = src_ctx.md_name {
-        if let Some(md) = MessageDigest::from_name(md_name) {
-            match Hasher::new(md) {
-                Ok(hasher) => {
-                    log::debug!("Created new hasher for duplicated context");
-                    Some(hasher)
-                }
-                Err(e) => {
-                    log::warn!("Failed to create hasher in dupctx: {}", e);
-                    None
-                }
-            }
-        } else {
-            log::warn!("Unknown digest {} in dupctx", md_name);
-            None
-        }
-    } else {
-        None
-    };
+    // Properly clone the hasher, preserving its state (including any data fed via update())
+    // The openssl Hasher implements Clone using EVP_MD_CTX_copy_ex which preserves the hash state
+    let hasher_clone = src_ctx.hasher.as_ref().map(|h| {
+        log::debug!("Cloning hasher with preserved state");
+        h.clone()
+    });
 
     let dup_ctx = Box::new(SignatureContext {
         provctx: src_ctx.provctx,
@@ -1184,8 +1191,8 @@ pub unsafe extern "C" fn akv_signature_digest_sign(
     tbs: *const u8,
     tbslen: usize,
 ) -> c_int {
-    log::trace!(
-        "akv_signature_digest_sign: vctx={:p} sig={:p} siglen={:p} sigsize={} tbslen={}",
+    log::info!(
+        ">>> akv_signature_digest_sign CALLED (one-shot): vctx={:p} sig={:p} siglen={:p} sigsize={} tbslen={}",
         vctx,
         sig,
         siglen,
