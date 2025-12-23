@@ -1,0 +1,9 @@
+# Generated certificates (regenerate with ./generate-cert.sh)
+certs/
+
+# nginx runtime files
+logs/
+tmp/
+
+# nginx pid file
+*.pid
