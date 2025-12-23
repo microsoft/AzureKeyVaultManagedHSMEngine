@@ -437,6 +437,65 @@ No configuration needed - just ensure you're logged in with `az login` or `Conne
 - `AKV_LOG_FILE` - Log file path (optional, e.g., `.\logs\akv_provider.log`)
 - `RUST_LOG` - Rust logging filter (e.g., `akv_provider=debug,reqwest=warn`)
 
+## Security
+
+### TLS Certificate Validation
+
+The provider uses **reqwest** with **native-tls** for HTTPS connections to Azure Managed HSM. Certificate validation works as follows:
+
+#### On Windows
+- Uses **SChannel** (Windows' native TLS implementation)
+- Certificate validation uses the **Windows Certificate Store**
+- Trusts certificates from:
+  - `Trusted Root Certification Authorities` (system store)
+  - `Intermediate Certification Authorities`
+
+#### On Linux
+- Uses **OpenSSL** via native-tls (system OpenSSL)
+- Certificate validation uses the system CA certificates (typically `/etc/ssl/certs/`)
+
+#### Avoiding Circular Dependencies
+
+When the provider makes HTTPS calls to Azure Managed HSM, OpenSSL performs TLS handshake and certificate verification. During this process, OpenSSL attempts to import the server's TLS certificate public keys - and it queries **all loaded providers**, including our AKV provider.
+
+Without proper handling, this creates a **circular dependency**:
+1. Provider needs to call Azure HSM API (HTTPS)
+2. OpenSSL verifies TLS certificate
+3. OpenSSL tries to import certificate keys via our provider
+4. Our provider tries to call Azure HSM API → infinite loop
+
+**Note**: This issue was discovered during Ubuntu/Linux testing. On Windows, SChannel handles TLS separately from OpenSSL, so the circular dependency doesn't occur. On Linux, `native-tls` uses the system OpenSSL for TLS, which queries all loaded providers including ours.
+
+**The Fix** (see `keymgmt.rs` line ~690): The provider **rejects keys that don't have HSM metadata** (vault name, key name). In `akv_keymgmt_import_common()`:
+
+```rust
+// Only accept imports for keys that were loaded via our store (have HSM metadata).
+// Keys without metadata are foreign keys (e.g., TLS certificate chains) that should
+// be handled by the default provider. This prevents circular dependencies when
+// our provider makes HTTPS calls to Azure - the TLS certificate verification
+// must use the default provider, not us.
+if !akv_key_has_private(key) {
+    return 0;  // Reject - let default provider handle
+}
+```
+
+When OpenSSL queries our provider to import TLS certificate keys, we return 0 (failure) because those keys don't have HSM metadata. This allows the **default provider** to handle TLS certificate verification properly.
+
+#### How Azure Managed HSM Certificates are Validated
+1. Azure Managed HSM uses certificates signed by **DigiCert** (or similar public CA)
+2. The DigiCert root CA is pre-installed in the Windows Certificate Store / Linux CA bundle
+3. The TLS library automatically validates the full certificate chain:
+   - Server presents: `*.managedhsm.azure.net` → DigiCert Intermediate → DigiCert Root
+   - System checks the root is in the Trusted Root store ✅
+
+#### Security Settings
+The HTTP client uses secure defaults:
+- ✅ Certificate validation is **enabled**
+- ✅ Hostname verification is **enabled**
+- ✅ Uses system CA certificates
+
+No additional configuration is required - the provider automatically trusts Azure's publicly-signed certificates through the operating system's certificate store.
+
 ## Key Differences from C Implementation
 
 1. **Memory Safety**: Rust's ownership system eliminates many memory-related bugs

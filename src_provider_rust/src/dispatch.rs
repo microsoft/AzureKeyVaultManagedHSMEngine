@@ -730,8 +730,10 @@ pub unsafe fn query_operation_impl(operation_id: c_int) -> *const OsslAlgorithm 
         OSSL_OP_SIGNATURE => (AKV_SIGNATURE_ALGS.as_ptr(), "SIGNATURE"),
         OSSL_OP_ASYM_CIPHER => (AKV_ASYM_CIPHER_ALGS.as_ptr(), "ASYM_CIPHER"),
         _ => {
-            log::warn!(
-                "query_operation_impl: UNKNOWN operation_id={} (0x{:x})",
+            // OpenSSL queries all operation types during initialization
+            // Returning null for unsupported operations is expected behavior
+            log::trace!(
+                "query_operation_impl: unsupported operation_id={} (0x{:x})",
                 operation_id,
                 operation_id
             );

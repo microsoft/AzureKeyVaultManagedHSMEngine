@@ -68,6 +68,13 @@ cd /d "%~dp0"
 echo Working directory: %CD%
 
 REM ============================================================================
+REM Set OpenSSL Environment Variables
+REM ============================================================================
+REM Override the compiled-in paths since Strawberry Perl's OpenSSL uses Z:/extlib/...
+set OPENSSL_MODULES=C:\OpenSSL\lib\ossl-modules
+set OPENSSL_CONF=%~dp0testOpenssl.cnf
+
+REM ============================================================================
 REM Pre-flight Checks
 REM ============================================================================
 
@@ -86,24 +93,14 @@ REM Get OpenSSL version
 for /f "tokens=2" %%v in ('openssl version') do set OPENSSL_VERSION=%%v
 echo [OK] OpenSSL version: %OPENSSL_VERSION%
 
-REM Get OpenSSL modules directory
-echo Checking OpenSSL modules directory...
-for /f "tokens=1* delims=:" %%i in ('openssl version -a ^| findstr "MODULESDIR"') do (
-    set MODULESDIR=%%j
-)
-REM Remove quotes and leading/trailing spaces from MODULESDIR
-set MODULESDIR=%MODULESDIR:"=%
-for /f "tokens=* delims= " %%a in ("%MODULESDIR%") do set MODULESDIR=%%a
-echo MODULESDIR: %MODULESDIR%
-
-REM Check if akv_provider.dll is installed in MODULESDIR
-if exist "%MODULESDIR%\akv_provider.dll" (
-    echo [OK] akv_provider.dll is installed in modules directory
+REM Check if akv_provider.dll is installed in our modules directory
+if exist "%OPENSSL_MODULES%\akv_provider.dll" (
+    echo [OK] akv_provider.dll is installed in %OPENSSL_MODULES%
     set PROVIDER_INSTALLED=YES
 ) else (
-    echo [WARN] akv_provider.dll is NOT installed in modules directory
-    echo To install: copy x64\Release\akv_provider.dll "%MODULESDIR%\"
-    set PROVIDER_INSTALLED=NO
+    echo [ERROR] akv_provider.dll is NOT installed in %OPENSSL_MODULES%
+    echo Run winbuild.bat to build and deploy the provider
+    goto :error
 )
 
 REM Check if Azure CLI is installed

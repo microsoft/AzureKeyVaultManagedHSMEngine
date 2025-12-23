@@ -171,22 +171,20 @@ echo Deploying Provider
 echo ========================================
 echo.
 
-REM Get OpenSSL modules directory
-for /f "usebackq delims=" %%i in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0get_modules_dir.ps1"`) do set MODULES_DIR=%%i
-
-if not defined MODULES_DIR (
-    echo [ERROR] Could not detect OpenSSL modules directory
-    echo         Run 'openssl version -a' to check your OpenSSL installation
-    exit /b 1
-)
+REM Use hardcoded OpenSSL modules directory
+set MODULES_DIR=C:\OpenSSL\lib\ossl-modules
 
 echo [INFO] OpenSSL modules directory: %MODULES_DIR%
 
-REM Check if directory exists
+REM Create directory if it doesn't exist
 if not exist "%MODULES_DIR%" (
-    echo [ERROR] Modules directory does not exist: %MODULES_DIR%
-    echo         Please check your OpenSSL installation
-    exit /b 1
+    echo [INFO] Creating modules directory: %MODULES_DIR%
+    mkdir "%MODULES_DIR%" 2>nul
+    if errorlevel 1 (
+        echo [ERROR] Failed to create modules directory
+        echo         You may need administrator privileges
+        exit /b 1
+    )
 )
 
 REM Copy the DLL
