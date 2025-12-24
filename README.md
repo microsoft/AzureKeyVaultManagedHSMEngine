@@ -87,6 +87,87 @@ openssl dgst -sha256 \
 openssl dgst -sha256 -verify pubkey.pem -signature signature.bin data.txt
 ```
 
+## Testing Results (nginx Keyless TLS Example)
+
+The following test demonstrates the complete workflow of using Azure Managed HSM for keyless TLS with nginx.
+
+### Test Environment
+- **nginx version**: 1.29.4
+- **OpenSSL**: 3.x with akv_provider
+- **HSM**: Azure Managed HSM
+
+### Test Summary
+
+| Step | Description | Result |
+|------|-------------|--------|
+| 1 | nginx version check | ✅ 1.27+ installed |
+| 2 | Certificate generation with HSM | ✅ Signed by HSM |
+| 3 | nginx startup with HSM provider | ✅ Running |
+| 4 | TLS connection test | ✅ TLSv1.3 |
+| 5 | HSM signing verification | ✅ Verified in logs |
+| 6 | Cleanup | ✅ Stopped |
+
+### Certificate Generation
+
+```
+=== Generating certificate using Azure Managed HSM ===
+Creating CSR with HSM key...
+Signing certificate with HSM key...
+Certificate request self-signature ok
+subject=C = US, ST = Washington, L = Redmond, O = Microsoft, OU = Azure HSM Demo, CN = localhost
+```
+
+### TLS Connection Test
+
+```bash
+$ curl -k https://localhost:8443/
+Hello from Nginx with Azure Managed HSM keyless TLS!
+
+Server Time: 23/Dec/2025:23:52:58 +0000
+SSL Protocol: TLSv1.3
+SSL Cipher: TLS_AES_256_GCM_SHA384
+```
+
+### Health Check Endpoint
+
+```bash
+$ curl -k https://localhost:8443/health
+{"status": "healthy", "ssl": true, "hsm": "Azure Managed HSM"}
+```
+
+### TLS Certificate Verification
+
+```
+subject=C = US, ST = Washington, L = Redmond, O = Microsoft, OU = Azure HSM Demo, CN = localhost
+issuer=C = US, ST = Washington, L = Redmond, O = Microsoft, OU = Azure HSM Demo, CN = localhost
+New, TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384
+    Protocol  : TLSv1.3
+    Cipher    : TLS_AES_256_GCM_SHA384
+```
+
+### HSM Signing Operations (from nginx logs)
+
+```
+[INFO akv_provider::signature] akv_signature_digest_sign -> 1 (signature 384 bytes)
+[INFO akv_provider::signature] akv_signature_digest_sign -> 1 (signature 384 bytes)
+[INFO akv_provider::signature] akv_signature_digest_sign -> 1 (signature 384 bytes)
+```
+
+> **Key Security**: The private key never left the HSM - all TLS signing operations were performed inside Azure Managed HSM!
+
+### Run the Tests Yourself
+
+```bash
+cd src_provider_rust/nginx-example
+./setup-env.sh        # Configure HSM settings
+./generate-cert.sh    # Generate certificate
+./start-server.sh     # Start nginx
+./test-client.sh      # Run connection tests
+./stop-server.sh      # Stop nginx
+./cleanup.sh          # Clean up files
+```
+
+See [nginx-example/test-results.md](src_provider_rust/nginx-example/test-results.md) for detailed test output.
 ## Key URI Format
 
 Reference keys using either format:
