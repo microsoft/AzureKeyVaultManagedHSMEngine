@@ -24,5 +24,5 @@ activate = 1
 activate = 1
 
 [akv_provider_section]
-module = /home/puliu/AzureKeyVaultManagedHSMEngine/src_provider_rust/target/release/libakv_provider.so
+module = ${PROVIDER_PATH}/libakv_provider.so
 activate = 1

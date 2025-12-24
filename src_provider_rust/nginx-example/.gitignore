@@ -7,3 +7,11 @@ tmp/
 
 # nginx pid file
 *.pid
+# Local environment configuration (copy from .env.example)
+.env
+
+# Generated nginx config (from nginx.conf.template)
+nginx.conf
+
+# Generated OpenSSL config (from openssl-provider.cnf.template)
+openssl-provider.cnf

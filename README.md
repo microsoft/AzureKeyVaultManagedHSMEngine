@@ -1,128 +1,262 @@
-# Introduction 
-The Azure Key Vault and Managed HSM Engine allows OpenSSL-based applications to use RSA/EC private keys protected by Azure Key Vault and Managed HSM. It leverages the OpenSSL engine interface to perform cryptographic operations inside Azure Key Vault and Managed HSM. The goal is to seamlessly onboard OpenSSL-based applications with Azure Key Vault and Managed HSM, for example, NGINX, gRPC etc.
+﻿# Azure Key Vault Managed HSM OpenSSL Provider
 
-> NOTE: Azure Key Vault should ONLY be used for development purposes with small numbers of requests. For production workloads, use Azure Managed HSM. For more information, see [Azure Key Vault Service Limits](https://docs.microsoft.com/en-us/azure/key-vault/general/service-limits)
+Enable OpenSSL-based applications to use RSA/EC private keys protected by Azure Managed HSM. Cryptographic operations (signing, decryption) are performed inside the HSM - **private keys never leave the hardware security module**.
 
-# Blog
-[Introducing Azure Key Vault and Managed HSM Engine: An Open-Source Project](https://techcommunity.microsoft.com/t5/azure-confidential-computing/introducing-azure-key-vault-and-managed-hsm-engine-an-open/ba-p/3032273)
+## Supported Implementations
 
-# Getting Started
+| Implementation | Status | Platform | OpenSSL Version |
+|----------------|--------|----------|-----------------|
+| **Rust Provider** (src_provider_rust/) |  **Active** | Windows, Linux | OpenSSL 3.x |
+| C Provider (src_provider/) | Maintenance | Windows, Linux | OpenSSL 3.x |
+| C Engine (src/) | Legacy | Windows, Linux | OpenSSL 1.1.x |
 
-## Linux/Ubuntu
+> **Recommendation**: Use the **Rust provider** for new deployments. It provides better memory safety, modern error handling, and is actively maintained.
 
-1. Install dependencies
-   ```
-    sudo apt install -y build-essential
-    sudo apt install -y libssl-dev
-    sudo apt install -y libcurl4-openssl-dev
-    sudo apt install -y libjson-c-dev
-   ```
-2. Clone Repo
-3. Build
-   ```
-    cd src
-    mkdir build
-    cd build
-    cmake ..
-    make
-    sudo mkdir -p /usr/lib/x86_64-linux-gnu/engines-1.1/
-    sudo cp e_akv.so /usr/lib/x86_64-linux-gnu/engines-1.1/e_akv.so
-   ```
-4. Test
-   ```
-   openssl engine -vvv -t e_akv
-   ```
-[NOTE] if the openssl version is 3.0 or 3.0+, please reinstall the openssl1.1
-For example
+## Quick Start (Rust Provider)
+
+### Prerequisites
+- **Rust** toolchain (1.70+)
+- **Azure CLI** (`az`)
+- **OpenSSL 3.x** command-line tools
+- **Azure Managed HSM** with RSA/EC keys
+
+### Windows
+
+```cmd
+cd src_provider_rust
+winbuild.bat
+runtest.bat
 ```
-$>cat /etc/os-release
-PRETTY_NAME="Ubuntu 22.04.1 LTS"
-NAME="Ubuntu"
-VERSION_ID="22.04"
-VERSION="22.04.1 LTS (Jammy Jellyfish)"
-VERSION_CODENAME=jammy
-ID=ubuntu
-ID_LIKE=debian
-HOME_URL="https://www.ubuntu.com/"
-SUPPORT_URL="https://help.ubuntu.com/"
-BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
-PRIVACY_POLICY_URL="https://www.ubuntu.com/legal/terms-and-policies/privacy-policy"
+
+### Linux/Ubuntu
+
+```bash
+cd src_provider_rust
+./ubuntubuild.sh
+./runtest.sh
 ```
-Run the following command
+
+## Use Cases
+
+### 1. Nginx TLS with HSM-Protected Keys
+
+Serve HTTPS traffic where the TLS private key never leaves the HSM:
+
+```bash
+cd src_provider_rust/nginx-example
+./setup-env.sh        # Create .env config (edit with your HSM settings)
+./generate-cert.sh    # Generate cert signed by HSM
+./start-server.sh     # Start nginx with HSM key
+curl -k https://localhost:8443/
 ```
-wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl-dev_1.1.1f-1ubuntu2.16_amd64.deb
-wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.16_amd64.deb
-wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/openssl_1.1.1f-1ubuntu2.16_amd64.deb
-sudo dpkg -i libssl-dev_1.1.1f-1ubuntu2.16_amd64.deb
-sudo dpkg -i libssl1.1_1.1.1f-1ubuntu2.16_amd64.deb
-sudo dpkg -i openssl_1.1.1f-1ubuntu2.16_amd64.deb
+
+See [nginx-example/README.md](src_provider_rust/nginx-example/README.md) for full setup instructions.
+
+### 2. Certificate Signing Requests (CSR)
+
+Generate CSRs with HSM-protected keys:
+
+```bash
+openssl req -new \
+    -provider akv_provider -provider default \
+    -key "managedhsm:MyHSM:mykey" \
+    -subj "/CN=myserver.example.com" \
+    -out server.csr
 ```
-## Windows
 
-1. Install Visual Studio 2019
-2. Install `vcpk` in command window "Developer Command Prompt for VS 2019"
-    ```
-    c:
-    cd \
-    git clone https://github.com/Microsoft/vcpkg.git
-    cd vcpkg
-    bootstrap-vcpkg.bat -disableMetrics
-    vcpkg.exe install json-c:x64-windows-static
-    vcpkg.exe install curl:x64-windows-static
-    vcpkg.exe install openssl:x64-windows
-    mkdir C:\vcpkg\packages\openssl_x64-windows\lib\engines-1_1
-    ```
-3. Clone Repo
-4. Build 
-   ```
-   cd src
-   msbuild e_akv.vcxproj /p:PkgCurl="C:\vcpkg\packages\curl_x64-windows-static" /p:PkgJson="C:\vcpkg\packages\json-c_x64-windows-static" /p:PkgZ="C:\vcpkg\packages\zlib_x64-windows-static" /p:PkgOpenssl="C:\vcpkg\packages\openssl_x64-windows" /p:Configuration=Release;Platform=x64
-   copy /Y x64\Release\e_akv.dll C:\vcpkg\packages\openssl_x64-windows\lib\engines-1_1\e_akv.dll
-   ```
-5. Test 
-   ```
-   C:\vcpkg\packages\openssl_x64-windows\tools\openssl\openssl.exe engine -vvv -t e_akv
-   ```
-   
-NOTE: new vcpkg is using openssl 3.0 and please use vcpkg.json to override openssl version
+### 3. Self-Signed Certificates
+
+```bash
+openssl req -new -x509 \
+    -provider akv_provider -provider default \
+    -key "managedhsm:MyHSM:mykey" \
+    -days 365 \
+    -out server.crt
 ```
-vcpkg.json
-{ 
-  "name": "dbkg", 
-  "version-string": "1.0.0", 
-  "dependencies": [ "zlib", "json-c", "curl", "abseil", "c-ares", "grpc", "protobuf", "re2", "upb", "openssl"],
-  "builtin-baseline": "2ac61f87f69f0484b8044f95ab274038fbaf7bdd", 
-  "overrides": [ 
-     { "name": "openssl", "version-string": "1.1.1n" },
-     { "name": "zlib", "version-string": "1.2.13" }
-  ] 
-} 
 
-vcpkg\vcpkg install --triplet=x64-windows-static
-cd D:\AzureKeyVaultManagedHSMEngine\src
-set VCPKG_ROOT=D:\vcpkg
-msbuild  e_akv.vcxproj /p:PkgOpenssl="%VCPKG_ROOT%\packages\openssl_x64-windows" /p:PkgCurl="%VCPKG_ROOT%\packages\curl_x64-windows-static" /p:PkgJson="%VCPKG_ROOT%\packages\json-c_x64-windows-static" /p:PkgZ="%VCPKG_ROOT%\packages\zlib_x64-windows-static" /p:Configuration=Release;Platform=x64
+### 4. Digital Signatures
+
+```bash
+# Sign a file
+openssl dgst -sha256 \
+    -provider akv_provider -provider default \
+    -sign "managedhsm:MyHSM:mykey" \
+    -out signature.bin data.txt
+
+# Verify (with public key)
+openssl dgst -sha256 -verify pubkey.pem -signature signature.bin data.txt
 ```
-# Samples
 
-Please check out the samples including nginx, gRPC, and openssl command line.
-NEW: AZURE CLI Credentials are supported, details in https://github.com/microsoft/AzureKeyVaultManagedHSMEngine/blob/main/samples/openssl/UseAzureCliCredential.md
+## Key URI Format
 
-# Contribute
+Reference keys using either format:
 
-This project welcomes contributions and suggestions. Most contributions require you to
-agree to a Contributor License Agreement (CLA) declaring that you have the right to,
-and actually do, grant us the rights to use your contribution. For details, visit
-https://cla.microsoft.com.
+```
+# Simple format (recommended)
+managedhsm:<vault-name>:<key-name>
 
-When you submit a pull request, a CLA-bot will automatically determine whether you need
-to provide a CLA and decorate the PR appropriately (e.g., label, comment). Simply follow the
-instructions provided by the bot. You will only need to do this once across all repositories using our CLA.
+# With version
+managedhsm:<vault-name>:<key-name>?version=<version>
+
+# Key-value format
+akv:vault=<vault-name>,name=<key-name>,version=<version>
+```
+
+## Supported Operations
+
+| Operation | RSA | EC (P-256) | AES-256 |
+|-----------|-----|------------|---------|
+| Sign (RS256, PS256) |  | - | - |
+| Sign (ES256) | - |  | - |
+| Decrypt (OAEP) |  | - | - |
+| Key Wrap/Unwrap | - | - |  |
+| CSR Generation |  |  | - |
+| Certificate Generation |  |  | - |
+
+## Authentication
+
+The provider supports two authentication methods:
+
+### 1. Environment Variable (Fast - Recommended)
+```bash
+export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token --resource https://managedhsm.azure.net --query accessToken -o tsv)
+```
+
+### 2. Azure SDK DefaultAzureCredential (Automatic Fallback)
+If no environment variable is set, the provider automatically tries:
+- Managed Identity (Azure VMs, App Service)
+- Azure CLI credentials
+- Azure PowerShell credentials
+
+## Setting Up Azure Managed HSM
+
+### 1. Create Managed HSM
+
+```bash
+# Login and set subscription
+az login
+az account set --subscription <your-subscription>
+
+# Create resource group
+az group create --name "ContosoResourceGroup" --location westus3
+
+# Get your admin ID
+az ad signed-in-user show --query id -o tsv
+# Output: xxxx-xxxx-xxxx-xxxx
+
+# Create Managed HSM (replace [HSM-NAME] and admin ID)
+az keyvault create --hsm-name "[HSM-NAME]" \
+    --resource-group "ContosoResourceGroup" \
+    --location "West US 3" \
+    --administrators xxxx-xxxx-xxxx-xxxx \
+    --retention-days 28
+```
+
+### 2. Activate the HSM (Security Domain)
+
+A new HSM requires activation before use:
+
+```bash
+# Generate 3 RSA key pairs for security domain
+openssl req -newkey rsa:2048 -nodes -keyout cert_1.key -x509 -days 365 -out cert_1.cer
+openssl req -newkey rsa:2048 -nodes -keyout cert_2.key -x509 -days 365 -out cert_2.cer
+openssl req -newkey rsa:2048 -nodes -keyout cert_3.key -x509 -days 365 -out cert_3.cer
+
+# Download security domain (activates the HSM)
+az keyvault security-domain download \
+    --hsm-name "[HSM-NAME]" \
+    --sd-wrapping-keys ./cert_1.cer ./cert_2.cer ./cert_3.cer \
+    --sd-quorum 2 \
+    --security-domain-file SD.json
+```
+
+> **Important**: Store the security domain file (SD.json) and keys securely. They are required for HSM recovery.
+
+### 3. Create Keys in the HSM
+
+```bash
+# Grant yourself permissions to manage keys
+oid=$(az ad signed-in-user show --query id -o tsv)
+az keyvault role assignment create \
+    --hsm-name [HSM-NAME] \
+    --assignee $oid \
+    --scope / \
+    --role "Managed HSM Crypto User"
+
+# Create RSA key (3072-bit recommended for TLS)
+az keyvault key create \
+    --hsm-name [HSM-NAME] \
+    --name myrsakey \
+    --kty RSA-HSM \
+    --size 3072 \
+    --ops sign decrypt
+
+# Create EC key (P-256)
+az keyvault key create \
+    --hsm-name [HSM-NAME] \
+    --name myeckey \
+    --kty EC-HSM \
+    --curve P-256 \
+    --ops sign
+
+# Create AES key (256-bit)
+az keyvault key create \
+    --hsm-name [HSM-NAME] \
+    --name myaeskey \
+    --kty oct-HSM \
+    --size 256 \
+    --ops wrapKey unwrapKey
+```
+
+### 4. Grant Access to Azure VMs (Optional)
+
+For VMs using Managed Identity:
+
+```bash
+# Assign managed identity to VM
+az vm identity assign --name myvm --resource-group myresourcegroup
+
+# Get VM's principal ID
+vm_principal=$(az vm identity show --name myvm --resource-group myresourcegroup --query principalId -o tsv)
+
+# Grant VM access to HSM keys
+az keyvault role assignment create \
+    --hsm-name [HSM-NAME] \
+    --assignee $vm_principal \
+    --scope / \
+    --role "Managed HSM Crypto User"
+```
+
+## Documentation
+
+- [Rust Provider README](src_provider_rust/README.md) - Detailed build and configuration
+- [Nginx Example](src_provider_rust/nginx-example/README.md) - TLS with HSM keys
+- [Architecture Guide](src_provider_rust/ARCHITECTURE.md) - Technical design
+- [Security](src_provider_rust/README.md#security) - TLS and security considerations
+
+## Legacy Implementations
+
+### C Provider (OpenSSL 3.x)
+Located in `src_provider/`. Use for compatibility with existing C deployments.
+
+### C Engine (OpenSSL 1.1.x)
+Located in `src/`. Only for systems that cannot upgrade to OpenSSL 3.x.
+
+> **Note**: Azure Key Vault should only be used for development/testing. For production, use **Azure Managed HSM**. See [Azure Key Vault Service Limits](https://docs.microsoft.com/azure/key-vault/general/service-limits).
+
+## Blog
+[Introducing Azure Key Vault and Managed HSM Engine](https://techcommunity.microsoft.com/t5/azure-confidential-computing/introducing-azure-key-vault-and-managed-hsm-engine-an-open/ba-p/3032273)
+
+## Contributing
+
+This project welcomes contributions and suggestions. See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/)
-or contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
 
-# Trademark Notice
+## Trademark Notice
 
-This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks or logos is subject to and must follow Microsoft’s Trademark & Brand Guidelines. Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship. Any use of third-party trademarks or logos are subject to those third-party’s policies. Azure Key Vault and Managed HSM Engine is not affiliated with OpenSSL. OpenSSL is a registered trademark owned by OpenSSL Software Foundation.
+This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks or logos is subject to and must follow [Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/legal/intellectualproperty/trademarks). Azure Key Vault and Managed HSM Engine is not affiliated with OpenSSL. OpenSSL is a registered trademark owned by OpenSSL Software Foundation.
+
+## License
+
+[MIT License](LICENSE.txt)
