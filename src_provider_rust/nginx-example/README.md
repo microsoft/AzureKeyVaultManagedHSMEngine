@@ -61,33 +61,59 @@ sudo apt update && sudo apt install -y nginx
    cargo build --release
    ```
 
-2. **Generate certificate**:
+2. **Configure your environment**:
+   ```bash
+   ./setup-env.sh
+   # Edit .env with your HSM name, key name, and tenant ID
+   ```
+
+3. **Generate certificate**:
    ```bash
    ./generate-cert.sh
    ```
 
-3. **Start nginx**:
+4. **Start nginx**:
    ```bash
    ./start-server.sh
    ```
 
-4. **Test the connection**:
+5. **Test the connection**:
    ```bash
    curl -k https://localhost:8443/
+   curl -k https://localhost:8443/health
+   curl -k https://localhost:8443/info
    ```
 
-5. **Stop nginx**:
+6. **Stop nginx**:
    ```bash
    ./stop-server.sh
    ```
+
+## Configuration
+
+All settings are configured in `.env` (copy from `.env.example`):
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `HSM_NAME` | Azure Managed HSM name | `ManagedHSMOpenSSLEngine` |
+| `HSM_KEY_NAME` | Key name in HSM | `myrsakey` |
+| `AZURE_TENANT_ID` | Azure tenant ID | (Microsoft tenant) |
+| `NGINX_PORT` | HTTPS listen port | `8443` |
+| `SERVER_NAME` | Server hostname | `localhost` |
+| `CERT_CN` | Certificate common name | `localhost` |
+| `CERT_DAYS` | Certificate validity | `365` |
 
 ## Files
 
 | File | Description |
 |------|-------------|
-| `nginx.conf` | nginx configuration with HSM key reference |
+| `.env.example` | Template configuration (copy to .env) |
+| `.env` | Local configuration (git-ignored) |
+| `nginx.conf.template` | nginx config template with placeholders |
+| `nginx.conf` | Generated nginx config (git-ignored) |
 | `openssl-provider.cnf` | OpenSSL configuration to load the AKV provider |
 | `generate-cert.sh` | Generate certificate signed by HSM key |
+| `setup-env.sh` | Create .env from template |
 | `start-server.sh` | Start nginx with proper environment |
 | `stop-server.sh` | Stop nginx |
 | `test-client.sh` | Test the TLS connection |

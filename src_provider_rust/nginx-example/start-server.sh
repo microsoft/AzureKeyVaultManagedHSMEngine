@@ -6,9 +6,36 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NGINX_CONF="$SCRIPT_DIR/nginx.conf"
+NGINX_TEMPLATE="$SCRIPT_DIR/nginx.conf.template"
 OPENSSL_CONF="$SCRIPT_DIR/openssl-provider.cnf"
 
+# Load configuration from .env file
+ENV_FILE="$SCRIPT_DIR/.env"
+if [ -f "$ENV_FILE" ]; then
+    echo "Loading configuration from $ENV_FILE"
+    set -a  # Export all variables
+    source "$ENV_FILE"
+    set +a
+else
+    echo "Warning: No .env file found. Run ./setup-env.sh first or using defaults."
+fi
+
+# Configuration with defaults
+HSM_NAME="${HSM_NAME:-ManagedHSMOpenSSLEngine}"
+HSM_KEY_NAME="${HSM_KEY_NAME:-myrsakey}"
+AZURE_TENANT_ID="${AZURE_TENANT_ID:-72f988bf-86f1-41af-91ab-2d7cd011db47}"
+NGINX_PORT="${NGINX_PORT:-8443}"
+SERVER_NAME="${SERVER_NAME:-localhost}"
+
+# Export PROJECT_DIR for nginx.conf template
+export PROJECT_DIR="$SCRIPT_DIR"
+export HSM_NAME HSM_KEY_NAME NGINX_PORT SERVER_NAME
+
 echo "=== Starting nginx with Azure Managed HSM keyless TLS ==="
+echo "HSM:  $HSM_NAME"
+echo "Key:  $HSM_KEY_NAME"
+echo "Port: $NGINX_PORT"
+echo ""
 
 # Check nginx version (need 1.27+ for OSSL_STORE support)
 NGINX_VERSION=$(nginx -v 2>&1 | grep -oP 'nginx/\K[0-9]+\.[0-9]+')
@@ -28,7 +55,7 @@ fi
 # Get Azure access token
 if [ -z "$AZURE_CLI_ACCESS_TOKEN" ]; then
     echo "Getting Azure access token..."
-    export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token --output tsv --query accessToken --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47 --resource https://managedhsm.azure.net)
+    export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token --output tsv --query accessToken --tenant "$AZURE_TENANT_ID" --resource https://managedhsm.azure.net)
 fi
 
 # Check for certificate
@@ -40,6 +67,15 @@ fi
 # Create required directories
 mkdir -p "$SCRIPT_DIR/logs"
 mkdir -p "$SCRIPT_DIR/tmp"/{client_body,proxy,fastcgi,uwsgi,scgi}
+
+# Generate nginx.conf from template
+if [ -f "$NGINX_TEMPLATE" ]; then
+    echo "Generating nginx.conf from template..."
+    envsubst '${PROJECT_DIR} ${HSM_NAME} ${HSM_KEY_NAME} ${NGINX_PORT} ${SERVER_NAME}' \
+        < "$NGINX_TEMPLATE" > "$NGINX_CONF"
+else
+    echo "Warning: Template not found, using existing nginx.conf"
+fi
 
 # Set environment variables
 export OPENSSL_CONF="$OPENSSL_CONF"
@@ -60,7 +96,9 @@ if [ -f "$SCRIPT_DIR/logs/nginx.pid" ]; then
     PID=$(cat "$SCRIPT_DIR/logs/nginx.pid")
     echo "nginx started successfully (PID: $PID)"
     echo ""
-    echo "Test with: curl -k https://localhost:8443/"
+    echo "Test with: curl -k https://localhost:${NGINX_PORT}/"
+    echo "Health:    curl -k https://localhost:${NGINX_PORT}/health"
+    echo "Info:      curl -k https://localhost:${NGINX_PORT}/info"
     echo "Logs:      $SCRIPT_DIR/logs/"
 else
     echo "ERROR: nginx failed to start. Check logs:"
