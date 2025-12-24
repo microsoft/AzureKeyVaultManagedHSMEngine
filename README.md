@@ -44,6 +44,7 @@ Serve HTTPS traffic where the TLS private key never leaves the HSM:
 
 ```bash
 cd src_provider_rust/nginx-example
+./setup-env.sh        # Create .env config (edit with your HSM settings)
 ./generate-cert.sh    # Generate cert signed by HSM
 ./start-server.sh     # Start nginx with HSM key
 curl -k https://localhost:8443/
