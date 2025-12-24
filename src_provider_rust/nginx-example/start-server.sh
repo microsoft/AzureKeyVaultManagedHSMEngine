@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NGINX_CONF="$SCRIPT_DIR/nginx.conf"
 NGINX_TEMPLATE="$SCRIPT_DIR/nginx.conf.template"
 OPENSSL_CONF="$SCRIPT_DIR/openssl-provider.cnf"
+OPENSSL_TEMPLATE="$SCRIPT_DIR/openssl-provider.cnf.template"
 
 # Load configuration from .env file
 ENV_FILE="$SCRIPT_DIR/.env"
@@ -27,8 +28,9 @@ AZURE_TENANT_ID="${AZURE_TENANT_ID:-72f988bf-86f1-41af-91ab-2d7cd011db47}"
 NGINX_PORT="${NGINX_PORT:-8443}"
 SERVER_NAME="${SERVER_NAME:-localhost}"
 
-# Export PROJECT_DIR for nginx.conf template
+# Export variables for templates
 export PROJECT_DIR="$SCRIPT_DIR"
+export PROVIDER_PATH="$SCRIPT_DIR/../target/release"
 export HSM_NAME HSM_KEY_NAME NGINX_PORT SERVER_NAME
 
 echo "=== Starting nginx with Azure Managed HSM keyless TLS ==="
@@ -74,7 +76,15 @@ if [ -f "$NGINX_TEMPLATE" ]; then
     envsubst '${PROJECT_DIR} ${HSM_NAME} ${HSM_KEY_NAME} ${NGINX_PORT} ${SERVER_NAME}' \
         < "$NGINX_TEMPLATE" > "$NGINX_CONF"
 else
-    echo "Warning: Template not found, using existing nginx.conf"
+    echo "Warning: nginx.conf.template not found, using existing nginx.conf"
+fi
+
+# Generate openssl-provider.cnf from template
+if [ -f "$OPENSSL_TEMPLATE" ]; then
+    echo "Generating openssl-provider.cnf from template..."
+    envsubst '${PROVIDER_PATH}' < "$OPENSSL_TEMPLATE" > "$OPENSSL_CONF"
+else
+    echo "Warning: openssl-provider.cnf.template not found, using existing config"
 fi
 
 # Set environment variables

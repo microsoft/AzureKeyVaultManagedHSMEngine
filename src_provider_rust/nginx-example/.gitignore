@@ -12,3 +12,6 @@ tmp/
 
 # Generated nginx config (from nginx.conf.template)
 nginx.conf
+
+# Generated OpenSSL config (from openssl-provider.cnf.template)
+openssl-provider.cnf
