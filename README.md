@@ -127,6 +127,105 @@ If no environment variable is set, the provider automatically tries:
 - Azure CLI credentials
 - Azure PowerShell credentials
 
+## Setting Up Azure Managed HSM
+
+### 1. Create Managed HSM
+
+```bash
+# Login and set subscription
+az login
+az account set --subscription <your-subscription>
+
+# Create resource group
+az group create --name "ContosoResourceGroup" --location westus3
+
+# Get your admin ID
+az ad signed-in-user show --query id -o tsv
+# Output: xxxx-xxxx-xxxx-xxxx
+
+# Create Managed HSM (replace [HSM-NAME] and admin ID)
+az keyvault create --hsm-name "[HSM-NAME]" \
+    --resource-group "ContosoResourceGroup" \
+    --location "West US 3" \
+    --administrators xxxx-xxxx-xxxx-xxxx \
+    --retention-days 28
+```
+
+### 2. Activate the HSM (Security Domain)
+
+A new HSM requires activation before use:
+
+```bash
+# Generate 3 RSA key pairs for security domain
+openssl req -newkey rsa:2048 -nodes -keyout cert_1.key -x509 -days 365 -out cert_1.cer
+openssl req -newkey rsa:2048 -nodes -keyout cert_2.key -x509 -days 365 -out cert_2.cer
+openssl req -newkey rsa:2048 -nodes -keyout cert_3.key -x509 -days 365 -out cert_3.cer
+
+# Download security domain (activates the HSM)
+az keyvault security-domain download \
+    --hsm-name "[HSM-NAME]" \
+    --sd-wrapping-keys ./cert_1.cer ./cert_2.cer ./cert_3.cer \
+    --sd-quorum 2 \
+    --security-domain-file SD.json
+```
+
+> **Important**: Store the security domain file (SD.json) and keys securely. They are required for HSM recovery.
+
+### 3. Create Keys in the HSM
+
+```bash
+# Grant yourself permissions to manage keys
+oid=$(az ad signed-in-user show --query id -o tsv)
+az keyvault role assignment create \
+    --hsm-name [HSM-NAME] \
+    --assignee $oid \
+    --scope / \
+    --role "Managed HSM Crypto User"
+
+# Create RSA key (3072-bit recommended for TLS)
+az keyvault key create \
+    --hsm-name [HSM-NAME] \
+    --name myrsakey \
+    --kty RSA-HSM \
+    --size 3072 \
+    --ops sign decrypt
+
+# Create EC key (P-256)
+az keyvault key create \
+    --hsm-name [HSM-NAME] \
+    --name myeckey \
+    --kty EC-HSM \
+    --curve P-256 \
+    --ops sign
+
+# Create AES key (256-bit)
+az keyvault key create \
+    --hsm-name [HSM-NAME] \
+    --name myaeskey \
+    --kty oct-HSM \
+    --size 256 \
+    --ops wrapKey unwrapKey
+```
+
+### 4. Grant Access to Azure VMs (Optional)
+
+For VMs using Managed Identity:
+
+```bash
+# Assign managed identity to VM
+az vm identity assign --name myvm --resource-group myresourcegroup
+
+# Get VM's principal ID
+vm_principal=$(az vm identity show --name myvm --resource-group myresourcegroup --query principalId -o tsv)
+
+# Grant VM access to HSM keys
+az keyvault role assignment create \
+    --hsm-name [HSM-NAME] \
+    --assignee $vm_principal \
+    --scope / \
+    --role "Managed HSM Crypto User"
+```
+
 ## Documentation
 
 - [Rust Provider README](src_provider_rust/README.md) - Detailed build and configuration
