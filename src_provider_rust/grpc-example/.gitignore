@@ -1,0 +1,35 @@
+# Build artifacts
+/target/
+
+# Cargo lock file (optional - can be committed for binaries)
+# Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+temp_*/
+*.tmp
+
+# Generated protobuf files (regenerated on build)
+# src/*.rs files generated from proto are in target/
+
+# Environment (contains secrets)
+.env
+
+# Generated files
+/certs/
+/run/
+openssl-provider.cnf
+/nginx/*-runtime.conf
