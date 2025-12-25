@@ -24,3 +24,12 @@ temp_*/
 
 # Generated protobuf files (regenerated on build)
 # src/*.rs files generated from proto are in target/
+
+# Environment (contains secrets)
+.env
+
+# Generated files
+/certs/
+/run/
+openssl-provider.cnf
+/nginx/*-runtime.conf

@@ -1,95 +1,151 @@
-# gRPC Example for Azure Managed HSM Provider
+# gRPC mTLS Example with Azure Managed HSM
 
-This example demonstrates a basic gRPC client/server setup using Tonic.
+This example demonstrates **keyless mTLS** for gRPC using the **Double-Ended Sidecar Proxy** pattern with NGINX and Azure Managed HSM.
 
-## Current Status
+## Architecture
 
-- **Phase 1 (Current)**: Plain gRPC (no TLS)
-- **Phase 2 (Next)**: Add TLS with Azure Managed HSM provider
+\`\`\`
+┌──────────────────────────────────────────────────────────────────┐
+│                          HOST                                     │
+│                                                                   │
+│  ┌─────────────┐    UDS     ┌────────────────────────────────┐   │
+│  │ gRPC Client │ ────────►  │ NGINX Client Sidecar           │   │
+│  │ (plaintext) │            │   - Initiates mTLS             │   │
+│  └─────────────┘            │   - Client cert via HSM        │   │
+│                             └────────────┬───────────────────┘   │
+│                                          │                        │
+│                                          │ mTLS (port 50051)      │
+│                                          │                        │
+│                             ┌────────────▼───────────────────┐   │
+│  ┌─────────────┐    UDS     │ NGINX Server Sidecar           │   │
+│  │ gRPC Server │ ◄────────  │   - Terminates mTLS            │   │
+│  │ (plaintext) │            │   - Server cert via HSM        │   │
+│  └─────────────┘            │   - Verifies client cert       │   │
+│                             └────────────────────────────────┘   │
+│                                          │                        │
+└──────────────────────────────────────────┼────────────────────────┘
+                                           │
+                                           ▼
+                              ┌────────────────────────┐
+                              │  Azure Managed HSM     │
+                              │  (private key ops)     │
+                              └────────────────────────┘
+\`\`\`
+
+**Key Feature:** The same RSA key in Azure Managed HSM is used for both client and server certificates (different certificate identities).
 
 ## Prerequisites
 
-```bash
-# Install protobuf compiler
-sudo apt-get install protobuf-compiler
-```
+1. **Azure Managed HSM** with an RSA key
+2. **Azure CLI** authenticated (\`az login\`)
+3. **NGINX** with stream module and SSL support
+4. **Rust** toolchain
+5. **Provider built**: \`../target/release/libakv_provider.so\`
 
-## Project Structure
+## Quick Start
 
-```
+\`\`\`bash
+# 1. Copy and configure environment
+cp .env.example .env
+# Edit .env with your HSM settings
+
+# 2. Generate certificates (uses HSM for signing)
+./generate-certs.sh
+
+# 3. Start the demo (NGINX sidecars + gRPC server)
+./start-demo.sh
+
+# 4. Run the client (in another terminal)
+./run-client.sh
+
+# 5. Stop everything
+./stop-demo.sh
+\`\`\`
+
+## Files
+
+\`\`\`
 grpc-example/
-├── Cargo.toml          # Dependencies
-├── build.rs            # Proto compilation script
-├── proto/
-│   └── greeter.proto   # Service definition
 ├── src/
-│   ├── server.rs       # gRPC server
-│   └── client.rs       # gRPC client
-└── README.md
-```
+│   ├── server.rs          # gRPC server (supports TCP or UDS)
+│   └── client.rs          # gRPC client (supports TCP or UDS)
+├── proto/
+│   └── greeter.proto      # gRPC service definition
+├── nginx/
+│   ├── nginx-server.conf  # Server sidecar template
+│   └── nginx-client.conf  # Client sidecar template
+├── certs/                 # Generated certificates
+│   ├── ca.crt             # CA certificate
+│   ├── server.crt         # Server certificate
+│   └── client.crt         # Client certificate
+├── .env.example           # Environment template
+├── generate-certs.sh      # Certificate generation script
+├── start-demo.sh          # Start the demo
+├── stop-demo.sh           # Stop the demo
+├── run-client.sh          # Run client via sidecar
+└── grpc-mtls-sidecar.md   # Design document
+\`\`\`
 
-## Building
+## Running Modes
 
-```bash
-cd grpc-example
-cargo build --release
-```
+### Mode 1: Direct TCP (no TLS, for testing)
 
-## Running
+\`\`\`bash
+# Terminal 1: Start server on TCP
+cargo run --release --bin grpc-server
+# Listens on [::1]:50051
 
-### Start the Server
+# Terminal 2: Run client
+cargo run --release --bin grpc-client
+\`\`\`
 
-```bash
-cargo run --bin grpc-server
-```
+### Mode 2: UDS + NGINX Sidecar (mTLS)
 
-Output:
-```
-GreeterServer listening on [::1]:50051
-```
+\`\`\`bash
+# Start everything
+./start-demo.sh
 
-### Run the Client (in another terminal)
+# Run client through sidecar
+./run-client.sh
+\`\`\`
 
-```bash
-cargo run --bin grpc-client
-```
+## Environment Variables
 
-Output:
-```
-=== Unary Request ===
-RESPONSE: "Hello World!"
+| Variable | Description | Default |
+|----------|-------------|---------|
+| \`GRPC_UDS_PATH\` | Unix socket path | (uses TCP if not set) |
+| \`GRPC_ADDR\` | TCP address (if no UDS) | \`[::1]:50051\` |
+| \`HSM_NAME\` | HSM vault name | \`ManagedHSMOpenSSLEngine\` |
+| \`HSM_KEY_NAME\` | HSM key name | \`myrsakey\` |
 
-=== Streaming Request ===
-STREAM RESPONSE: "Hello Streamer - message 1!"
-STREAM RESPONSE: "Hello Streamer - message 2!"
-STREAM RESPONSE: "Hello Streamer - message 3!"
-STREAM RESPONSE: "Hello Streamer - message 4!"
-STREAM RESPONSE: "Hello Streamer - message 5!"
+## How It Works
 
-Done!
-```
+1. **gRPC Server** listens on a Unix Domain Socket (\`run/grpc-server.sock\`)
+2. **NGINX Server Sidecar** terminates mTLS on port 50051 and forwards plaintext to the server UDS
+3. **NGINX Client Sidecar** listens on a UDS (\`run/grpc-client.sock\`) and initiates mTLS to port 50051
+4. **gRPC Client** connects to the client sidecar UDS (plaintext)
 
-## Service Definition
+**All TLS private key operations** are performed by the Azure Managed HSM via the OpenSSL provider.
 
-The `greeter.proto` defines two RPC methods:
+## Troubleshooting
 
-1. **SayHello** - Unary RPC: Send a name, get a greeting back
-2. **SayHelloStream** - Server streaming RPC: Send a name, get multiple greetings back
+### Check logs
 
-## Next Steps (Phase 2: TLS with Azure Managed HSM)
+\`\`\`bash
+# NGINX logs
+tail -f logs/nginx-server-error.log
+tail -f logs/nginx-client-error.log
 
-To enable TLS with keys stored in Azure Managed HSM:
+# Provider logs
+tail -f logs/akv-provider.log
+\`\`\`
 
-1. Generate a certificate using the HSM key
-2. Configure the server with TLS using the HSM-backed private key
-3. Configure the client to verify the server certificate
+### Common issues
 
-```rust
-// Server with TLS (coming next)
-Server::builder()
-    .tls_config(ServerTlsConfig::new()
-        .identity(Identity::from_pem(cert, key)))?
-    .add_service(GreeterServer::new(greeter))
-    .serve(addr)
-    .await?;
-```
+1. **"Provider not found"**: Build the provider first: \`cd .. && cargo build --release\`
+2. **"Access token expired"**: Re-run \`az login\` and restart demo
+3. **"Socket already in use"**: Run \`./stop-demo.sh\` to clean up
+
+## Design Document
+
+See [grpc-mtls-sidecar.md](grpc-mtls-sidecar.md) for the full design rationale.

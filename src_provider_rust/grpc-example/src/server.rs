@@ -1,3 +1,6 @@
+use std::path::Path;
+use tokio::net::UnixListener;
+use tokio_stream::wrappers::UnixListenerStream;
 use tonic::{transport::Server, Request, Response, Status};
 
 use greeter::greeter_server::{Greeter, GreeterServer};
@@ -54,15 +57,42 @@ impl Greeter for MyGreeter {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "[::1]:50051".parse()?;
     let greeter = MyGreeter::default();
 
-    println!("GreeterServer listening on {}", addr);
+    // Check if UDS mode is requested via environment variable
+    let uds_path = std::env::var("GRPC_UDS_PATH").ok();
 
-    Server::builder()
-        .add_service(GreeterServer::new(greeter))
-        .serve(addr)
-        .await?;
+    if let Some(socket_path) = uds_path {
+        // Unix Domain Socket mode (for sidecar architecture)
+        let path = Path::new(&socket_path);
+        
+        // Remove existing socket file if it exists
+        if path.exists() {
+            std::fs::remove_file(path)?;
+        }
+
+        let uds = UnixListener::bind(path)?;
+        let incoming = UnixListenerStream::new(uds);
+
+        println!("GreeterServer listening on Unix socket: {}", socket_path);
+
+        Server::builder()
+            .add_service(GreeterServer::new(greeter))
+            .serve_with_incoming(incoming)
+            .await?;
+    } else {
+        // TCP mode (for direct access or testing)
+        let addr = std::env::var("GRPC_ADDR")
+            .unwrap_or_else(|_| "[::1]:50051".to_string())
+            .parse()?;
+
+        println!("GreeterServer listening on {}", addr);
+
+        Server::builder()
+            .add_service(GreeterServer::new(greeter))
+            .serve(addr)
+            .await?;
+    }
 
     Ok(())
 }

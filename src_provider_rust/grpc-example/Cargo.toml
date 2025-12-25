@@ -2,7 +2,7 @@
 name = "grpc-example"
 version = "0.1.0"
 edition = "2021"
-description = "gRPC client/server example for Azure Managed HSM Provider"
+description = "gRPC client/server example with mTLS via NGINX sidecar and Azure Managed HSM"
 
 [[bin]]
 name = "grpc-server"
@@ -15,8 +15,11 @@ path = "src/client.rs"
 [dependencies]
 tonic = "0.12"
 prost = "0.13"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "net"] }
 tokio-stream = "0.1"
+# Unix Domain Socket support
+hyper-util = "0.1"
+tower = "0.4"
 
 [build-dependencies]
 tonic-build = "0.12"
