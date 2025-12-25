@@ -52,7 +52,31 @@ curl -k https://localhost:8443/
 
 See [nginx-example/README.md](src_provider_rust/nginx-example/README.md) for full setup instructions.
 
-### 2. Certificate Signing Requests (CSR)
+### 2. gRPC mTLS with Sidecar Proxy
+
+Enable gRPC applications to use mTLS with HSM-protected keys via a sidecar proxy pattern:
+
+```
+gRPC Client → NGINX Client Sidecar ═══mTLS═══► NGINX Server Sidecar → gRPC Server
+     │              │                                    │                │
+     └──── UDS ─────┘                                    └──── UDS ───────┘
+        (plaintext)                                         (plaintext)
+```
+
+**Why a sidecar?** gRPC libraries (tonic, grpc-go, etc.) do not support OpenSSL 3.x `store:` URIs. The sidecar pattern allows gRPC apps to benefit from HSM-backed TLS without any code changes.
+
+```bash
+cd src_provider_rust/grpc-example
+./generate-certs.sh   # Generate certs with HSM key
+./start-demo.sh       # Start sidecars + gRPC server
+./run-client.sh       # Test gRPC through mTLS tunnel
+./stop-demo.sh        # Clean up
+```
+
+See [grpc-example/README.md](src_provider_rust/grpc-example/README.md) for full setup and [sidecar-design-deep-dive.md](src_provider_rust/grpc-example/sidecar-design-deep-dive.md) for architecture details.
+
+
+### 3. Certificate Signing Requests (CSR)
 
 Generate CSRs with HSM-protected keys:
 
@@ -64,7 +88,7 @@ openssl req -new \
     -out server.csr
 ```
 
-### 3. Self-Signed Certificates
+### 4. Self-Signed Certificates
 
 ```bash
 openssl req -new -x509 \
@@ -74,7 +98,7 @@ openssl req -new -x509 \
     -out server.crt
 ```
 
-### 4. Digital Signatures
+### 5. Digital Signatures
 
 ```bash
 # Sign a file
@@ -312,6 +336,7 @@ az keyvault role assignment create \
 
 - [Rust Provider README](src_provider_rust/README.md) - Detailed build and configuration
 - [Nginx Example](src_provider_rust/nginx-example/README.md) - TLS with HSM keys
+- [gRPC Example](src_provider_rust/grpc-example/README.md) - mTLS sidecar proxy pattern
 - [Architecture Guide](src_provider_rust/ARCHITECTURE.md) - Technical design
 - [Security](src_provider_rust/README.md#security) - TLS and security considerations
 
