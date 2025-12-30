@@ -4,6 +4,9 @@
 
 set -e
 
+# Clear OPENSSL_CONF to avoid conflicts with any existing config
+unset OPENSSL_CONF
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NGINX_CONF="$SCRIPT_DIR/nginx.conf"
 NGINX_TEMPLATE="$SCRIPT_DIR/nginx.conf.template"
@@ -31,6 +34,12 @@ SERVER_NAME="${SERVER_NAME:-localhost}"
 # Export variables for templates
 export PROJECT_DIR="$SCRIPT_DIR"
 export PROVIDER_PATH="$SCRIPT_DIR/../target/release"
+
+# Create symlink for provider if needed (cargo builds libakv_provider.so but OpenSSL expects akv_provider.so)
+if [ -f "$PROVIDER_PATH/libakv_provider.so" ] && [ ! -f "$PROVIDER_PATH/akv_provider.so" ]; then
+    ln -sf libakv_provider.so "$PROVIDER_PATH/akv_provider.so"
+fi
+
 export HSM_NAME HSM_KEY_NAME NGINX_PORT SERVER_NAME
 
 echo "=== Starting nginx with Azure Managed HSM keyless TLS ==="
@@ -57,11 +66,11 @@ fi
 # Get Azure access token
 if [ -z "$AZURE_CLI_ACCESS_TOKEN" ]; then
     echo "Getting Azure access token..."
-    export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token --output tsv --query accessToken --tenant "$AZURE_TENANT_ID" --resource https://managedhsm.azure.net)
+    export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token --query accessToken -o tsv --resource https://managedhsm.azure.net)
 fi
 
 # Check for certificate
-if [ ! -f "$SCRIPT_DIR/certs/server.crt" ]; then
+if [ ! -f "$SCRIPT_DIR/certs/server-rsa.crt" ] && [ ! -f "$SCRIPT_DIR/certs/server-ec.crt" ]; then
     echo "ERROR: Certificate not found. Run generate-cert.sh first."
     exit 1
 fi
@@ -70,13 +79,19 @@ fi
 mkdir -p "$SCRIPT_DIR/logs"
 mkdir -p "$SCRIPT_DIR/tmp"/{client_body,proxy,fastcgi,uwsgi,scgi}
 
-# Generate nginx.conf from template
-if [ -f "$NGINX_TEMPLATE" ]; then
-    echo "Generating nginx.conf from template..."
-    envsubst '${PROJECT_DIR} ${HSM_NAME} ${HSM_KEY_NAME} ${NGINX_PORT} ${SERVER_NAME}' \
-        < "$NGINX_TEMPLATE" > "$NGINX_CONF"
+# Use existing nginx.conf if present (supports RSA+EC dual servers)
+# Delete nginx.conf to regenerate from template
+if [ ! -f "$NGINX_CONF" ]; then
+    if [ -f "$NGINX_TEMPLATE" ]; then
+        echo "Generating nginx.conf from template..."
+        envsubst '${PROJECT_DIR} ${HSM_NAME} ${HSM_KEY_NAME} ${NGINX_PORT} ${SERVER_NAME}' \
+            < "$NGINX_TEMPLATE" > "$NGINX_CONF"
+    else
+        echo "ERROR: nginx.conf not found and no template available"
+        exit 1
+    fi
 else
-    echo "Warning: nginx.conf.template not found, using existing nginx.conf"
+    echo "Using existing nginx.conf"
 fi
 
 # Generate openssl-provider.cnf from template

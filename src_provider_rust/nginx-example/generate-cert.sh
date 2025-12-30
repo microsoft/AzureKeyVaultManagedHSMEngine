@@ -4,9 +4,17 @@
 
 set -e
 
+# Clear OPENSSL_CONF to avoid conflicts
+unset OPENSSL_CONF
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CERTS_DIR="$SCRIPT_DIR/certs"
 PROVIDER_PATH="$SCRIPT_DIR/../target/release"
+
+# Create symlink for provider if needed (cargo builds libakv_provider.so but OpenSSL expects akv_provider.so)
+if [ -f "$PROVIDER_PATH/libakv_provider.so" ] && [ ! -f "$PROVIDER_PATH/akv_provider.so" ]; then
+    ln -sf libakv_provider.so "$PROVIDER_PATH/akv_provider.so"
+fi
 
 # Load configuration from .env file
 ENV_FILE="$SCRIPT_DIR/.env"
