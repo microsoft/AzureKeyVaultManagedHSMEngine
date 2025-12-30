@@ -122,3 +122,8 @@ echo "=== All certificates generated successfully ==="
 echo ""
 echo "RSA Certificate: $CERTS_DIR/server-rsa.crt (key: $RSA_KEY_NAME)"
 echo "EC Certificate:  $CERTS_DIR/server-ec.crt (key: $EC_KEY_NAME)"
+
+# Create symlinks for backwards compatibility with nginx.conf.template
+# (template uses server.crt, we generate server-rsa.crt)
+ln -sf server-rsa.crt "$CERTS_DIR/server.crt"
+ln -sf server-rsa.csr "$CERTS_DIR/server.csr"

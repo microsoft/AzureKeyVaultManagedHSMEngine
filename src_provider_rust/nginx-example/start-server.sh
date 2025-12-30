@@ -10,7 +10,7 @@ unset OPENSSL_CONF
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NGINX_CONF="$SCRIPT_DIR/nginx.conf"
 NGINX_TEMPLATE="$SCRIPT_DIR/nginx.conf.template"
-OPENSSL_CONF="$SCRIPT_DIR/openssl-provider.cnf"
+OPENSSL_CONF_FILE="$SCRIPT_DIR/openssl-provider.cnf"
 OPENSSL_TEMPLATE="$SCRIPT_DIR/openssl-provider.cnf.template"
 
 # Load configuration from .env file
@@ -27,13 +27,12 @@ fi
 # Configuration with defaults
 HSM_NAME="${HSM_NAME:-ManagedHSMOpenSSLEngine}"
 HSM_KEY_NAME="${HSM_KEY_NAME:-myrsakey}"
-AZURE_TENANT_ID="${AZURE_TENANT_ID:-72f988bf-86f1-41af-91ab-2d7cd011db47}"
 NGINX_PORT="${NGINX_PORT:-8443}"
 SERVER_NAME="${SERVER_NAME:-localhost}"
 
-# Export variables for templates
+# Export variables for templates - use absolute paths
 export PROJECT_DIR="$SCRIPT_DIR"
-export PROVIDER_PATH="$SCRIPT_DIR/../target/release"
+export PROVIDER_PATH="$(cd "$SCRIPT_DIR/../target/release" && pwd)"
 
 # Create symlink for provider if needed (cargo builds libakv_provider.so but OpenSSL expects akv_provider.so)
 if [ -f "$PROVIDER_PATH/libakv_provider.so" ] && [ ! -f "$PROVIDER_PATH/akv_provider.so" ]; then
@@ -75,6 +74,11 @@ if [ ! -f "$SCRIPT_DIR/certs/server-rsa.crt" ] && [ ! -f "$SCRIPT_DIR/certs/serv
     exit 1
 fi
 
+# Ensure server.crt symlink exists for template compatibility
+if [ -f "$SCRIPT_DIR/certs/server-rsa.crt" ] && [ ! -f "$SCRIPT_DIR/certs/server.crt" ]; then
+    ln -sf server-rsa.crt "$SCRIPT_DIR/certs/server.crt"
+fi
+
 # Create required directories
 mkdir -p "$SCRIPT_DIR/logs"
 mkdir -p "$SCRIPT_DIR/tmp"/{client_body,proxy,fastcgi,uwsgi,scgi}
@@ -94,16 +98,16 @@ else
     echo "Using existing nginx.conf"
 fi
 
-# Generate openssl-provider.cnf from template
+# Always regenerate openssl-provider.cnf to ensure absolute paths
 if [ -f "$OPENSSL_TEMPLATE" ]; then
     echo "Generating openssl-provider.cnf from template..."
-    envsubst '${PROVIDER_PATH}' < "$OPENSSL_TEMPLATE" > "$OPENSSL_CONF"
+    envsubst '${PROVIDER_PATH}' < "$OPENSSL_TEMPLATE" > "$OPENSSL_CONF_FILE"
 else
     echo "Warning: openssl-provider.cnf.template not found, using existing config"
 fi
 
-# Set environment variables
-export OPENSSL_CONF="$OPENSSL_CONF"
+# Set environment variables for nginx
+export OPENSSL_CONF="$OPENSSL_CONF_FILE"
 export AKV_LOG_FILE="$SCRIPT_DIR/logs/akv_provider.log"
 export AKV_LOG_LEVEL="3"
 
