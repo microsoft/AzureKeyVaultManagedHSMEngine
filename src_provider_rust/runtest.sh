@@ -33,6 +33,10 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Clear OPENSSL_CONF to avoid conflicts with other OpenSSL configurations
+# The tests use -provider flags to load providers explicitly
+unset OPENSSL_CONF
+
 # Parse arguments
 VALIDATE=0
 USE_DEFAULT_CREDENTIAL=0
@@ -157,13 +161,14 @@ if [[ $USE_DEFAULT_CREDENTIAL -eq 1 ]]; then
     echo "[INFO] Skipping access token acquisition - will use Azure SDK authentication"
     echo "[INFO] Make sure you are logged in with 'az login' or have other credentials configured"
     unset AZURE_CLI_ACCESS_TOKEN
+elif [[ -n "$AZURE_CLI_ACCESS_TOKEN" ]]; then
+    echo "--- Using existing AZURE_CLI_ACCESS_TOKEN ---"
+    echo "[INFO] Using pre-set access token from environment"
 else
     echo "--- Fetching Azure CLI access token ---"
     AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token \
-        --output json \
-        --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47 \
-        --resource https://managedhsm.azure.net 2>/dev/null | \
-        grep -oP '"accessToken":\s*"\K[^"]+' || true)
+        --resource https://managedhsm.azure.net \
+        --query accessToken -o tsv 2>/dev/null || true)
     
     if [[ -z "$AZURE_CLI_ACCESS_TOKEN" ]]; then
         echo -e "${RED}ERROR: Failed to get access token${NC}"

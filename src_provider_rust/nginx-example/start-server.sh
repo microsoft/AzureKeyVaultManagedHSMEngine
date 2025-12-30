@@ -4,10 +4,13 @@
 
 set -e
 
+# Clear OPENSSL_CONF to avoid conflicts with any existing config
+unset OPENSSL_CONF
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NGINX_CONF="$SCRIPT_DIR/nginx.conf"
 NGINX_TEMPLATE="$SCRIPT_DIR/nginx.conf.template"
-OPENSSL_CONF="$SCRIPT_DIR/openssl-provider.cnf"
+OPENSSL_CONF_FILE="$SCRIPT_DIR/openssl-provider.cnf"
 OPENSSL_TEMPLATE="$SCRIPT_DIR/openssl-provider.cnf.template"
 
 # Load configuration from .env file
@@ -23,20 +26,27 @@ fi
 
 # Configuration with defaults
 HSM_NAME="${HSM_NAME:-ManagedHSMOpenSSLEngine}"
-HSM_KEY_NAME="${HSM_KEY_NAME:-myrsakey}"
-AZURE_TENANT_ID="${AZURE_TENANT_ID:-72f988bf-86f1-41af-91ab-2d7cd011db47}"
+RSA_KEY_NAME="${RSA_KEY_NAME:-myrsakey}"
+EC_KEY_NAME="${EC_KEY_NAME:-ecckey}"
 NGINX_PORT="${NGINX_PORT:-8443}"
+NGINX_PORT_EC="${NGINX_PORT_EC:-8444}"
 SERVER_NAME="${SERVER_NAME:-localhost}"
 
-# Export variables for templates
+# Export variables for templates - use absolute paths
 export PROJECT_DIR="$SCRIPT_DIR"
-export PROVIDER_PATH="$SCRIPT_DIR/../target/release"
-export HSM_NAME HSM_KEY_NAME NGINX_PORT SERVER_NAME
+export PROVIDER_PATH="$(cd "$SCRIPT_DIR/../target/release" && pwd)"
+
+# Create symlink for provider if needed (cargo builds libakv_provider.so but OpenSSL expects akv_provider.so)
+if [ -f "$PROVIDER_PATH/libakv_provider.so" ] && [ ! -f "$PROVIDER_PATH/akv_provider.so" ]; then
+    ln -sf libakv_provider.so "$PROVIDER_PATH/akv_provider.so"
+fi
+
+export HSM_NAME RSA_KEY_NAME EC_KEY_NAME NGINX_PORT NGINX_PORT_EC SERVER_NAME
 
 echo "=== Starting nginx with Azure Managed HSM keyless TLS ==="
-echo "HSM:  $HSM_NAME"
-echo "Key:  $HSM_KEY_NAME"
-echo "Port: $NGINX_PORT"
+echo "HSM:      $HSM_NAME"
+echo "RSA Key:  $RSA_KEY_NAME (port $NGINX_PORT)"
+echo "EC Key:   $EC_KEY_NAME (port $NGINX_PORT_EC)"
 echo ""
 
 # Check nginx version (need 1.27+ for OSSL_STORE support)
@@ -57,12 +67,12 @@ fi
 # Get Azure access token
 if [ -z "$AZURE_CLI_ACCESS_TOKEN" ]; then
     echo "Getting Azure access token..."
-    export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token --output tsv --query accessToken --tenant "$AZURE_TENANT_ID" --resource https://managedhsm.azure.net)
+    export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token --query accessToken -o tsv --resource https://managedhsm.azure.net)
 fi
 
-# Check for certificate
-if [ ! -f "$SCRIPT_DIR/certs/server.crt" ]; then
-    echo "ERROR: Certificate not found. Run generate-cert.sh first."
+# Check for certificates
+if [ ! -f "$SCRIPT_DIR/certs/server-rsa.crt" ] && [ ! -f "$SCRIPT_DIR/certs/server-ec.crt" ]; then
+    echo "ERROR: Certificates not found. Run generate-cert.sh first."
     exit 1
 fi
 
@@ -70,25 +80,31 @@ fi
 mkdir -p "$SCRIPT_DIR/logs"
 mkdir -p "$SCRIPT_DIR/tmp"/{client_body,proxy,fastcgi,uwsgi,scgi}
 
-# Generate nginx.conf from template
-if [ -f "$NGINX_TEMPLATE" ]; then
-    echo "Generating nginx.conf from template..."
-    envsubst '${PROJECT_DIR} ${HSM_NAME} ${HSM_KEY_NAME} ${NGINX_PORT} ${SERVER_NAME}' \
-        < "$NGINX_TEMPLATE" > "$NGINX_CONF"
+# Use existing nginx.conf if present (allows custom configs)
+# Delete nginx.conf to regenerate from template
+if [ ! -f "$NGINX_CONF" ]; then
+    if [ -f "$NGINX_TEMPLATE" ]; then
+        echo "Generating nginx.conf from template..."
+        envsubst '${PROJECT_DIR} ${HSM_NAME} ${RSA_KEY_NAME} ${EC_KEY_NAME} ${NGINX_PORT} ${NGINX_PORT_EC} ${SERVER_NAME}' \
+            < "$NGINX_TEMPLATE" > "$NGINX_CONF"
+    else
+        echo "ERROR: nginx.conf not found and no template available"
+        exit 1
+    fi
 else
-    echo "Warning: nginx.conf.template not found, using existing nginx.conf"
+    echo "Using existing nginx.conf"
 fi
 
-# Generate openssl-provider.cnf from template
+# Always regenerate openssl-provider.cnf to ensure absolute paths
 if [ -f "$OPENSSL_TEMPLATE" ]; then
     echo "Generating openssl-provider.cnf from template..."
-    envsubst '${PROVIDER_PATH}' < "$OPENSSL_TEMPLATE" > "$OPENSSL_CONF"
+    envsubst '${PROVIDER_PATH}' < "$OPENSSL_TEMPLATE" > "$OPENSSL_CONF_FILE"
 else
     echo "Warning: openssl-provider.cnf.template not found, using existing config"
 fi
 
-# Set environment variables
-export OPENSSL_CONF="$OPENSSL_CONF"
+# Set environment variables for nginx
+export OPENSSL_CONF="$OPENSSL_CONF_FILE"
 export AKV_LOG_FILE="$SCRIPT_DIR/logs/akv_provider.log"
 export AKV_LOG_LEVEL="3"
 
@@ -106,10 +122,9 @@ if [ -f "$SCRIPT_DIR/logs/nginx.pid" ]; then
     PID=$(cat "$SCRIPT_DIR/logs/nginx.pid")
     echo "nginx started successfully (PID: $PID)"
     echo ""
-    echo "Test with: curl -k https://localhost:${NGINX_PORT}/"
-    echo "Health:    curl -k https://localhost:${NGINX_PORT}/health"
-    echo "Info:      curl -k https://localhost:${NGINX_PORT}/info"
-    echo "Logs:      $SCRIPT_DIR/logs/"
+    echo "RSA Server: curl -k https://localhost:${NGINX_PORT}/"
+    echo "EC Server:  curl -k https://localhost:${NGINX_PORT_EC}/"
+    echo "Logs:       $SCRIPT_DIR/logs/"
 else
     echo "ERROR: nginx failed to start. Check logs:"
     cat "$SCRIPT_DIR/logs/error.log" 2>/dev/null || echo "No error log found"
