@@ -1,18 +1,14 @@
 # Azure Key Vault / Managed HSM OpenSSL Provider
 
-An OpenSSL 3.x Provider that enables TLS applications to use private keys stored in Azure Key Vault or Azure Managed HSM without exposing the keys.
+An OpenSSL 3.x Provider that enables TLS applications to use private keys stored in Azure Key Vault or Azure Managed HSM without exposing the keys. **Private keys never leave the HSM** - all cryptographic operations are performed remotely via the Azure REST API.
 
-## Overview
-
-This provider implements the OpenSSL 3.x Provider API to perform cryptographic operations (RSA and EC signing) using keys stored in Azure Managed HSM. The private key **never leaves the HSM** - all signing operations are performed remotely via the Azure REST API.
-
-### Key Features
+## Key Features
 
 - **Keyless TLS**: Private keys remain in the HSM, only signatures are returned
 - **RSA Support**: RSA-PSS and PKCS#1 v1.5 signing (2048, 3072, 4096 bit keys)
 - **EC Support**: ECDSA signing with P-256, P-384, P-521 curves
 - **OSSL_STORE Integration**: Load keys via URI scheme `managedhsm:<vault>:<keyname>`
-- **Azure Authentication**: Environment variable, Managed Identity, or Azure CLI
+- **Cross-Platform**: Works on Linux and Windows (provider), Linux for nginx keyless TLS
 
 ## Architecture
 
@@ -43,104 +39,82 @@ This provider implements the OpenSSL 3.x Provider API to perform cryptographic o
 
 ## Quick Start
 
-### Prerequisites
-
-- Rust 1.70+ with Cargo
-- OpenSSL 3.x development libraries
-- Azure CLI (for authentication)
-- Azure Managed HSM with RSA and/or EC keys
-
-### Build
+### Build the Provider
 
 ```bash
 cd src_provider_rust
-cargo build --release
+
+# Linux
+./ubuntubuild.sh
+
+# Windows
+winbuild.bat
 ```
 
-The provider library will be at `target/release/libakv_provider.so` (Linux) or `target/release/akv_provider.dll` (Windows).
+### Run Tests
 
-### Configure OpenSSL
+```bash
+# Linux
+./runtest.sh
 
-Create an OpenSSL configuration file to load the provider:
-
-```ini
-openssl_conf = openssl_init
-
-[openssl_init]
-providers = provider_section
-
-[provider_section]
-default = default_section
-base = base_section
-akv_provider = akv_provider_section
-
-[default_section]
-activate = 1
-
-[base_section]
-activate = 1
-
-[akv_provider_section]
-module = /path/to/libakv_provider.so
-activate = 1
+# Windows
+runtest.bat
 ```
 
-### Use with nginx
-
-See [nginx-example/README.md](src_provider_rust/nginx-example/README.md) for detailed instructions.
-
-```nginx
-ssl_certificate_key "store:managedhsm:ManagedHSMOpenSSLEngine:myrsakey";
-```
-
-### Use with gRPC
-
-See [grpc-example/README.md](src_provider_rust/grpc-example/README.md) for mTLS setup with gRPC.
+For detailed build instructions, prerequisites, and configuration options, see [src_provider_rust/README.md](src_provider_rust/README.md).
 
 ## Examples
 
-| Example | Description |
-|---------|-------------|
-| [nginx-example](src_provider_rust/nginx-example/) | Keyless TLS for nginx (RSA & EC) |
-| [grpc-example](src_provider_rust/grpc-example/) | mTLS for gRPC with sidecar pattern |
+| Example | Platform | Description |
+|---------|----------|-------------|
+| [nginx-example](src_provider_rust/nginx-example/) | Linux | Keyless TLS for nginx with RSA & EC keys |
+| [grpc-example](src_provider_rust/grpc-example/) | Linux/Windows | mTLS for gRPC with sidecar pattern |
+
+### nginx Keyless TLS (Linux Only)
+
+```bash
+cd src_provider_rust/nginx-example
+./run-all.sh  # Cleanup + generate certs + start nginx + test
+```
+
+> **Note**: Windows nginx from nginx.org doesn't support OpenSSL providers due to static linking (`no-shared`) and 32-bit build. See [nginx-example/README.md](src_provider_rust/nginx-example/README.md) for details.
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [src_provider_rust/README.md](src_provider_rust/README.md) | Full technical documentation, build details, API reference |
+| [nginx-example/README.md](src_provider_rust/nginx-example/README.md) | nginx keyless TLS setup and configuration |
+| [nginx-example/test-results.md](src_provider_rust/nginx-example/test-results.md) | Test results and platform compatibility notes |
+| [grpc-example/README.md](src_provider_rust/grpc-example/README.md) | gRPC mTLS with sidecar pattern |
 
 ## Authentication
 
-The provider supports multiple authentication methods (in order of precedence):
+The provider supports (in order of precedence):
 
-1. **Environment Variable**: `AZURE_CLI_ACCESS_TOKEN` - Token for Managed HSM
-2. **Azure SDK DefaultAzureCredential**:
-   - Environment variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_SECRET`)
-   - Managed Identity (when running in Azure)
-   - Azure CLI (`az login`)
-
-### Getting a Token
+1. **Environment Variable**: `AZURE_CLI_ACCESS_TOKEN`
+2. **Azure SDK DefaultAzureCredential**: Managed Identity, Azure CLI, Environment Variables
 
 ```bash
+# Quick setup
 export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token \
-    --resource https://managedhsm.azure.net \
-    --query accessToken -o tsv)
+    --resource https://managedhsm.azure.net --query accessToken -o tsv)
 ```
 
 ## Project Structure
 
 ```
-├── src_provider_rust/          # Rust OpenSSL Provider implementation
+├── src_provider_rust/          # Rust OpenSSL Provider
 │   ├── src/                    # Provider source code
-│   │   ├── lib.rs             # Provider entry point
-│   │   ├── store.rs           # OSSL_STORE implementation
-│   │   ├── keymgmt.rs         # Key management
-│   │   ├── signature.rs       # Signature operations
-│   │   └── auth.rs            # Azure authentication
-│   ├── nginx-example/         # nginx keyless TLS example
-│   └── grpc-example/          # gRPC mTLS example
+│   ├── nginx-example/          # nginx keyless TLS example
+│   └── grpc-example/           # gRPC mTLS example
 ├── deprecated/                 # Archived C implementation
-└── .github/                    # GitHub workflows and templates
+└── .github/                    # GitHub workflows
 ```
 
 ## Contributing
 
-This project welcomes contributions. See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for guidelines.
+See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for guidelines.
 
 ## License
 
@@ -148,8 +122,4 @@ MIT License - see [LICENSE.txt](LICENSE.txt)
 
 ## Security
 
-See [SECURITY.md](SECURITY.md) for reporting security vulnerabilities.
-
-## Support
-
-See [SUPPORT.md](SUPPORT.md) for support options.
+See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.

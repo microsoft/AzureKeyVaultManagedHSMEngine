@@ -26,8 +26,10 @@ fi
 
 # Configuration with defaults
 HSM_NAME="${HSM_NAME:-ManagedHSMOpenSSLEngine}"
-HSM_KEY_NAME="${HSM_KEY_NAME:-myrsakey}"
+RSA_KEY_NAME="${RSA_KEY_NAME:-myrsakey}"
+EC_KEY_NAME="${EC_KEY_NAME:-ecckey}"
 NGINX_PORT="${NGINX_PORT:-8443}"
+NGINX_PORT_EC="${NGINX_PORT_EC:-8444}"
 SERVER_NAME="${SERVER_NAME:-localhost}"
 
 # Export variables for templates - use absolute paths
@@ -39,12 +41,12 @@ if [ -f "$PROVIDER_PATH/libakv_provider.so" ] && [ ! -f "$PROVIDER_PATH/akv_prov
     ln -sf libakv_provider.so "$PROVIDER_PATH/akv_provider.so"
 fi
 
-export HSM_NAME HSM_KEY_NAME NGINX_PORT SERVER_NAME
+export HSM_NAME RSA_KEY_NAME EC_KEY_NAME NGINX_PORT NGINX_PORT_EC SERVER_NAME
 
 echo "=== Starting nginx with Azure Managed HSM keyless TLS ==="
-echo "HSM:  $HSM_NAME"
-echo "Key:  $HSM_KEY_NAME"
-echo "Port: $NGINX_PORT"
+echo "HSM:      $HSM_NAME"
+echo "RSA Key:  $RSA_KEY_NAME (port $NGINX_PORT)"
+echo "EC Key:   $EC_KEY_NAME (port $NGINX_PORT_EC)"
 echo ""
 
 # Check nginx version (need 1.27+ for OSSL_STORE support)
@@ -68,27 +70,22 @@ if [ -z "$AZURE_CLI_ACCESS_TOKEN" ]; then
     export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token --query accessToken -o tsv --resource https://managedhsm.azure.net)
 fi
 
-# Check for certificate
+# Check for certificates
 if [ ! -f "$SCRIPT_DIR/certs/server-rsa.crt" ] && [ ! -f "$SCRIPT_DIR/certs/server-ec.crt" ]; then
-    echo "ERROR: Certificate not found. Run generate-cert.sh first."
+    echo "ERROR: Certificates not found. Run generate-cert.sh first."
     exit 1
-fi
-
-# Ensure server.crt symlink exists for template compatibility
-if [ -f "$SCRIPT_DIR/certs/server-rsa.crt" ] && [ ! -f "$SCRIPT_DIR/certs/server.crt" ]; then
-    ln -sf server-rsa.crt "$SCRIPT_DIR/certs/server.crt"
 fi
 
 # Create required directories
 mkdir -p "$SCRIPT_DIR/logs"
 mkdir -p "$SCRIPT_DIR/tmp"/{client_body,proxy,fastcgi,uwsgi,scgi}
 
-# Use existing nginx.conf if present (supports RSA+EC dual servers)
+# Use existing nginx.conf if present (allows custom configs)
 # Delete nginx.conf to regenerate from template
 if [ ! -f "$NGINX_CONF" ]; then
     if [ -f "$NGINX_TEMPLATE" ]; then
         echo "Generating nginx.conf from template..."
-        envsubst '${PROJECT_DIR} ${HSM_NAME} ${HSM_KEY_NAME} ${NGINX_PORT} ${SERVER_NAME}' \
+        envsubst '${PROJECT_DIR} ${HSM_NAME} ${RSA_KEY_NAME} ${EC_KEY_NAME} ${NGINX_PORT} ${NGINX_PORT_EC} ${SERVER_NAME}' \
             < "$NGINX_TEMPLATE" > "$NGINX_CONF"
     else
         echo "ERROR: nginx.conf not found and no template available"
@@ -125,10 +122,9 @@ if [ -f "$SCRIPT_DIR/logs/nginx.pid" ]; then
     PID=$(cat "$SCRIPT_DIR/logs/nginx.pid")
     echo "nginx started successfully (PID: $PID)"
     echo ""
-    echo "Test with: curl -k https://localhost:${NGINX_PORT}/"
-    echo "Health:    curl -k https://localhost:${NGINX_PORT}/health"
-    echo "Info:      curl -k https://localhost:${NGINX_PORT}/info"
-    echo "Logs:      $SCRIPT_DIR/logs/"
+    echo "RSA Server: curl -k https://localhost:${NGINX_PORT}/"
+    echo "EC Server:  curl -k https://localhost:${NGINX_PORT_EC}/"
+    echo "Logs:       $SCRIPT_DIR/logs/"
 else
     echo "ERROR: nginx failed to start. Check logs:"
     cat "$SCRIPT_DIR/logs/error.log" 2>/dev/null || echo "No error log found"

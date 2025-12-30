@@ -1,6 +1,6 @@
 # Nginx configuration template for keyless TLS with Azure Managed HSM
 # This file is processed by envsubst to generate nginx.conf
-# Do not edit nginx.conf directly - edit this template instead
+# Supports both RSA and EC keys
 
 worker_processes 1;
 
@@ -31,38 +31,64 @@ http {
     # SSL settings optimized for HSM
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers on;
-    ssl_ciphers 'ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256';
     
     # Session settings (reduce HSM calls via session resumption)
     ssl_session_cache shared:SSL:10m;
     ssl_session_timeout 1h;
     ssl_session_tickets off;
 
+    # RSA server on port 8443
     server {
         listen ${NGINX_PORT} ssl;
         server_name ${SERVER_NAME};
 
         # Certificate (public) - stored locally
-        ssl_certificate ${PROJECT_DIR}/certs/server.crt;
+        ssl_certificate ${PROJECT_DIR}/certs/server-rsa.crt;
         
         # Private key - stored in Azure Managed HSM
         # The "store:" prefix tells nginx to use OSSL_STORE_open()
-        # which invokes our provider's store loader
-        ssl_certificate_key "store:managedhsm:${HSM_NAME}:${HSM_KEY_NAME}";
+        ssl_certificate_key "store:managedhsm:${HSM_NAME}:${RSA_KEY_NAME}";
 
         location / {
             default_type text/plain;
-            return 200 'Hello from Nginx with Azure Managed HSM keyless TLS!\n\nServer Time: $time_local\nSSL Protocol: $ssl_protocol\nSSL Cipher: $ssl_cipher\nHSM: ${HSM_NAME}\nKey: ${HSM_KEY_NAME}\n';
+            return 200 'Hello from Nginx with Azure Managed HSM keyless TLS!\n\nServer Time: $time_local\nSSL Protocol: $ssl_protocol\nSSL Cipher: $ssl_cipher\nHSM: ${HSM_NAME}\nKey: ${RSA_KEY_NAME} (RSA)\n';
         }
 
         location /health {
             default_type application/json;
-            return 200 '{"status": "healthy", "ssl": true, "hsm": "${HSM_NAME}", "key": "${HSM_KEY_NAME}"}\n';
+            return 200 '{"status": "healthy", "ssl": true, "hsm": "${HSM_NAME}", "key": "${RSA_KEY_NAME}", "type": "RSA"}\n';
         }
 
         location /info {
             default_type application/json;
-            return 200 '{"server": "${SERVER_NAME}", "port": ${NGINX_PORT}, "hsm": "${HSM_NAME}", "key": "${HSM_KEY_NAME}"}\n';
+            return 200 '{"server": "${SERVER_NAME}", "port": ${NGINX_PORT}, "hsm": "${HSM_NAME}", "key": "${RSA_KEY_NAME}", "type": "RSA"}\n';
+        }
+    }
+
+    # EC server on port 8444
+    server {
+        listen ${NGINX_PORT_EC} ssl;
+        server_name ${SERVER_NAME};
+
+        # Certificate (public) - stored locally
+        ssl_certificate ${PROJECT_DIR}/certs/server-ec.crt;
+        
+        # Private key - stored in Azure Managed HSM
+        ssl_certificate_key "store:managedhsm:${HSM_NAME}:${EC_KEY_NAME}";
+
+        location / {
+            default_type text/plain;
+            return 200 'Hello from Nginx with Azure Managed HSM keyless TLS!\n\nServer Time: $time_local\nSSL Protocol: $ssl_protocol\nSSL Cipher: $ssl_cipher\nHSM: ${HSM_NAME}\nKey: ${EC_KEY_NAME} (EC)\n';
+        }
+
+        location /health {
+            default_type application/json;
+            return 200 '{"status": "healthy", "ssl": true, "hsm": "${HSM_NAME}", "key": "${EC_KEY_NAME}", "type": "EC"}\n';
+        }
+
+        location /info {
+            default_type application/json;
+            return 200 '{"server": "${SERVER_NAME}", "port": ${NGINX_PORT_EC}, "hsm": "${HSM_NAME}", "key": "${EC_KEY_NAME}", "type": "EC"}\n';
         }
     }
 }

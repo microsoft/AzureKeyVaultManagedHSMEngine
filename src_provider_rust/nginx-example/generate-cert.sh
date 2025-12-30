@@ -57,7 +57,7 @@ if [ -z "$AZURE_CLI_ACCESS_TOKEN" ]; then
 fi
 
 # Create certs directory
-mkdir -p "$CERTS_DIR"
+mkdir -p "$CERTS_DIR" "$SCRIPT_DIR/logs"
 
 # Create extensions file for SAN
 cat > "$CERTS_DIR/server.ext" << EXTEOF

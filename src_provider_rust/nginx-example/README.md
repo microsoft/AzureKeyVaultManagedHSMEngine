@@ -67,16 +67,32 @@ sudo apt update && sudo apt install -y nginx
 
 ## Quick Start
 
+### One-liner (recommended)
+
+After first-time setup, run the complete test with a single command:
+
+```bash
+./run-all.sh
+```
+
+This will:
+1. Clean up any previous state
+2. Generate RSA and EC certificates
+3. Start nginx with both servers
+4. Run the test client
+
+### Step-by-step
+
 1. **Build the provider** (from the parent directory):
    ```bash
    cd ..
    cargo build --release
    ```
 
-2. **Configure your environment**:
+2. **Configure your environment** (first time only):
    ```bash
    ./setup-env.sh
-   # Edit .env with your HSM name, key names, and tenant ID
+   # Edit .env with your HSM name, key names, etc.
    ```
 
 3. **Generate certificates** (both RSA and EC):
@@ -91,22 +107,17 @@ sudo apt update && sudo apt install -y nginx
 
 5. **Test the connections** (both RSA and EC):
    ```bash
-   # Test both servers
    ./test-client.sh
-   
-   # Or test individually:
-   # RSA server (port 8443)
-   curl -k https://localhost:8443/
-   curl -k https://localhost:8443/health
-   
-   # EC server (port 8444)
-   curl -k https://localhost:8444/
-   curl -k https://localhost:8444/health
    ```
 
 6. **Stop nginx**:
    ```bash
    ./stop-server.sh
+   ```
+
+7. **Clean up** (remove all generated files):
+   ```bash
+   ./cleanup.sh
    ```
 
 ## Configuration
@@ -118,7 +129,8 @@ All settings are configured in `.env` (copy from `.env.example`):
 | `HSM_NAME` | Azure Managed HSM name | `ManagedHSMOpenSSLEngine` |
 | `RSA_KEY_NAME` | RSA key name in HSM | `myrsakey` |
 | `EC_KEY_NAME` | EC key name in HSM | `ecckey` |
-| `AZURE_TENANT_ID` | Azure tenant ID | (Microsoft tenant) |
+| `NGINX_PORT` | RSA server port | `8443` |
+| `NGINX_PORT_EC` | EC server port | `8444` |
 | `CERT_CN` | Certificate common name | `localhost` |
 | `CERT_DAYS` | Certificate validity | `365` |
 
@@ -126,17 +138,27 @@ All settings are configured in `.env` (copy from `.env.example`):
 
 | File | Description |
 |------|-------------|
-| `.env.example` | Template configuration (copy to .env) |
-| `.env` | Local configuration (git-ignored) |
-| `nginx.conf` | nginx config with RSA (8443) and EC (8444) servers |
-| `openssl-provider.cnf` | OpenSSL configuration to load the AKV provider |
+| `run-all.sh` | **One-liner**: cleanup + generate certs + start server + test |
+| `cleanup.sh` | Remove all generated files and stop nginx |
 | `generate-cert.sh` | Generate both RSA and EC certificates signed by HSM keys |
-| `setup-env.sh` | Create .env from template |
 | `start-server.sh` | Start nginx with proper environment |
 | `stop-server.sh` | Stop nginx |
 | `test-client.sh` | Test both RSA and EC TLS connections |
-| `certs/server-rsa.crt` | RSA certificate (generated) |
-| `certs/server-ec.crt` | EC certificate (generated) |
+| `setup-env.sh` | Create .env from template (first-time setup) |
+| `.env.example` | Template configuration |
+| `.env` | Local configuration (git-ignored) |
+| `nginx.conf.template` | nginx config template (dual RSA/EC servers) |
+| `openssl-provider.cnf.template` | OpenSSL provider config template |
+
+### Generated Files (created by scripts)
+
+| File | Description |
+|------|-------------|
+| `nginx.conf` | Generated nginx config |
+| `openssl-provider.cnf` | Generated OpenSSL config |
+| `certs/server-rsa.crt` | RSA certificate |
+| `certs/server-ec.crt` | EC certificate |
+| `logs/` | nginx and provider logs |
 
 ## How It Works
 
@@ -175,14 +197,14 @@ so that normal RSA/EC public key operations work correctly.
 
 ### Environment Variables
 
-The following environment variables must be set:
+The following environment variables are set automatically by the scripts:
 
 | Variable | Description |
 |----------|-------------|
 | `AZURE_CLI_ACCESS_TOKEN` | Azure access token for HSM authentication |
 | `OPENSSL_CONF` | Path to `openssl-provider.cnf` |
-| `AKV_LOG_FILE` | (Optional) Provider log file path |
-| `AKV_LOG_LEVEL` | (Optional) Log level (0-3) |
+| `AKV_LOG_FILE` | Provider log file path |
+| `AKV_LOG_LEVEL` | Log level (0-3) |
 
 The `nginx.conf` includes `env` directives to pass these to worker processes:
 
@@ -191,50 +213,53 @@ env AZURE_CLI_ACCESS_TOKEN;
 env OPENSSL_CONF;
 ```
 
-## Testing Both Key Types
-
-The `test-client.sh` script tests both RSA and EC servers:
+## Example Output
 
 ```bash
-$ ./test-client.sh
+$ ./run-all.sh
+
+=== Cleaning up nginx-example ===
+Stopping nginx (PID: 12345)...
+Removing certificates...
+Removing logs...
+Cleanup complete!
+
+=== Generating certificates using Azure Managed HSM ===
+HSM:     ManagedHSMOpenSSLEngine
+RSA Key: myrsakey
+EC Key:  ecckey
+...
+
+=== Starting nginx with Azure Managed HSM keyless TLS ===
+HSM:      ManagedHSMOpenSSLEngine
+RSA Key:  myrsakey (port 8443)
+EC Key:   ecckey (port 8444)
+
+nginx started successfully (PID: 12346)
 
 ========================================
   Testing Nginx Keyless TLS with HSM
 ========================================
 
-========================================
   Testing RSA Server (port 8443)
-========================================
-
---- HTTPS Request ---
-Hello from Nginx with Azure Managed HSM keyless TLS!
-
-Server Time: 29/Dec/2025:00:28:43 +0000
-SSL Protocol: TLSv1.3
-SSL Cipher: TLS_AES_256_GCM_SHA384
-Key Type: RSA
-HSM: ManagedHSMOpenSSLEngine
-Key: myrsakey
 ✓ HTTPS connection successful
+✓ Health check passed
+✓ Certificate key type matches expected (RSA)
 
-========================================
   Testing EC Server (port 8444)
-========================================
-
---- HTTPS Request ---
-Hello from Nginx with Azure Managed HSM keyless TLS!
-
-Server Time: 29/Dec/2025:00:28:45 +0000
-SSL Protocol: TLSv1.3
-SSL Cipher: TLS_AES_256_GCM_SHA384
-Key Type: EC (P-256)
-HSM: ManagedHSMOpenSSLEngine
-Key: ecckey
 ✓ HTTPS connection successful
+✓ Health check passed
+✓ Certificate key type matches expected (EC)
 
 ========================================
   All Tests Complete
 ========================================
+
+Summary:
+  - RSA Server (port 8443): Using key 'myrsakey' from Azure Managed HSM
+  - EC Server (port 8444):  Using key 'ecckey' from Azure Managed HSM
+
+Both servers use keyless TLS where the private key never leaves the HSM.
 ```
 
 ## Security Notes
@@ -242,9 +267,8 @@ Key: ecckey
 1. **Private key protection**: The private key never leaves the HSM. Only signing
    operations are performed by the HSM.
 
-2. **Access token**: The access token is passed via environment variable. In
-   production, consider using Managed Identity or a more secure token refresh
-   mechanism.
+2. **Access token**: The access token is obtained via Azure CLI. In production,
+   consider using Managed Identity or a more secure token refresh mechanism.
 
 3. **TLS settings**: The example uses secure defaults (TLS 1.2/1.3, strong ciphers)
    but review for your specific security requirements.
@@ -322,3 +346,58 @@ akv_provider = akv_provider_section  # Listed LAST - only for HSM keys
 This ensures:
 - Normal RSA/EC public key operations → handled by default provider ✅
 - Keys loaded via `managedhsm:` URI → handled by AKV provider ✅
+
+## Platform Compatibility
+
+### Linux (Recommended) ✅
+
+The nginx-example works well on Linux with the official nginx mainline packages:
+
+| Platform | nginx | OpenSSL | Status |
+|----------|-------|---------|--------|
+| Ubuntu 24.04 (x86_64) | 1.27+ (64-bit, dynamic) | 3.0.x | ✅ Fully supported |
+| Ubuntu 22.04 (x86_64) | 1.27+ (64-bit, dynamic) | 3.0.x | ✅ Fully supported |
+| Debian 12 (x86_64) | 1.27+ (64-bit, dynamic) | 3.0.x | ✅ Fully supported |
+
+Key requirements:
+- nginx dynamically linked with OpenSSL (`libssl.so.3`, `libcrypto.so.3`)
+- OpenSSL 3.x provider support
+- nginx 1.27+ for OSSL_STORE support
+
+### Windows ❌ (Not Supported)
+
+**nginx on Windows does NOT work with OpenSSL 3.x providers** due to:
+
+1. **32-bit binary**: The official nginx.org Windows binary is built as 32-bit (x86)
+
+2. **Static OpenSSL linking**: OpenSSL is compiled with `no-shared` flag, embedding it directly into nginx.exe
+
+**Evidence from nginx source code:**
+- [auto/lib/openssl/makefile.msvc](https://github.com/nginx/nginx/blob/master/auto/lib/openssl/makefile.msvc): `no-shared no-threads`
+- [auto/lib/openssl/make](https://github.com/nginx/nginx/blob/master/auto/lib/openssl/make): Default `VC-WIN32` target
+
+This means:
+   - Cannot use external OpenSSL providers
+   - Cannot load `akv_provider.so` at runtime
+   - No `OSSL_STORE_open()` provider support
+
+```
+# Official nginx build for Windows is 32-bit and statically linked with OpenSSL:
+nginx.exe: PE32 executable (console) Intel 80386, statically linked
+```
+
+**Workarounds** (not recommended):
+- Build nginx from source on Windows with dynamic OpenSSL 3.x linking (complex)
+- Use a different web server that supports OpenSSL 3.x providers
+- Use Linux (VM, WSL2, or container)
+
+### macOS (Untested)
+
+Should work with Homebrew nginx if dynamically linked with OpenSSL 3.x. Untested.
+
+## References
+
+- [nginx PR #436](https://github.com/nginx/nginx/pull/436) - The PR that added `store:` prefix support for OSSL_STORE keys (merged May 2025)
+- [nginx-tests PR #16](https://github.com/nginx/nginx-tests/pull/16) - Test suite for provider keys
+- [nginx trac #2449](https://trac.nginx.org/nginx/ticket/2449) - Original feature request for OpenSSL 3.x provider support
+- [test-results.md](test-results.md) - Detailed test results and PR summary

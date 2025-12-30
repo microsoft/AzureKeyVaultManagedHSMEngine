@@ -653,3 +653,4 @@ openssl req -new -key "managedhsm:ManagedHSMOpenSSLEngine:ecckey" -subj "/CN=Tes
 # List available keys in HSM
 az keyvault key list --hsm-name ManagedHSMOpenSSLEngine --query "[].{name:name, kty:kty}" -o table
 ```
+

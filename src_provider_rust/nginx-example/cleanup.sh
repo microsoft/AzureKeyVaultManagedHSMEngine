@@ -9,7 +9,7 @@ echo "=== Cleaning up nginx-example ==="
 if [ -f "$SCRIPT_DIR/logs/nginx.pid" ]; then
     PID=$(cat "$SCRIPT_DIR/logs/nginx.pid")
     echo "Stopping nginx (PID: $PID)..."
-    kill "$PID" 2>/dev/null
+    kill "$PID" 2>/dev/null || true
     sleep 1
 fi
 
@@ -30,5 +30,10 @@ if [ -d "$SCRIPT_DIR/tmp" ]; then
     echo "Removing tmp files..."
     rm -rf "$SCRIPT_DIR/tmp"/*
 fi
+
+# Clean up generated config files
+echo "Removing generated configs..."
+rm -f "$SCRIPT_DIR/nginx.conf"
+rm -f "$SCRIPT_DIR/openssl-provider.cnf"
 
 echo "Cleanup complete!"
