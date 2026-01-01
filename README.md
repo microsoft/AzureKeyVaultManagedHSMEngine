@@ -1,41 +1,15 @@
 # Azure Key Vault / Managed HSM OpenSSL Provider
 
-An OpenSSL 3.x Provider that enables TLS applications to use private keys stored in Azure Key Vault or Azure Managed HSM without exposing the keys. **Private keys never leave the HSM** - all cryptographic operations are performed remotely via the Azure REST API.
+An Azure Managed HSM Provider compatible with OpenSSL 3.x that enables applications to use private keys stored in Azure Managed HSM without exposing the keys. **Private keys never leave the HSM** - all cryptographic operations are performed remotely via the Azure REST API.
 
 ## Key Features
-
-- **Keyless TLS**: Private keys remain in the HSM, only signatures are returned
+- **Support OpenSSL 3.0x Provider** In OpenSSL 3.0 and later, [Providers](https://docs.openssl.org/master/man7/provider) are the new way the library handles cryptographic algorithms. Supports include the self-signed x509 certificate with private keys in Azure Managed HSM. Details see [src_provider_rust/runtest.sh](src_provider_rust/runtest.sh) and [src_provider_rust/runtest.bat](src_provider_rust/runtest.bat).
+- **NGINX/gRPC Keyless TLS (Transport Layer Security) Support (Linux only)**: During TLS handshake, private keys never leave the Azure Managed HSM. The private key is loaded via [OSSL_STORE integration](https://docs.openssl.org/master/man7/ossl_store). Details see [nginx-example](src_provider_rust/nginx-example/) and [grpc-example](src_provider_rust/grpc-example/)
 - **RSA Support**: RSA-PSS and PKCS#1 v1.5 signing (2048, 3072, 4096 bit keys)
 - **EC Support**: ECDSA signing with P-256, P-384, P-521 curves
-- **OSSL_STORE Integration**: Load keys via URI scheme `managedhsm:<vault>:<keyname>`
-- **Cross-Platform**: Works on Linux and Windows (provider), Linux for nginx keyless TLS
+- **RUST Cross-Platform support**: Works on Linux and Windows
+- **AI enlightened** The Rust version provider is 100% built by Github Copilot (See the commits history, NO HUMAN DEVELOPER can ever develop in such a intensive way). See also [.github/copilot-instructions.md](.github/copilot-instructions.md)
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Your Application                              │
-│              (nginx, gRPC, curl, custom app)                    │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │                    OpenSSL 3.x                           │    │
-│  │    ssl_certificate_key "store:managedhsm:vault:key"     │    │
-│  └────────────────────┬────────────────────────────────────┘    │
-│                       │                                          │
-│  ┌────────────────────▼────────────────────────────────────┐    │
-│  │              AKV Provider (Rust)                         │    │
-│  │    OSSL_STORE → Key Management → Signature Operations   │    │
-│  └────────────────────┬────────────────────────────────────┘    │
-└───────────────────────┼──────────────────────────────────────────┘
-                        │ HTTPS (REST API)
-                        ▼
-              ┌─────────────────────────┐
-              │   Azure Managed HSM     │
-              │   ┌─────────────────┐   │
-              │   │  RSA / EC Keys  │   │
-              │   │  (never leave)  │   │
-              │   └─────────────────┘   │
-              └─────────────────────────┘
-```
 
 ## Quick Start
 
