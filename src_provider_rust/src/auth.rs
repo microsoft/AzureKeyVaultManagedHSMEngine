@@ -135,9 +135,15 @@ impl Default for AccessToken {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+    use once_cell::sync::Lazy;
+
+    // Mutex to serialize access to AZURE_CLI_ACCESS_TOKEN env var across all tests
+    static ENV_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
     #[test]
     fn test_access_token_creation() {
@@ -147,16 +153,20 @@ mod tests {
 
     #[test]
     fn test_access_token_from_env_missing() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        
         // Clear the environment variable if it exists
         env::remove_var("AZURE_CLI_ACCESS_TOKEN");
 
         let result = AccessToken::from_env();
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("not set"));
+        assert!(result.err().unwrap().contains("not set"));
     }
 
     #[test]
     fn test_access_token_from_env_present() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        
         // Set a test token
         env::set_var("AZURE_CLI_ACCESS_TOKEN", "test_token_12345");
 
@@ -172,12 +182,14 @@ mod tests {
 
     #[test]
     fn test_access_token_from_env_empty() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        
         // Set an empty token
         env::set_var("AZURE_CLI_ACCESS_TOKEN", "");
 
         let result = AccessToken::from_env();
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("empty"));
+        assert!(result.err().unwrap().contains("empty"));
 
         // Clean up
         env::remove_var("AZURE_CLI_ACCESS_TOKEN");
@@ -185,6 +197,8 @@ mod tests {
 
     #[test]
     fn test_default_credential_integration() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        
         // This test requires Azure credentials to be configured
         // It will be skipped in CI unless credentials are available
         if env::var("AZURE_CLI_ACCESS_TOKEN").is_ok() 
