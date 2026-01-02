@@ -170,3 +170,6 @@ mod tests {
         assert_eq!(PROVIDER_VERSION, "0.1.0");
     }
 }
+
+#[cfg(test)]
+mod tests_negative;

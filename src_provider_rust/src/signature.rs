@@ -710,7 +710,16 @@ pub unsafe extern "C" fn akv_signature_digest_verify_init(
     vkey: *mut c_void,
     _params: *const OsslParam,
 ) -> c_int {
-    if vctx.is_null() || vkey.is_null() {
+    let md_str = if mdname.is_null() { "<null>".to_string() } else { CStr::from_ptr(mdname).to_string_lossy().to_string() };
+    log::info!(">>> akv_signature_digest_verify_init CALLED: vctx={:p}, mdname={}, vkey={:p}", vctx, md_str, vkey);
+
+    if vctx.is_null() {
+        log::error!("akv_signature_digest_verify_init: vctx is null");
+        return 0;
+    }
+
+    if vkey.is_null() {
+        log::error!("akv_signature_digest_verify_init: vkey is null");
         return 0;
     }
 
@@ -727,32 +736,41 @@ pub unsafe extern "C" fn akv_signature_digest_verify_init(
     }));
     ctx.operation = EVP_PKEY_OP_VERIFY;
 
-    // Set digest if provided
-    if !mdname.is_null() {
-        if let Ok(name) = CStr::from_ptr(mdname).to_str() {
-            ctx.md_name = Some(name.to_string());
-
-            // Compute algorithm identifier for X.509 operations
-            ctx.compute_algorithm_id();
-
-            // Create and initialize hasher with the digest algorithm
-            let md = match MessageDigest::from_name(name) {
-                Some(md) => md,
-                None => {
-                    log::error!("Unknown digest algorithm: {}", name);
-                    return 0;
-                }
-            };
-
-            match Hasher::new(md) {
-                Ok(hasher) => {
-                    ctx.hasher = Some(hasher);
-                }
-                Err(e) => {
-                    log::error!("Failed to create hasher: {}", e);
-                    return 0;
-                }
+    // Get digest name, defaulting to SHA256 if not provided
+    let name = if mdname.is_null() {
+        log::debug!("digest_verify_init: mdname is null, defaulting to SHA256");
+        "SHA256"
+    } else {
+        match CStr::from_ptr(mdname).to_str() {
+            Ok(n) => n,
+            Err(_) => {
+                log::error!("Invalid mdname encoding");
+                return 0;
             }
+        }
+    };
+
+    ctx.md_name = Some(name.to_string());
+
+    // Compute algorithm identifier for X.509 operations
+    ctx.compute_algorithm_id();
+
+    // Create and initialize hasher with the digest algorithm
+    let md = match MessageDigest::from_name(name) {
+        Some(md) => md,
+        None => {
+            log::error!("Unknown digest algorithm: {}", name);
+            return 0;
+        }
+    };
+
+    match Hasher::new(md) {
+        Ok(hasher) => {
+            ctx.hasher = Some(hasher);
+        }
+        Err(e) => {
+            log::error!("Failed to create hasher: {}", e);
+            return 0;
         }
     }
 
