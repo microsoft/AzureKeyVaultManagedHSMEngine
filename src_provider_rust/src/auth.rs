@@ -11,6 +11,33 @@ use once_cell::sync::Lazy;
 use tokio::runtime::Runtime;
 
 const MANAGED_HSM_SCOPE: &str = "https://managedhsm.azure.net/.default";
+const KEY_VAULT_SCOPE: &str = "https://vault.azure.net/.default";
+
+/// Vault type enumeration - distinguishes between Azure Key Vault and Managed HSM
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum VaultType {
+    #[default]
+    ManagedHsm,
+    KeyVault,
+}
+
+impl VaultType {
+    /// Get the OAuth2 scope for this vault type
+    pub fn scope(&self) -> &'static str {
+        match self {
+            VaultType::ManagedHsm => MANAGED_HSM_SCOPE,
+            VaultType::KeyVault => KEY_VAULT_SCOPE,
+        }
+    }
+
+    /// Get the Azure domain for this vault type
+    pub fn domain(&self) -> &'static str {
+        match self {
+            VaultType::ManagedHsm => "managedhsm.azure.net",
+            VaultType::KeyVault => "vault.azure.net",
+        }
+    }
+}
 
 // Lazily-initialized Tokio runtime (reused across all token acquisitions)
 // Using a current-thread runtime is sufficient for token acquisition and reduces overhead
@@ -65,14 +92,16 @@ impl AccessToken {
         &self.token
     }
 
-    /// Get access token using Azure SDK DefaultAzureCredential
+    /// Get access token using Azure SDK DefaultAzureCredential for a specific vault type
     /// This will try multiple authentication methods in order:
     /// 1. Environment variables (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_CLIENT_SECRET)
     /// 2. Managed Identity (when running in Azure)
     /// 3. Azure CLI
     /// 4. Azure PowerShell
-    pub fn from_default_credential() -> Result<Self, String> {
-        log::trace!("AccessToken::from_default_credential");
+    pub fn from_default_credential_for_vault(vault_type: VaultType) -> Result<Self, String> {
+        log::trace!("AccessToken::from_default_credential_for_vault({:?})", vault_type);
+
+        let scope = vault_type.scope();
 
         // Use the lazily-initialized static runtime (reused across calls for efficiency)
         let token = TOKIO_RUNTIME.block_on(async {
@@ -82,10 +111,10 @@ impl AccessToken {
                     format!("Failed to create credential: {}", e)
                 })?;
             
-            log::debug!("Requesting token for scope: {}", MANAGED_HSM_SCOPE);
+            log::debug!("Requesting token for scope: {}", scope);
             
             let token_response = credential
-                .get_token(&[MANAGED_HSM_SCOPE])
+                .get_token(&[scope])
                 .await
                 .map_err(|e| {
                     log::error!("Failed to get token from DefaultAzureCredential: {}", e);
@@ -101,17 +130,28 @@ impl AccessToken {
         }
 
         log::debug!(
-            "AccessToken::from_default_credential -> OK (token length: {})",
+            "AccessToken::from_default_credential_for_vault -> OK (token length: {})",
             token.len()
         );
 
         Ok(Self { token })
     }
 
-    /// Get access token - tries environment variable first (fast), falls back to DefaultAzureCredential
+    /// Get access token using Azure SDK DefaultAzureCredential (defaults to Managed HSM)
+    /// This will try multiple authentication methods in order:
+    /// 1. Environment variables (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_CLIENT_SECRET)
+    /// 2. Managed Identity (when running in Azure)
+    /// 3. Azure CLI
+    /// 4. Azure PowerShell
+    pub fn from_default_credential() -> Result<Self, String> {
+        Self::from_default_credential_for_vault(VaultType::ManagedHsm)
+    }
+
+    /// Get access token for a specific vault type - tries environment variable first (fast), 
+    /// falls back to DefaultAzureCredential
     /// This is the recommended method for production use
-    pub fn acquire() -> Result<Self, String> {
-        log::trace!("AccessToken::acquire");
+    pub fn acquire_for_vault(vault_type: VaultType) -> Result<Self, String> {
+        log::trace!("AccessToken::acquire_for_vault({:?})", vault_type);
 
         // Try environment variable first (fast path for dev/testing)
         match Self::from_env() {
@@ -125,7 +165,13 @@ impl AccessToken {
         }
 
         // Fall back to DefaultAzureCredential
-        Self::from_default_credential()
+        Self::from_default_credential_for_vault(vault_type)
+    }
+
+    /// Get access token - tries environment variable first (fast), falls back to DefaultAzureCredential
+    /// This is the recommended method for production use (defaults to Managed HSM)
+    pub fn acquire() -> Result<Self, String> {
+        Self::acquire_for_vault(VaultType::ManagedHsm)
     }
 }
 
@@ -181,6 +227,24 @@ mod tests {
 
         // Clean up
         env::remove_var("AZURE_CLI_ACCESS_TOKEN");
+    }
+
+    #[test]
+    fn test_vault_type_scope() {
+        assert_eq!(VaultType::ManagedHsm.scope(), "https://managedhsm.azure.net/.default");
+        assert_eq!(VaultType::KeyVault.scope(), "https://vault.azure.net/.default");
+    }
+
+    #[test]
+    fn test_vault_type_domain() {
+        assert_eq!(VaultType::ManagedHsm.domain(), "managedhsm.azure.net");
+        assert_eq!(VaultType::KeyVault.domain(), "vault.azure.net");
+    }
+
+    #[test]
+    fn test_vault_type_default() {
+        let vt: VaultType = Default::default();
+        assert_eq!(vt, VaultType::ManagedHsm);
     }
 
     #[test]

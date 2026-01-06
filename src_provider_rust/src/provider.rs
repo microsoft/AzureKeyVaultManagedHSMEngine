@@ -4,6 +4,7 @@
 // Provider core functionality
 // Corresponds to akv_provider.c
 
+use crate::auth::VaultType;
 use openssl::pkey::{PKey, Public};
 use std::os::raw::c_void;
 
@@ -27,6 +28,7 @@ pub struct AkvKey {
     pub keyvault_name: Option<String>,
     pub key_name: Option<String>,
     pub key_version: Option<String>,
+    pub vault_type: VaultType,
 }
 
 impl AkvKey {
@@ -38,14 +40,24 @@ impl AkvKey {
             keyvault_name: None,
             key_name: None,
             key_version: None,
+            vault_type: VaultType::ManagedHsm, // Default for backward compatibility
         }
     }
 
-    /// Set key metadata (vault name, key name, version)
+    /// Set key metadata (vault name, key name, version) - defaults to ManagedHsm
     pub fn set_metadata(&mut self, vault: &str, name: &str, version: Option<&str>) -> bool {
         self.keyvault_name = Some(vault.to_string());
         self.key_name = Some(name.to_string());
         self.key_version = version.map(|v| v.to_string());
+        true
+    }
+
+    /// Set key metadata with explicit vault type
+    pub fn set_metadata_with_type(&mut self, vault: &str, name: &str, version: Option<&str>, vault_type: VaultType) -> bool {
+        self.keyvault_name = Some(vault.to_string());
+        self.key_name = Some(name.to_string());
+        self.key_version = version.map(|v| v.to_string());
+        self.vault_type = vault_type;
         true
     }
 
@@ -68,6 +80,7 @@ pub struct AkvAesKey {
     pub key_name: Option<String>,
     pub key_version: Option<String>,
     pub key_bits: usize,
+    pub vault_type: VaultType,
 }
 
 impl AkvAesKey {
@@ -78,6 +91,7 @@ impl AkvAesKey {
             key_name: None,
             key_version: None,
             key_bits: 256, // Default to 256-bit
+            vault_type: VaultType::ManagedHsm,
         }
     }
 
@@ -87,6 +101,14 @@ impl AkvAesKey {
         self.key_version = version.map(|v| v.to_string());
         self.key_bits = bits;
     }
+
+    pub fn set_metadata_with_type(&mut self, vault: &str, name: &str, version: Option<&str>, bits: usize, vault_type: VaultType) {
+        self.keyvault_name = Some(vault.to_string());
+        self.key_name = Some(name.to_string());
+        self.key_version = version.map(|v| v.to_string());
+        self.key_bits = bits;
+        self.vault_type = vault_type;
+    }
 }
 
 /// URI parsing result for key-value style URIs
@@ -94,6 +116,7 @@ pub struct ParsedUri {
     pub vault_name: String,
     pub key_name: String,
     pub key_version: Option<String>,
+    pub vault_type: VaultType,
 }
 
 /// Parse a Key Vault URI
@@ -102,6 +125,7 @@ fn has_case_prefix(input: &str, prefix: &str) -> bool {
 }
 
 /// Parse URI in key-value format: akv:type=managedhsm,vault=name,name=keyname,version=v1
+/// or akv:type=keyvault,vault=name,name=keyname,version=v1
 pub fn parse_uri_keyvalue(uri: &str) -> Result<ParsedUri, String> {
     if !has_case_prefix(uri, "akv:") {
         return Err("URI must start with 'akv:' prefix".to_string());
@@ -111,7 +135,7 @@ pub fn parse_uri_keyvalue(uri: &str) -> Result<ParsedUri, String> {
     let mut vault_name: Option<String> = None;
     let mut key_name: Option<String> = None;
     let mut key_version: Option<String> = None;
-    let mut type_validated = false;
+    let mut vault_type = VaultType::ManagedHsm; // Default for backward compatibility
 
     for token in cursor.split(',') {
         if let Some(equals_pos) = token.find('=') {
@@ -120,10 +144,13 @@ pub fn parse_uri_keyvalue(uri: &str) -> Result<ParsedUri, String> {
 
             match key.to_lowercase().as_str() {
                 "keyvault_type" | "type" => {
-                    if !value.eq_ignore_ascii_case("managedhsm") {
-                        return Err(format!("Unsupported keyvault type: {}", value));
+                    if value.eq_ignore_ascii_case("managedhsm") || value.eq_ignore_ascii_case("hsm") {
+                        vault_type = VaultType::ManagedHsm;
+                    } else if value.eq_ignore_ascii_case("keyvault") || value.eq_ignore_ascii_case("kv") {
+                        vault_type = VaultType::KeyVault;
+                    } else {
+                        return Err(format!("Unsupported keyvault type: {}. Use 'managedhsm', 'hsm', 'keyvault', or 'kv'", value));
                     }
-                    type_validated = true;
                 }
                 "keyvault_name" | "vault" => {
                     vault_name = Some(value.to_string());
@@ -141,28 +168,30 @@ pub fn parse_uri_keyvalue(uri: &str) -> Result<ParsedUri, String> {
         }
     }
 
-    // Treat missing type as managedhsm by default (for legacy URIs)
-    if !type_validated {
-        type_validated = true;
-    }
-
-    match (type_validated, vault_name, key_name) {
-        (true, Some(vault), Some(name)) => Ok(ParsedUri {
+    match (vault_name, key_name) {
+        (Some(vault), Some(name)) => Ok(ParsedUri {
             vault_name: vault,
             key_name: name,
             key_version,
+            vault_type,
         }),
         _ => Err("Missing required fields (vault and name)".to_string()),
     }
 }
 
-/// Parse URI in simple format: managedhsm:vaultname:keyname or managedhsm:vaultname:keyname?version=xxx
+/// Parse URI in simple format:
+/// - managedhsm:vaultname:keyname or managedhsm:vaultname:keyname?version=xxx
+/// - keyvault:vaultname:keyname or keyvault:vaultname:keyname?version=xxx
 pub fn parse_uri_simple(uri: &str) -> Result<ParsedUri, String> {
-    if !has_case_prefix(uri, "managedhsm:") {
-        return Err("URI must start with 'managedhsm:' prefix".to_string());
-    }
-
-    let cursor = &uri[11..]; // Skip "managedhsm:"
+    let (vault_type, cursor) = if has_case_prefix(uri, "managedhsm:") {
+        (VaultType::ManagedHsm, &uri[11..]) // Skip "managedhsm:"
+    } else if has_case_prefix(uri, "keyvault:") {
+        (VaultType::KeyVault, &uri[9..]) // Skip "keyvault:"
+    } else if has_case_prefix(uri, "kv:") {
+        (VaultType::KeyVault, &uri[3..]) // Skip "kv:"
+    } else {
+        return Err("URI must start with 'managedhsm:', 'keyvault:', or 'kv:' prefix".to_string());
+    };
 
     if let Some(sep_pos) = cursor.find(':') {
         let vault_name = cursor[..sep_pos].to_string();
@@ -193,6 +222,7 @@ pub fn parse_uri_simple(uri: &str) -> Result<ParsedUri, String> {
             vault_name,
             key_name,
             key_version,
+            vault_type,
         })
     } else {
         Err("Missing ':' separator between vault and key name".to_string())
@@ -215,6 +245,16 @@ mod tests {
         assert_eq!(result.vault_name, "myvault");
         assert_eq!(result.key_name, "mykey");
         assert_eq!(result.key_version, Some("v1".to_string()));
+        assert_eq!(result.vault_type, VaultType::ManagedHsm);
+    }
+
+    #[test]
+    fn test_parse_uri_keyvalue_keyvault() {
+        let uri = "akv:type=keyvault,vault=myvault,name=mykey";
+        let result = parse_uri_keyvalue(uri).unwrap();
+        assert_eq!(result.vault_name, "myvault");
+        assert_eq!(result.key_name, "mykey");
+        assert_eq!(result.vault_type, VaultType::KeyVault);
     }
 
     #[test]
@@ -224,6 +264,7 @@ mod tests {
         assert_eq!(result.vault_name, "myvault");
         assert_eq!(result.key_name, "mykey");
         assert_eq!(result.key_version, None);
+        assert_eq!(result.vault_type, VaultType::ManagedHsm); // Default
     }
 
     #[test]
@@ -233,6 +274,25 @@ mod tests {
         assert_eq!(result.vault_name, "myvault");
         assert_eq!(result.key_name, "mykey");
         assert_eq!(result.key_version, None);
+        assert_eq!(result.vault_type, VaultType::ManagedHsm);
+    }
+
+    #[test]
+    fn test_parse_uri_simple_keyvault() {
+        let uri = "keyvault:myvault:mykey";
+        let result = parse_uri_simple(uri).unwrap();
+        assert_eq!(result.vault_name, "myvault");
+        assert_eq!(result.key_name, "mykey");
+        assert_eq!(result.vault_type, VaultType::KeyVault);
+    }
+
+    #[test]
+    fn test_parse_uri_simple_kv_shorthand() {
+        let uri = "kv:myvault:mykey";
+        let result = parse_uri_simple(uri).unwrap();
+        assert_eq!(result.vault_name, "myvault");
+        assert_eq!(result.key_name, "mykey");
+        assert_eq!(result.vault_type, VaultType::KeyVault);
     }
 
     #[test]
@@ -242,6 +302,7 @@ mod tests {
         assert_eq!(result.vault_name, "myvault");
         assert_eq!(result.key_name, "mykey");
         assert_eq!(result.key_version, Some("abc123".to_string()));
+        assert_eq!(result.vault_type, VaultType::ManagedHsm);
     }
 
     #[test]

@@ -1,0 +1,23 @@
+# Azure Key Vault Deployment Dependencies
+# Install with: pip install -r requirements.txt
+
+# Azure SDK
+azure-identity>=1.15.0
+azure-mgmt-resource>=23.0.0
+azure-mgmt-keyvault>=10.3.0
+azure-mgmt-containerinstance>=10.1.0
+azure-mgmt-authorization>=4.0.0
+azure-mgmt-network>=25.0.0
+
+# HTTP client
+requests>=2.31.0
+
+# Environment management
+python-dotenv>=1.0.0
+
+# Jupyter support (for notebook)
+jupyter>=1.0.0
+ipykernel>=6.29.0
+
+# Cryptography for certificate generation
+cryptography>=41.0.0

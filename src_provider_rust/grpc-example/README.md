@@ -40,7 +40,7 @@ This example demonstrates **keyless mTLS** for gRPC using the **Double-Ended Sid
 2. **Azure CLI** authenticated (\`az login\`)
 3. **NGINX** with stream module and SSL support
 4. **Rust** toolchain
-5. **Provider built**: \`../target/release/libakv_provider.so\`
+5. **Provider built**: `../target/release/akv_provider.so`
 
 ## Quick Start
 

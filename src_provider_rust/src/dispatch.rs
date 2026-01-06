@@ -168,13 +168,38 @@ pub static AKV_STORE_FUNCTIONS: [OsslDispatch; 8] = [
     OsslDispatch::end(),
 ];
 
-// Store algorithm table
-pub static AKV_STORE_ALGS: [OsslAlgorithm; 2] = [
+// Store algorithm table - register all supported URI schemes
+// Each scheme needs its own entry for proper matching
+pub static AKV_STORE_ALGS: [OsslAlgorithm; 6] = [
     OsslAlgorithm {
         algorithm_names: c_str!("managedhsm"),
-        property_definition: c_str!("provider=akv_provider"),
+        property_definition: ptr::null(),
         implementation: AKV_STORE_FUNCTIONS.as_ptr(),
         algorithm_description: c_str!("Azure Managed HSM store"),
+    },
+    OsslAlgorithm {
+        algorithm_names: c_str!("hsm"),
+        property_definition: ptr::null(),
+        implementation: AKV_STORE_FUNCTIONS.as_ptr(),
+        algorithm_description: c_str!("Azure Managed HSM store (hsm alias)"),
+    },
+    OsslAlgorithm {
+        algorithm_names: c_str!("keyvault"),
+        property_definition: ptr::null(),
+        implementation: AKV_STORE_FUNCTIONS.as_ptr(),
+        algorithm_description: c_str!("Azure Key Vault store"),
+    },
+    OsslAlgorithm {
+        algorithm_names: c_str!("kv"),
+        property_definition: ptr::null(),
+        implementation: AKV_STORE_FUNCTIONS.as_ptr(),
+        algorithm_description: c_str!("Azure Key Vault store (kv alias)"),
+    },
+    OsslAlgorithm {
+        algorithm_names: c_str!("akv"),
+        property_definition: ptr::null(),
+        implementation: AKV_STORE_FUNCTIONS.as_ptr(),
+        algorithm_description: c_str!("Azure Key Vault store (akv alias)"),
     },
     OsslAlgorithm::end(),
 ];

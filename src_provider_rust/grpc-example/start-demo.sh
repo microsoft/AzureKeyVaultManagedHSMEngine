@@ -47,8 +47,8 @@ echo "Key: $HSM_KEY_NAME"
 echo ""
 
 # Check prerequisites
-if [ ! -f "$PROVIDER_PATH/libakv_provider.so" ]; then
-    echo "Error: Provider not built. Run 'cargo build --release' in parent directory."
+if [ ! -f "$PROVIDER_PATH/akv_provider.so" ]; then
+    echo "Error: Provider not built. Run './ubuntubuild.sh' in parent directory."
     exit 1
 fi
 

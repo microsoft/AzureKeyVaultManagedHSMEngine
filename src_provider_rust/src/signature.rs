@@ -1,7 +1,7 @@
 /* Copyright (c) Microsoft Corporation.
 Licensed under the MIT License. */
 
-use crate::auth::AccessToken;
+use crate::auth::{AccessToken, VaultType};
 use crate::http_client::AkvHttpClient;
 use crate::openssl_ffi;
 use crate::ossl_param::{OsslParam, OSSL_PARAM_OCTET_STRING, OSSL_PARAM_UTF8_STRING};
@@ -279,9 +279,10 @@ impl SignatureContext {
             digest.len()
         );
 
-        let token =
-            AccessToken::acquire().map_err(|e| format!("Failed to get access token: {}", e))?;
-        let client = AkvHttpClient::new(vault_name.clone(), token)
+        let vault_type = key.vault_type;
+        let token = AccessToken::acquire_for_vault(vault_type)
+            .map_err(|e| format!("Failed to get access token: {}", e))?;
+        let client = AkvHttpClient::new_with_type(vault_name.clone(), token, vault_type)
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
         let signature = client
@@ -516,6 +517,7 @@ pub unsafe extern "C" fn akv_signature_sign_init(
         key_name: key_ref.key_name.clone(),
         key_version: key_ref.key_version.clone(),
         public_key: key_ref.public_key.clone(),
+        vault_type: key_ref.vault_type.clone(),
     }));
     ctx.operation = EVP_PKEY_OP_SIGN;
 
@@ -544,6 +546,7 @@ pub unsafe extern "C" fn akv_signature_verify_init(
         key_name: key_ref.key_name.clone(),
         key_version: key_ref.key_version.clone(),
         public_key: key_ref.public_key.clone(),
+        vault_type: key_ref.vault_type.clone(),
     }));
     ctx.operation = EVP_PKEY_OP_VERIFY;
 
@@ -657,6 +660,7 @@ pub unsafe extern "C" fn akv_signature_digest_sign_init(
         key_name: key_ref.key_name.clone(),
         key_version: key_ref.key_version.clone(),
         public_key: key_ref.public_key.clone(),
+        vault_type: key_ref.vault_type.clone(),
     }));
 
     ctx.operation = EVP_PKEY_OP_SIGN;
@@ -724,6 +728,7 @@ pub unsafe extern "C" fn akv_signature_digest_verify_init(
         key_name: key_ref.key_name.clone(),
         key_version: key_ref.key_version.clone(),
         public_key: key_ref.public_key.clone(),
+        vault_type: key_ref.vault_type.clone(),
     }));
     ctx.operation = EVP_PKEY_OP_VERIFY;
 
@@ -1159,6 +1164,7 @@ pub unsafe extern "C" fn akv_signature_dupctx(vctx: *mut c_void) -> *mut c_void 
             key_name: key.key_name.clone(),
             key_version: key.key_version.clone(),
             public_key: key.public_key.as_ref().map(|pk| pk.clone()),
+            vault_type: key.vault_type.clone(),
         }))
     } else {
         None

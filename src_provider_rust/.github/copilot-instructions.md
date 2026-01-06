@@ -191,9 +191,10 @@ cd src_provider_rust
 This will:
 - Check for Rust toolchain and OpenSSL development packages
 - Build the provider in release mode
-- Deploy `libakv_provider.so` to `/usr/lib/x86_64-linux-gnu/ossl-modules/`
+- Create symlink `akv_provider.so` in build directory
+- Deploy `akv_provider.so` to `/usr/lib/x86_64-linux-gnu/ossl-modules/`
 
-Output: `target/release/libakv_provider.so`
+Output: `target/release/akv_provider.so`
 
 ### Deploying
 

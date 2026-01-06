@@ -1,7 +1,7 @@
 /* Copyright (c) Microsoft Corporation.
 Licensed under the MIT License. */
 
-use crate::auth::AccessToken;
+use crate::auth::{AccessToken, VaultType};
 use crate::http_client::AkvHttpClient;
 use crate::ossl_param::OsslParam;
 use crate::provider::{AkvAesKey, AkvKey, ProviderContext};
@@ -69,17 +69,18 @@ impl RsaCipherContext {
         }
     }
 
-    /// Decrypt using Azure Managed HSM
+    /// Decrypt using Azure Key Vault or Managed HSM
     fn decrypt_remote(&self, ciphertext: &[u8]) -> Result<Vec<u8>, String> {
         let key = self.key.as_ref().ok_or("No key set")?;
         let algorithm = self.get_algorithm().ok_or("Unsupported padding/digest")?;
 
         let vault_name = key.keyvault_name.as_ref().ok_or("No vault name")?;
         let key_name = key.key_name.as_ref().ok_or("No key name")?;
+        let vault_type = key.vault_type;
 
-        let token =
-            AccessToken::acquire().map_err(|e| format!("Failed to get access token: {}", e))?;
-        let client = AkvHttpClient::new(vault_name.clone(), token)
+        let token = AccessToken::acquire_for_vault(vault_type)
+            .map_err(|e| format!("Failed to get access token: {}", e))?;
+        let client = AkvHttpClient::new_with_type(vault_name.clone(), token, vault_type)
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
         client
@@ -132,17 +133,18 @@ impl AesCipherContext {
         }
     }
 
-    /// Wrap a key using Azure Managed HSM
+    /// Wrap a key using Azure Key Vault or Managed HSM
     fn wrap_key_remote(&self, plaintext: &[u8]) -> Result<Vec<u8>, String> {
         let key = self.key.as_ref().ok_or_else(|| "No key set".to_string())?;
         let algorithm = self.get_algorithm()?;
 
         let vault_name = key.keyvault_name.as_ref().ok_or("No vault name")?;
         let key_name = key.key_name.as_ref().ok_or("No key name")?;
+        let vault_type = key.vault_type;
 
-        let token =
-            AccessToken::acquire().map_err(|e| format!("Failed to get access token: {}", e))?;
-        let client = AkvHttpClient::new(vault_name.clone(), token)
+        let token = AccessToken::acquire_for_vault(vault_type)
+            .map_err(|e| format!("Failed to get access token: {}", e))?;
+        let client = AkvHttpClient::new_with_type(vault_name.clone(), token, vault_type)
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
         client
@@ -150,17 +152,18 @@ impl AesCipherContext {
             .map_err(|e| format!("Azure wrap_key failed: {}", e))
     }
 
-    /// Unwrap a key using Azure Managed HSM
+    /// Unwrap a key using Azure Key Vault or Managed HSM
     fn unwrap_key_remote(&self, ciphertext: &[u8]) -> Result<Vec<u8>, String> {
         let key = self.key.as_ref().ok_or_else(|| "No key set".to_string())?;
         let algorithm = self.get_algorithm()?;
 
         let vault_name = key.keyvault_name.as_ref().ok_or("No vault name")?;
         let key_name = key.key_name.as_ref().ok_or("No key name")?;
+        let vault_type = key.vault_type;
 
-        let token =
-            AccessToken::acquire().map_err(|e| format!("Failed to get access token: {}", e))?;
-        let client = AkvHttpClient::new(vault_name.clone(), token)
+        let token = AccessToken::acquire_for_vault(vault_type)
+            .map_err(|e| format!("Failed to get access token: {}", e))?;
+        let client = AkvHttpClient::new_with_type(vault_name.clone(), token, vault_type)
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
         client
@@ -212,6 +215,7 @@ pub unsafe extern "C" fn akv_rsa_cipher_decrypt_init(
         key_name: key_ref.key_name.clone(),
         key_version: key_ref.key_version.clone(),
         public_key: key_ref.public_key.clone(),
+        vault_type: key_ref.vault_type.clone(),
     }));
 
     1
@@ -435,6 +439,7 @@ pub unsafe extern "C" fn akv_aes_cipher_encrypt_init(
         key_name: key_ref.key_name.clone(),
         key_version: key_ref.key_version.clone(),
         key_bits: key_ref.key_bits,
+        vault_type: key_ref.vault_type.clone(),
     }));
 
     1

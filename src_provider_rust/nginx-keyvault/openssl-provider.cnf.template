@@ -1,0 +1,23 @@
+# OpenSSL configuration for Azure Key Vault Provider
+# Template - processed by setup scripts
+
+openssl_conf = openssl_init
+
+[openssl_init]
+providers = provider_section
+
+[provider_section]
+default = default_section
+base = base_section
+akv_provider = akv_provider_section
+
+[default_section]
+activate = 1
+
+[base_section]
+activate = 1
+
+[akv_provider_section]
+# Path to the AKV provider library (set via environment or replace)
+module = ${AKV_PROVIDER_PATH}
+activate = 1

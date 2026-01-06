@@ -1,0 +1,167 @@
+FROM rust:1.85-slim-bookworm as builder
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    libssl-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy source code
+COPY . .
+
+# Build the provider
+RUN cargo build --release && \
+    ln -sf libakv_provider.so /build/target/release/akv_provider.so
+
+# ============================================================================
+# Final stage with nginx
+# ============================================================================
+FROM nginx:1.25-bookworm
+
+# Install OpenSSL 3.x and Azure CLI
+RUN apt-get update && apt-get install -y \
+    openssl \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -sLS https://packages.microsoft.com/keys/microsoft.asc | \
+       gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg \
+    && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ $(lsb_release -cs) main" | \
+       tee /etc/apt/sources.list.d/azure-cli.list \
+    && apt-get update \
+    && apt-get install -y azure-cli \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the provider from builder
+COPY --from=builder /build/target/release/akv_provider.so /usr/lib/x86_64-linux-gnu/ossl-modules/akv_provider.so
+
+# Set OPENSSL_MODULES
+ENV OPENSSL_MODULES=/usr/lib/x86_64-linux-gnu/ossl-modules
+
+# Verify provider loads
+RUN openssl list -providers -provider akv_provider -provider default
+
+# Create directories for nginx
+RUN mkdir -p /etc/nginx/certs /var/log/nginx /etc/ssl/akv
+
+# Copy nginx-keyvault example files
+COPY nginx-keyvault/nginx.conf.template /etc/nginx/templates/nginx.conf.template
+COPY nginx-keyvault/openssl-provider.cnf.template /etc/ssl/akv/openssl-provider.cnf.template
+
+# Create entrypoint script
+RUN cat > /entrypoint.sh << 'EOF'
+#!/bin/bash
+set -e
+
+echo "=========================================="
+echo "Azure Key Vault nginx Keyless TLS"
+echo "=========================================="
+echo ""
+
+# Check required environment variables
+if [ -z "$KEYVAULT_NAME" ]; then
+    echo "ERROR: KEYVAULT_NAME environment variable is required"
+    exit 1
+fi
+
+if [ -z "$RSA_KEY_NAME" ]; then
+    echo "ERROR: RSA_KEY_NAME environment variable is required"
+    exit 1
+fi
+
+if [ -z "$EC_KEY_NAME" ]; then
+    echo "ERROR: EC_KEY_NAME environment variable is required"
+    exit 1
+fi
+
+# Get access token if not provided
+if [ -z "$AZURE_CLI_ACCESS_TOKEN" ]; then
+    if [ -n "$AZURE_TENANT_ID" ]; then
+        echo "Getting access token for tenant: $AZURE_TENANT_ID"
+        export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token \
+            --resource https://vault.azure.net \
+            --tenant "$AZURE_TENANT_ID" \
+            --query accessToken -o tsv)
+    else
+        echo "Getting access token with default tenant"
+        export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token \
+            --resource https://vault.azure.net \
+            --query accessToken -o tsv)
+    fi
+    
+    if [ -z "$AZURE_CLI_ACCESS_TOKEN" ]; then
+        echo "ERROR: Failed to get access token. Run 'az login' first."
+        exit 1
+    fi
+    echo "✅ Access token acquired"
+else
+    echo "✅ Using provided access token"
+fi
+
+# Process OpenSSL config template
+sed -e "s|\${PROVIDER_PATH}|/usr/lib/x86_64-linux-gnu/ossl-modules|g" \
+    /etc/ssl/akv/openssl-provider.cnf.template > /etc/ssl/akv/openssl-provider.cnf
+
+export OPENSSL_CONF=/etc/ssl/akv/openssl-provider.cnf
+echo "✅ OpenSSL config: $OPENSSL_CONF"
+
+# Process nginx config template
+RSA_KEY_URI="keyvault:${KEYVAULT_NAME}:${RSA_KEY_NAME}"
+EC_KEY_URI="keyvault:${KEYVAULT_NAME}:${EC_KEY_NAME}"
+
+sed -e "s|\${RSA_KEY_URI}|$RSA_KEY_URI|g" \
+    -e "s|\${EC_KEY_URI}|$EC_KEY_URI|g" \
+    -e "s|\${RSA_PORT}|8443|g" \
+    -e "s|\${EC_PORT}|8444|g" \
+    /etc/nginx/templates/nginx.conf.template > /etc/nginx/nginx.conf
+
+echo "✅ nginx config generated"
+echo "   RSA: $RSA_KEY_URI"
+echo "   EC:  $EC_KEY_URI"
+
+# Check if certificates exist, if not generate them
+if [ ! -f "/etc/nginx/certs/rsa-server.crt" ] || [ ! -f "/etc/nginx/certs/ec-server.crt" ]; then
+    echo ""
+    echo "Generating certificates using Key Vault keys..."
+    
+    # Generate RSA certificate
+    openssl req -new -x509 \
+        -provider akv_provider -provider default \
+        -key "store:$RSA_KEY_URI" \
+        -sha256 -days 365 \
+        -subj "/CN=localhost/O=Azure Key Vault Demo/C=US" \
+        -out /etc/nginx/certs/rsa-server.crt
+    
+    # Generate EC certificate
+    openssl req -new -x509 \
+        -provider akv_provider -provider default \
+        -key "store:$EC_KEY_URI" \
+        -sha256 -days 365 \
+        -subj "/CN=localhost/O=Azure Key Vault Demo/C=US" \
+        -out /etc/nginx/certs/ec-server.crt
+    
+    echo "✅ Certificates generated"
+fi
+
+echo ""
+echo "=========================================="
+echo "Starting nginx..."
+echo "=========================================="
+echo ""
+echo "RSA TLS: https://localhost:8443"
+echo "EC TLS:  https://localhost:8444"
+echo ""
+
+# Start nginx
+exec nginx -g 'daemon off;'
+EOF
+
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 8443 8444
+
+ENTRYPOINT ["/entrypoint.sh"]

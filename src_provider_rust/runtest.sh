@@ -125,7 +125,7 @@ if [[ -f "$MODULESDIR/akv_provider.so" ]]; then
     PROVIDER_INSTALLED="YES"
 else
     echo -e "${YELLOW}[WARN]${NC} akv_provider.so is NOT installed in modules directory"
-    echo "To install: sudo cp target/release/libakv_provider.so \"$MODULESDIR/akv_provider.so\""
+    echo "To install: sudo cp target/release/akv_provider.so \"$MODULESDIR/akv_provider.so\""
     PROVIDER_INSTALLED="NO"
 fi
 

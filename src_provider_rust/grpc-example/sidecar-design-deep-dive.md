@@ -347,7 +347,7 @@ az keyvault key show --hsm-name ManagedHSMOpenSSLEngine --name myrsakey
 
 ```bash
 # Verify the AKV provider is installed
-ls -la /usr/lib/x86_64-linux-gnu/ossl-modules/libakv_provider.so
+ls -la /usr/lib/x86_64-linux-gnu/ossl-modules/akv_provider.so
 
 # Test provider loads correctly
 openssl list -providers -provider-path /usr/lib/x86_64-linux-gnu/ossl-modules -provider akv

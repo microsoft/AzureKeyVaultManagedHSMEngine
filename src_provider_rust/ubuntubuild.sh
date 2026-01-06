@@ -118,9 +118,17 @@ echo "========================================"
 echo ""
 
 if [[ "$BUILD_TYPE" == "debug" ]]; then
-    SO_PATH="$SCRIPT_DIR/target/debug/libakv_provider.so"
+    SO_PATH="$SCRIPT_DIR/target/debug/lib/akv_provider.so"
+    TARGET_DIR="$SCRIPT_DIR/target/debug"
 else
-    SO_PATH="$SCRIPT_DIR/target/release/libakv_provider.so"
+    SO_PATH="$SCRIPT_DIR/target/release/lib/akv_provider.so"
+    TARGET_DIR="$SCRIPT_DIR/target/release"
+fi
+
+# Create symlink with OpenSSL-expected name (without lib prefix)
+if [[ -f "$SO_PATH" ]]; then
+    ln -sf libakv_provider.so "$TARGET_DIR/akv_provider.so"
+    echo "[OK] Created symlink: $TARGET_DIR/akv_provider.so -> libakv_provider.so"
 fi
 
 echo "Provider library: $SO_PATH"

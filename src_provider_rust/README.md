@@ -7,7 +7,7 @@ This is a Rust implementation of the OpenSSL Provider for Azure Managed HSM, con
 | Platform | Build Script | Test Script | Output |
 |----------|-------------|-------------|--------|
 | Windows  | `winbuild.bat` | `runtest.bat` | `akv_provider.dll` |
-| Ubuntu/Linux | `./ubuntubuild.sh` | `./runtest.sh` | `libakv_provider.so` |
+| Ubuntu/Linux | `./ubuntubuild.sh` | `./runtest.sh` | `akv_provider.so` |
 
 ## Quick Start
 
@@ -142,11 +142,14 @@ After building with ubuntubuild.sh, simply run:
 # Build
 cargo build --release
 
+# Create symlink with correct name (OpenSSL expects akv_provider.so, not libakv_provider.so)
+ln -sf libakv_provider.so target/release/akv_provider.so
+
 # Deploy manually (requires sudo)
-sudo cp target/release/libakv_provider.so /usr/lib/x86_64-linux-gnu/ossl-modules/akv_provider.so
+sudo cp target/release/akv_provider.so /usr/lib/x86_64-linux-gnu/ossl-modules/akv_provider.so
 ```
 
-The compiled provider library will be at: `target/release/libakv_provider.so`
+The compiled provider library will be at: `target/release/akv_provider.so`
 
 ---
 
@@ -169,6 +172,203 @@ After building and deploying, verify the provider is loadable:
 ```bash
 openssl list -providers -provider akv_provider -provider default
 ```
+
+---
+
+## Docker Testing
+
+A Docker container is available for testing the provider without installing dependencies locally.
+
+### Basic Provider Test
+
+```bash
+cd src_provider_rust
+
+# Build the test container
+docker build -f Dockerfile.test -t akv-provider-test .
+
+# Run the test (verifies provider loads correctly)
+docker run --rm akv-provider-test
+
+# Run interactively for debugging
+docker run --rm -it akv-provider-test bash
+```
+
+### nginx with Azure Key Vault Test
+
+Complete end-to-end test with nginx and Key Vault:
+
+```bash
+# Build nginx container with AKV provider
+docker build -f Dockerfile.nginx-keyvault -t nginx-akv .
+
+# Set your Key Vault details
+export KEYVAULT_NAME="your-keyvault-name"
+export RSA_KEY_NAME="rsa-tls-key"
+export EC_KEY_NAME="ec-tls-key"
+
+# Get access token
+export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token \
+    --resource https://vault.azure.net --query accessToken -o tsv)
+
+# Run nginx with Key Vault
+docker run --rm -it \
+    -p 8443:8443 -p 8444:8444 \
+    -e KEYVAULT_NAME="$KEYVAULT_NAME" \
+    -e RSA_KEY_NAME="$RSA_KEY_NAME" \
+    -e EC_KEY_NAME="$EC_KEY_NAME" \
+    -e AZURE_CLI_ACCESS_TOKEN="$AZURE_CLI_ACCESS_TOKEN" \
+    nginx-akv
+
+# Test (in another terminal)
+curl -k https://localhost:8443  # RSA TLS
+curl -k https://localhost:8444  # EC TLS
+```
+
+See [DOCKER-KEYVAULT-TESTING.md](DOCKER-KEYVAULT-TESTING.md) for detailed instructions.
+
+### Expected Output
+
+```
+=== Loaded Providers ===
+Providers:
+  akv_provider
+  default
+    name: OpenSSL Default Provider
+    version: 3.0.x
+    status: active
+
+=== Store Loaders ===
+Provided STORE LOADERs:
+  managedhsm @ akv_provider
+  hsm @ akv_provider
+  keyvault @ akv_provider
+  kv @ akv_provider
+  akv @ akv_provider
+  file @ default
+```
+
+---
+
+## Troubleshooting
+
+### Provider Loading Errors
+
+#### "unable to load provider" or "could not load the shared library"
+
+**Symptom:**
+```
+openssl list -providers -provider akv_provider -provider-path "/path/to/modules"
+list: unable to load provider akv_provider
+error: could not load the shared library: /some/other/path/akv_provider.so: No such file or directory
+```
+
+**Cause:** OpenSSL ignores the `-provider-path` flag in some builds (especially NixOS, Alpine, or custom OpenSSL installations) and uses its compiled-in `MODULESDIR`.
+
+**Solutions:**
+
+1. **Use `OPENSSL_MODULES` environment variable** (most reliable):
+   ```bash
+   export OPENSSL_MODULES="/usr/lib/x86_64-linux-gnu/ossl-modules"
+   openssl list -providers -provider akv_provider -provider default
+   ```
+
+2. **Deploy to the correct OpenSSL modules directory:**
+   ```bash
+   # Find OpenSSL's module directory
+   MODULES_DIR=$(openssl version -m | sed 's/MODULESDIR: "\(.*\)"/\1/')
+   echo "OpenSSL modules directory: $MODULES_DIR"
+   
+   # Copy provider
+   sudo cp target/release/akv_provider.so "$MODULES_DIR/akv_provider.so"
+   ```
+
+3. **Use an OpenSSL config file** (recommended for production):
+   ```bash
+   cat > /tmp/openssl-akv.cnf << 'EOF'
+   openssl_conf = openssl_init
+
+   [openssl_init]
+   providers = provider_sect
+
+   [provider_sect]
+   default = default_sect
+   akv_provider = akv_provider_sect
+
+   [default_sect]
+   activate = 1
+
+   [akv_provider_sect]
+   module = /usr/lib/x86_64-linux-gnu/ossl-modules/akv_provider.so
+   activate = 1
+   EOF
+
+   OPENSSL_CONF=/tmp/openssl-akv.cnf openssl list -providers
+   ```
+
+4. **For NixOS/custom OpenSSL:** Copy provider to the hardcoded path shown in the error message.
+
+#### Provider file naming (Linux only)
+
+On Linux, Cargo automatically adds a `lib` prefix to shared libraries - this is **standard Linux convention**, not a typo:
+
+| Platform | Cargo Output | OpenSSL Expects | Action Needed |
+|----------|--------------|-----------------|---------------|
+| Windows | `akv_provider.dll` | `akv_provider.dll` | None |
+| Linux | `libakv_provider.so` | `akv_provider.so` | Rename/symlink |
+
+The build scripts (`ubuntubuild.sh`, `Dockerfile.test`) automatically create a symlink. If building manually:
+
+```bash
+# Create symlink in build directory (recommended)
+ln -sf libakv_provider.so target/release/akv_provider.so
+
+# Or copy with rename when deploying
+cp target/release/libakv_provider.so /path/to/modules/akv_provider.so
+```
+
+**Why does this happen?** Cargo follows the Linux convention where shared libraries are named `lib<name>.so`. This cannot be changed in `Cargo.toml`. OpenSSL provider names don't follow this convention, hence the rename.
+
+#### Check shared library dependencies
+
+```bash
+# Verify all dependencies are satisfied
+ldd /usr/lib/x86_64-linux-gnu/ossl-modules/akv_provider.so
+```
+
+### Authentication Errors
+
+#### "401 Unauthorized" or "access token invalid"
+
+1. **Refresh access token:**
+   ```bash
+   # For Managed HSM
+   export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token \
+       --resource https://managedhsm.azure.net --query accessToken -o tsv)
+   
+   # For Key Vault
+   export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token \
+       --resource https://vault.azure.net --query accessToken -o tsv)
+   ```
+
+2. **Verify you're logged in:**
+   ```bash
+   az account show
+   ```
+
+3. **Check token hasn't expired** (tokens typically last 1 hour).
+
+### Provider Order Matters
+
+When using both `akv_provider` and `default` providers, list `default` first in config files:
+
+```ini
+[provider_sect]
+default = default_sect      # FIRST - handles normal RSA/EC operations
+akv_provider = akv_provider_sect  # SECOND - handles HSM operations
+```
+
+---
 
 ## Project Structure
 
@@ -592,12 +792,21 @@ MIT License - Copyright (c) Microsoft Corporation
 
 ### Azure Managed HSM Test Resources
 
-The following Azure resources are used for testing:
+The following Azure resources are used for testing with **Managed HSM**:
 
 | Resource | Value | Description |
 |----------|-------|-------------|
 | **HSM Vault Name** | `ManagedHSMOpenSSLEngine` | Azure Managed HSM instance |
 | **HSM URL** | `https://ManagedHSMOpenSSLEngine.managedhsm.azure.net` | Full HSM endpoint URL |
+
+### Azure Key Vault Test Resources
+
+For testing with **Azure Key Vault** (standard, not HSM):
+
+| Resource | Value | Description |
+|----------|-------|-------------|
+| **Key Vault Name** | `<your-keyvault-name>` | Azure Key Vault instance |
+| **Key Vault URL** | `https://<your-keyvault-name>.vault.azure.net` | Full Key Vault endpoint URL |
 
 ### Test Keys
 
@@ -609,25 +818,57 @@ The following Azure resources are used for testing:
 
 ### URI Formats
 
-Keys can be referenced using either format:
+Keys can be referenced using different URI schemes:
 
 ```bash
-# Simple format (recommended)
+# ═══════════════════════════════════════════════════════════════════
+# Azure Managed HSM URIs
+# ═══════════════════════════════════════════════════════════════════
+
+# Simple format (recommended for Managed HSM)
 managedhsm:<vault>:<keyname>
 managedhsm:ManagedHSMOpenSSLEngine:myrsakey
 
 # With version
 managedhsm:ManagedHSMOpenSSLEngine:myrsakey?version=<version>
 
-# Key-value format
+# Aliases: hsm:, akv: also work for Managed HSM
+hsm:ManagedHSMOpenSSLEngine:myrsakey
+
+# ═══════════════════════════════════════════════════════════════════
+# Azure Key Vault URIs (standard Key Vault, not HSM)
+# ═══════════════════════════════════════════════════════════════════
+
+# Simple format for Key Vault
+keyvault:<vault>:<keyname>
+keyvault:my-keyvault:myrsakey
+
+# With version
+keyvault:my-keyvault:myrsakey?version=<version>
+
+# Alias: kv: also works
+kv:my-keyvault:myrsakey
+
+# ═══════════════════════════════════════════════════════════════════
+# Key-value format (works for both)
+# ═══════════════════════════════════════════════════════════════════
 akv:vault=ManagedHSMOpenSSLEngine,name=myrsakey,version=<version>
 ```
 
 ### Environment Variables
 
 ```bash
-# Required: Access token for Azure Managed HSM
-export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token --resource https://managedhsm.azure.net --query accessToken -o tsv)
+# ═══════════════════════════════════════════════════════════════════
+# For Azure Managed HSM
+# ═══════════════════════════════════════════════════════════════════
+export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token \
+    --resource https://managedhsm.azure.net --query accessToken -o tsv)
+
+# ═══════════════════════════════════════════════════════════════════
+# For Azure Key Vault (standard)
+# ═══════════════════════════════════════════════════════════════════
+export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token \
+    --resource https://vault.azure.net --query accessToken -o tsv)
 
 # Optional: Default vault (if not specified in URI)
 export AKV_DEFAULT_VAULT=ManagedHSMOpenSSLEngine
@@ -639,17 +880,54 @@ export RUST_LOG=akv_provider=debug
 
 ### Quick Test Commands
 
+#### Testing with Managed HSM
+
 ```bash
-# Set up environment
-export OPENSSL_CONF=/path/to/testOpenssl.cnf
-export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token --resource https://managedhsm.azure.net --query accessToken -o tsv)
+# Set up environment for Managed HSM
+export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token \
+    --resource https://managedhsm.azure.net --query accessToken -o tsv)
 
-# Generate CSR with RSA key
-openssl req -new -key "managedhsm:ManagedHSMOpenSSLEngine:myrsakey" -subj "/CN=Test" -out test.csr
+# Generate CSR with RSA key from Managed HSM
+openssl req -new \
+    -provider akv_provider -provider default \
+    -key "managedhsm:ManagedHSMOpenSSLEngine:myrsakey" \
+    -subj "/CN=Test" -out test.csr
 
-# Generate CSR with EC key
-openssl req -new -key "managedhsm:ManagedHSMOpenSSLEngine:ecckey" -subj "/CN=Test" -out test-ec.csr
+# Generate CSR with EC key from Managed HSM
+openssl req -new \
+    -provider akv_provider -provider default \
+    -key "managedhsm:ManagedHSMOpenSSLEngine:ecckey" \
+    -subj "/CN=Test" -out test-ec.csr
 
 # List available keys in HSM
-az keyvault key list --hsm-name ManagedHSMOpenSSLEngine --query "[].{name:name, kty:kty}" -o table
+az keyvault key list --hsm-name ManagedHSMOpenSSLEngine \
+    --query "[].{name:name, kty:kty}" -o table
 ```
+
+#### Testing with Azure Key Vault
+
+```bash
+# Set up environment for Key Vault (note different resource URL)
+export AZURE_CLI_ACCESS_TOKEN=$(az account get-access-token \
+    --resource https://vault.azure.net --query accessToken -o tsv)
+
+# Generate CSR with RSA key from Key Vault
+openssl req -new \
+    -provider akv_provider -provider default \
+    -key "keyvault:my-keyvault-name:myrsakey" \
+    -subj "/CN=Test" -out test.csr
+
+# Generate CSR with EC key from Key Vault
+openssl req -new \
+    -provider akv_provider -provider default \
+    -key "kv:my-keyvault-name:ecckey" \
+    -subj "/CN=Test" -out test-ec.csr
+
+# List available keys in Key Vault
+az keyvault key list --vault-name my-keyvault-name \
+    --query "[].{name:name, kty:kty}" -o table
+```
+
+**Important:** Use the correct resource URL for access tokens:
+- Managed HSM: `https://managedhsm.azure.net`
+- Key Vault: `https://vault.azure.net`

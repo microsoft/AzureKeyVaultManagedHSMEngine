@@ -4,7 +4,7 @@
 // HTTP client for Azure Key Vault API
 // Corresponds to curl.c
 
-use crate::auth::AccessToken;
+use crate::auth::{AccessToken, VaultType};
 use crate::base64::{decode_url_safe, encode_url_safe};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
@@ -140,10 +140,17 @@ pub struct AkvHttpClient {
     client: Client,
     vault_name: String,
     access_token: String,
+    vault_type: VaultType,
 }
 
 impl AkvHttpClient {
+    /// Create a new HTTP client for Managed HSM (default, backward compatible)
     pub fn new(vault_name: String, access_token: AccessToken) -> Result<Self, String> {
+        Self::new_with_type(vault_name, access_token, VaultType::ManagedHsm)
+    }
+
+    /// Create a new HTTP client for a specific vault type
+    pub fn new_with_type(vault_name: String, access_token: AccessToken, vault_type: VaultType) -> Result<Self, String> {
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
@@ -153,14 +160,16 @@ impl AkvHttpClient {
             client,
             vault_name,
             access_token: access_token.as_str().to_string(),
+            vault_type,
         })
     }
 
-    /// Build the base URL for a key
+    /// Build the base URL for a key based on vault type
     fn key_url(&self, key_name: &str, key_version: Option<&str>) -> String {
+        let domain = self.vault_type.domain();
         let mut url = format!(
-            "https://{}.managedhsm.azure.net/keys/{}",
-            self.vault_name, key_name
+            "https://{}.{}/keys/{}",
+            self.vault_name, domain, key_name
         );
 
         if let Some(version) = key_version {

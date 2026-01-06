@@ -1,0 +1,37 @@
+FROM rust:1.85-slim-bookworm
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    libssl-dev \
+    pkg-config \
+    curl \
+    ca-certificates \
+    openssl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy source code
+COPY . .
+
+# Build the provider
+RUN cargo build --release
+
+# Create symlink with OpenSSL-expected name (without lib prefix)
+RUN ln -sf libakv_provider.so /build/target/release/akv_provider.so
+
+# Get the OpenSSL modules directory and deploy provider there
+RUN MODULES_DIR=$(openssl version -m | sed 's/MODULESDIR: "\(.*\)"/\1/') && \
+    echo "OpenSSL modules directory: $MODULES_DIR" && \
+    mkdir -p "$MODULES_DIR" && \
+    cp /build/target/release/akv_provider.so "$MODULES_DIR/akv_provider.so" && \
+    ls -la "$MODULES_DIR/"
+
+# Also set OPENSSL_MODULES as fallback
+ENV OPENSSL_MODULES=/usr/lib/x86_64-linux-gnu/ossl-modules
+
+# Verify provider is loadable
+RUN openssl list -providers -provider akv_provider -provider default
+
+# Test command - list providers and store loaders
+CMD ["bash", "-c", "echo '=== OpenSSL Version ===' && openssl version -a && echo '' && echo '=== Loaded Providers ===' && openssl list -providers -provider akv_provider -provider default && echo '' && echo '=== Store Loaders ===' && openssl list -store-loaders -provider akv_provider -provider default"]

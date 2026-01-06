@@ -1,0 +1,7 @@
+target/
+.git/
+*.pdb
+*.dll
+*.exe
+vcpkg/
+vcpkg_installed/

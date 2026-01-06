@@ -1,0 +1,113 @@
+# nginx configuration for Azure Key Vault Keyless TLS
+# Template - variables are replaced by setup scripts
+#
+# Key URI format for Key Vault: keyvault:<vault>:<key>
+# (Different from Managed HSM which uses: managedhsm:<vault>:<key>)
+
+worker_processes auto;
+error_log /var/log/nginx/error.log debug;
+pid /run/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" ssl_protocol=$ssl_protocol '
+                    'ssl_cipher=$ssl_cipher';
+    
+    access_log /var/log/nginx/access.log main;
+    
+    sendfile on;
+    keepalive_timeout 65;
+
+    # HTTP server (redirect to HTTPS)
+    server {
+        listen ${HTTP_PORT};
+        server_name _;
+        
+        location /health {
+            return 200 'OK';
+            add_header Content-Type text/plain;
+        }
+        
+        location / {
+            return 301 https://$host:${RSA_PORT}$request_uri;
+        }
+    }
+    
+    # RSA TLS server (port 8443)
+    # Uses RSA key from Azure Key Vault
+    server {
+        listen ${RSA_PORT} ssl;
+        server_name localhost;
+        
+        # Public certificate (local file)
+        ssl_certificate /etc/nginx/certs/rsa-server.crt;
+        
+        # Private key from Azure Key Vault (KEYLESS!)
+        # Format: store:keyvault:<vault>:<keyname>
+        ssl_certificate_key "store:${RSA_KEY_URI}";
+        
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_prefer_server_ciphers on;
+        ssl_ciphers 'ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256';
+        ssl_session_cache shared:RSA_SSL:10m;
+        ssl_session_timeout 10m;
+        
+        location / {
+            return 200 'RSA Keyless TLS with Azure Key Vault!\nVault: ${KEYVAULT_NAME}\nKey: ${RSA_KEY_NAME}\n';
+            add_header Content-Type text/plain;
+        }
+        
+        location /health {
+            return 200 'OK';
+            add_header Content-Type text/plain;
+        }
+        
+        location /info {
+            return 200 '{"vault":"${KEYVAULT_NAME}","key":"${RSA_KEY_NAME}","type":"RSA","port":${RSA_PORT}}';
+            add_header Content-Type application/json;
+        }
+    }
+    
+    # EC TLS server (port 8444)
+    # Uses EC key from Azure Key Vault
+    server {
+        listen ${EC_PORT} ssl;
+        server_name localhost;
+        
+        # Public certificate (local file)
+        ssl_certificate /etc/nginx/certs/ec-server.crt;
+        
+        # Private key from Azure Key Vault (KEYLESS!)
+        # Format: store:keyvault:<vault>:<keyname>
+        ssl_certificate_key "store:${EC_KEY_URI}";
+        
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_prefer_server_ciphers on;
+        ssl_ciphers 'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256';
+        ssl_session_cache shared:EC_SSL:10m;
+        ssl_session_timeout 10m;
+        
+        location / {
+            return 200 'EC Keyless TLS with Azure Key Vault!\nVault: ${KEYVAULT_NAME}\nKey: ${EC_KEY_NAME}\n';
+            add_header Content-Type text/plain;
+        }
+        
+        location /health {
+            return 200 'OK';
+            add_header Content-Type text/plain;
+        }
+        
+        location /info {
+            return 200 '{"vault":"${KEYVAULT_NAME}","key":"${EC_KEY_NAME}","type":"EC","port":${EC_PORT}}';
+            add_header Content-Type application/json;
+        }
+    }
+}

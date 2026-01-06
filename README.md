@@ -57,7 +57,7 @@ cd src_provider_rust
 cargo build --release
 ```
 
-The provider library will be at `target/release/libakv_provider.so` (Linux) or `target/release/akv_provider.dll` (Windows).
+The provider library will be at `target/release/akv_provider.so` (Linux) or `target/release/akv_provider.dll` (Windows).
 
 ### Configure OpenSSL
 
@@ -81,7 +81,7 @@ activate = 1
 activate = 1
 
 [akv_provider_section]
-module = /path/to/libakv_provider.so
+module = /path/to/akv_provider.so
 activate = 1
 ```
 

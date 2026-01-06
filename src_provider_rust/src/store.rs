@@ -4,7 +4,7 @@
 // Store loader functionality
 // Corresponds to akv_store_* functions in akv_provider.c
 
-use crate::auth::AccessToken;
+use crate::auth::{AccessToken, VaultType};
 use crate::http_client::{AkvHttpClient, KeyType, PublicKeyMaterial};
 use crate::openssl_helpers::{build_ec_public_key, build_rsa_public_key};
 use crate::ossl_param::{
@@ -16,10 +16,11 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
 use std::ptr;
 
-/// Store context for loading keys from Azure Managed HSM
+/// Store context for loading keys from Azure Key Vault or Managed HSM
 /// Corresponds to AKV_STORE_CTX
 pub struct StoreContext {
     pub provctx: *mut ProviderContext,
+    pub vault_type: VaultType,
     pub keyvault_name: Option<String>,
     pub key_name: Option<String>,
     pub key_version: Option<String>,
@@ -30,6 +31,7 @@ impl StoreContext {
     pub fn new(provctx: *mut ProviderContext) -> Self {
         Self {
             provctx,
+            vault_type: VaultType::ManagedHsm,
             keyvault_name: None,
             key_name: None,
             key_version: None,
@@ -41,6 +43,7 @@ impl StoreContext {
     pub fn parse_uri(&mut self, uri: &str) -> bool {
         match parse_uri(uri) {
             Ok(parsed) => {
+                self.vault_type = parsed.vault_type;
                 self.keyvault_name = Some(parsed.vault_name);
                 self.key_name = Some(parsed.key_name);
                 self.key_version = parsed.key_version;
@@ -54,13 +57,14 @@ impl StoreContext {
     pub fn log_curl_get_key_url(&self) {
         if log::log_enabled!(log::Level::Debug) {
             if let (Some(vault), Some(name)) = (&self.keyvault_name, &self.key_name) {
+                let domain = self.vault_type.domain();
                 let url = if let Some(version) = &self.key_version {
                     format!(
-                        "https://{}.managedhsm.azure.net/keys/{}/{}",
-                        vault, name, version
+                        "https://{}.{}/keys/{}/{}",
+                        vault, domain, name, version
                     )
                 } else {
-                    format!("https://{}.managedhsm.azure.net/keys/{}", vault, name)
+                    format!("https://{}.{}/keys/{}", vault, domain, name)
                 };
                 log::debug!("curl.c AkvGetKey URL: {}", url);
             }
@@ -139,7 +143,7 @@ pub unsafe extern "C" fn akv_store_set_ctx_params(
     1
 }
 
-/// Load a key from Azure Managed HSM
+/// Load a key from Azure Key Vault or Managed HSM
 /// Corresponds to akv_store_load
 #[no_mangle]
 pub unsafe extern "C" fn akv_store_load(
@@ -163,8 +167,8 @@ pub unsafe extern "C" fn akv_store_load(
         return 0;
     }
 
-    // Get access token using DefaultAzureCredential (with fallback to environment)
-    let access_token = match AccessToken::acquire() {
+    // Get access token using DefaultAzureCredential for the appropriate vault type
+    let access_token = match AccessToken::acquire_for_vault(ctx.vault_type) {
         Ok(token) => token,
         Err(e) => {
             log::error!("Failed to get access token: {}", e);
@@ -193,8 +197,8 @@ pub unsafe extern "C" fn akv_store_load(
         }
     };
 
-    // Create HTTP client
-    let client = match AkvHttpClient::new(vault_name, access_token) {
+    // Create HTTP client with appropriate vault type
+    let client = match AkvHttpClient::new_with_type(vault_name, access_token, ctx.vault_type) {
         Ok(c) => c,
         Err(e) => {
             log::error!("Failed to create HTTP client: {}", e);
@@ -226,6 +230,7 @@ pub unsafe extern "C" fn akv_store_load(
         akv_key.key_name = Some(key_name.clone());
         akv_key.key_version = ctx.key_version.clone();
         akv_key.key_bits = key_bits;
+        akv_key.vault_type = ctx.vault_type;
 
         // Prepare to pass key reference to OpenSSL
         let mut key_ptr = Box::into_raw(akv_key) as *mut c_void;
@@ -301,10 +306,11 @@ pub unsafe extern "C" fn akv_store_load(
             log::debug!("Creating AkvKey for RSA key {}", key_name);
 
             let mut akv_key = Box::new(AkvKey::new(ctx.provctx));
-            akv_key.set_metadata(
+            akv_key.set_metadata_with_type(
                 &ctx.keyvault_name.clone().unwrap(),
                 &key_name,
                 ctx.key_version.as_deref(),
+                ctx.vault_type,
             );
 
             // Build OpenSSL RSA public key from modulus and exponent
@@ -388,10 +394,11 @@ pub unsafe extern "C" fn akv_store_load(
             );
 
             let mut akv_key = Box::new(AkvKey::new(ctx.provctx));
-            akv_key.set_metadata(
+            akv_key.set_metadata_with_type(
                 &ctx.keyvault_name.clone().unwrap(),
                 &key_name,
                 ctx.key_version.as_deref(),
+                ctx.vault_type,
             );
 
             // Build OpenSSL EC public key from x, y, curve
