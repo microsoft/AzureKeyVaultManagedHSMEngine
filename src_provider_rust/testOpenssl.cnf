@@ -11,6 +11,7 @@ akv_provider = akv_provider_sect
 activate = 1
 
 [akv_provider_sect]
+module = libakv_provider
 activate = 1
 
 [req]

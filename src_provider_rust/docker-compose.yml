@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  akv-provider-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: akv-provider-test
+    environment:
+      # Azure authentication (pass through from host)
+      - AZURE_CLI_ACCESS_TOKEN=${AZURE_CLI_ACCESS_TOKEN}
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID}
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
+      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
+      
+      # HSM configuration
+      - AKV_VAULT=${AKV_VAULT:-ManagedHSMOpenSSLEngine}
+      - AKV_RSA_KEY=${AKV_RSA_KEY:-myrsakey}
+      - AKV_EC_KEY=${AKV_EC_KEY:-ecckey}
+      - AKV_AES_KEY=${AKV_AES_KEY:-myaeskey}
+      
+      # Logging
+      - AKV_LOG_FILE=/app/logs/akv_provider.log
+      - AKV_LOG_LEVEL=3
+      - RUST_LOG=akv_provider=debug
+      
+    volumes:
+      # Mount Azure CLI config for authentication
+      - ${HOME}/.azure:/root/.azure:ro
+      
+      # Mount logs directory
+      - ./logs:/app/logs
+      
+    command: ./runtest.sh

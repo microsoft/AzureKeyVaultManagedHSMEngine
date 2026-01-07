@@ -8,21 +8,21 @@
 openssl_conf = openssl_init
 
 [openssl_init]
-providers = provider_section
+providers = provider_sect
 
-[provider_section]
+[provider_sect]
 # Default and base providers must be listed FIRST for proper RSA key handling
-default = default_section
-base = base_section
+default = default_sect
+base = base_sect
 # AKV provider for HSM key loading via store URI
-akv_provider = akv_provider_section
+akv_provider = akv_provider_sect
 
-[default_section]
+[default_sect]
 activate = 1
 
-[base_section]
+[base_sect]
 activate = 1
 
-[akv_provider_section]
+[akv_provider_sect]
 module = PROVIDER_PATH/libakv_provider.so
 activate = 1
