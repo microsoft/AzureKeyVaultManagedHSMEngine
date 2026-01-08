@@ -8,6 +8,7 @@ This is a Rust implementation of the OpenSSL Provider for Azure Managed HSM, con
 |----------|-------------|-------------|--------|
 | Windows  | `winbuild.bat` | `runtest.bat` | `akv_provider.dll` |
 | Ubuntu/Linux | `./ubuntubuild.sh` | `./runtest.sh` | `libakv_provider.so` |
+| Docker | `docker-test.sh` | (runs tests in container) | `libakv_provider.so` |
 
 ## Quick Start
 
@@ -29,6 +30,20 @@ This is a Rust implementation of the OpenSSL Provider for Azure Managed HSM, con
 # Ubuntu/Debian
 sudo apt-get install openssl libssl-dev
 ```
+
+---
+
+## Docker Build and Test
+
+For a clean, reproducible build and test environment:
+
+```bash
+cd src_provider_rust
+./docker-test.sh
+```
+
+This builds the provider in a Ubuntu 22.04 container and runs the full test suite.
+See [DOCKER.md](DOCKER.md) for complete Docker documentation.
 
 ---
 

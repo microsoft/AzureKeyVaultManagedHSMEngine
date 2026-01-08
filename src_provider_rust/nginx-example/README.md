@@ -184,12 +184,12 @@ ssl_certificate_key "store:managedhsm:ManagedHSMOpenSSLEngine:ecckey";
 The `openssl-provider.cnf` configures OpenSSL to load providers in the correct order:
 
 ```ini
-[provider_section]
+[provider_sect]
 # Default provider FIRST - handles normal RSA/EC operations
-default = default_section
-base = base_section
+default = default_sect
+base = base_sect
 # AKV provider LAST - handles HSM operations via managedhsm: scheme
-akv_provider = akv_provider_section
+akv_provider = akv_provider_sect
 ```
 
 **Important**: Provider order matters! The default provider must be listed first
@@ -337,10 +337,10 @@ metadata, but by that point OpenSSL cannot properly fall back to the default pro
 Reorder the providers so **default comes FIRST**:
 
 ```ini
-[provider_section]
-default = default_section   # Listed FIRST - handles normal RSA/EC keys
-base = base_section
-akv_provider = akv_provider_section  # Listed LAST - only for HSM keys
+[provider_sect]
+default = default_sect   # Listed FIRST - handles normal RSA/EC keys
+base = base_sect
+akv_provider = akv_provider_sect  # Listed LAST - only for HSM keys
 ```
 
 This ensures:

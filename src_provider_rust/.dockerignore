@@ -1,0 +1,32 @@
+# Build artifacts
+target/
+Cargo.lock
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+temp_*/
+
+# vcpkg (Windows only)
+vcpkg/
+vcpkg_installed/
+
+# Documentation
+README.md
+ARCHITECTURE.md
+
+# Example directories (not needed for build)
+nginx-example/
+grpc-example/
+
+# Git
+.git/
+.gitignore
