@@ -4,7 +4,7 @@ This example demonstrates **keyless mTLS** for gRPC using the **Double-Ended Sid
 
 ## Architecture
 
-\`\`\`
+```
 ┌──────────────────────────────────────────────────────────────────┐
 │                          HOST                                     │
 │                                                                   │
@@ -30,21 +30,21 @@ This example demonstrates **keyless mTLS** for gRPC using the **Double-Ended Sid
                               │  Azure Managed HSM     │
                               │  (private key ops)     │
                               └────────────────────────┘
-\`\`\`
+```
 
 **Key Feature:** The same RSA key in Azure Managed HSM is used for both client and server certificates (different certificate identities).
 
 ## Prerequisites
 
 1. **Azure Managed HSM** with an RSA key
-2. **Azure CLI** authenticated (\`az login\`)
+2. **Azure CLI** authenticated (`az login`)
 3. **NGINX** with stream module and SSL support
 4. **Rust** toolchain
-5. **Provider built**: \`../target/release/libakv_provider.so\`
+5. **Provider built**: `../target/release/libakv_provider.so`
 
 ## Quick Start
 
-\`\`\`bash
+```bash
 # 1. Copy and configure environment
 cp .env.example .env
 # Edit .env with your HSM settings
@@ -60,11 +60,11 @@ cp .env.example .env
 
 # 5. Stop everything
 ./stop-demo.sh
-\`\`\`
+```
 
 ## Files
 
-\`\`\`
+```
 grpc-example/
 ├── src/
 │   ├── server.rs          # gRPC server (supports TCP or UDS)
@@ -84,45 +84,45 @@ grpc-example/
 ├── stop-demo.sh           # Stop the demo
 ├── run-client.sh          # Run client via sidecar
 └── grpc-mtls-sidecar.md   # Design document
-\`\`\`
+```
 
 ## Running Modes
 
 ### Mode 1: Direct TCP (no TLS, for testing)
 
-\`\`\`bash
+```bash
 # Terminal 1: Start server on TCP
 cargo run --release --bin grpc-server
 # Listens on [::1]:50051
 
 # Terminal 2: Run client
 cargo run --release --bin grpc-client
-\`\`\`
+```
 
 ### Mode 2: UDS + NGINX Sidecar (mTLS)
 
-\`\`\`bash
+```bash
 # Start everything
 ./start-demo.sh
 
 # Run client through sidecar
 ./run-client.sh
-\`\`\`
+```
 
 ## Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| \`GRPC_UDS_PATH\` | Unix socket path | (uses TCP if not set) |
-| \`GRPC_ADDR\` | TCP address (if no UDS) | \`[::1]:50051\` |
-| \`HSM_NAME\` | HSM vault name | \`ManagedHSMOpenSSLEngine\` |
-| \`HSM_KEY_NAME\` | HSM key name | \`myrsakey\` |
+| `GRPC_UDS_PATH` | Unix socket path | (uses TCP if not set) |
+| `GRPC_ADDR` | TCP address (if no UDS) | `[::1]:50051` |
+| `HSM_NAME` | HSM vault name | `ManagedHSMOpenSSLEngine` |
+| `HSM_KEY_NAME` | HSM key name | `myrsakey` |
 
 ## How It Works
 
-1. **gRPC Server** listens on a Unix Domain Socket (\`run/grpc-server.sock\`)
+1. **gRPC Server** listens on a Unix Domain Socket (`run/grpc-server.sock`)
 2. **NGINX Server Sidecar** terminates mTLS on port 50051 and forwards plaintext to the server UDS
-3. **NGINX Client Sidecar** listens on a UDS (\`run/grpc-client.sock\`) and initiates mTLS to port 50051
+3. **NGINX Client Sidecar** listens on a UDS (`run/grpc-client.sock`) and initiates mTLS to port 50051
 4. **gRPC Client** connects to the client sidecar UDS (plaintext)
 
 **All TLS private key operations** are performed by the Azure Managed HSM via the OpenSSL provider.
@@ -131,20 +131,20 @@ cargo run --release --bin grpc-client
 
 ### Check logs
 
-\`\`\`bash
+```bash
 # NGINX logs
 tail -f logs/nginx-server-error.log
 tail -f logs/nginx-client-error.log
 
 # Provider logs
 tail -f logs/akv-provider.log
-\`\`\`
+```
 
 ### Common issues
 
-1. **"Provider not found"**: Build the provider first: \`cd .. && cargo build --release\`
-2. **"Access token expired"**: Re-run \`az login\` and restart demo
-3. **"Socket already in use"**: Run \`./stop-demo.sh\` to clean up
+1. **"Provider not found"**: Build the provider first: `cd .. && cargo build --release`
+2. **"Access token expired"**: Re-run `az login` and restart demo
+3. **"Socket already in use"**: Run `./stop-demo.sh` to clean up
 
 ## Design Document
 
