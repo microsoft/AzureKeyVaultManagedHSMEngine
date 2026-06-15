@@ -80,29 +80,39 @@ $EDITOR .env       # set HSM_NAME, HSM_KEY_NAME, AZURE_TENANT_ID, SERVER_CN
 
 ## Generate certs (signed by the HSM key)
 
+Linux / bash:
 ```bash
 ./generate-certs.sh
 # certs/ca.crt, certs/server.crt, certs/client.crt
 ```
 
-## Run
-
-Terminal 1:
-```bash
-./start-server.sh
-# ...
-# listening on 0.0.0.0:50443
+Windows / PowerShell (7+ recommended):
+```powershell
+.\generate-certs.ps1
+# uses Git for Windows' openssl.exe + the akv_provider.dll under
+# ..\target\release\
 ```
 
-Terminal 2:
+## Run
+
+Linux, terminal 1 / 2:
 ```bash
+./start-server.sh
 ./run-client.sh
-# == tonic-mtls-client ==
-# ...
-# response: Hello World (mTLS via HSM)!
-#   stream: Hello Streamer - mTLS message 1!
-#   stream: Hello Streamer - mTLS message 2!
-#   ...
+```
+
+Windows, PowerShell window 1 / 2:
+```powershell
+.\start-server.ps1   # add -SkipBuild if already built
+.\run-client.ps1     # add -SkipBuild if already built
+```
+
+Expected client output:
+```
+response: Hello World (mTLS via HSM)!
+  stream: Hello Streamer - mTLS message 1!
+  stream: Hello Streamer - mTLS message 2!
+  ...
 ```
 
 ## How keys flow
@@ -129,9 +139,8 @@ Terminal 2:
 
 ## Limitations
 
-* Linux-first. `start-server.sh` / `run-client.sh` are bash. On Windows the
-  same Rust code works but you'll need PowerShell wrappers (open an issue
-  if you need them).
+* Tested on both Linux (bash, `.so`) and native Windows (PowerShell 7,
+  `.dll`, MSVC toolchain, vcpkg static OpenSSL).
 * The HSM RSA key is used for **every** TLS handshake — there's no per-conn
   key cache. For high-RPS workloads, terminate TLS upstream and use the
   HSM only for session-resumption keys, or use shorter ticket lifetimes.
