@@ -11,6 +11,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CERTS_DIR="$SCRIPT_DIR/certs"
 PROVIDER_PATH="$SCRIPT_DIR/../target/release"
 
+. "$SCRIPT_DIR/check-openssl.sh"
+require_openssl_minimum 3.0.7 || exit 1
+
 # Create symlink for provider if needed (cargo builds libakv_provider.so but OpenSSL expects akv_provider.so)
 if [ -f "$PROVIDER_PATH/libakv_provider.so" ] && [ ! -f "$PROVIDER_PATH/akv_provider.so" ]; then
     ln -sf libakv_provider.so "$PROVIDER_PATH/akv_provider.so"

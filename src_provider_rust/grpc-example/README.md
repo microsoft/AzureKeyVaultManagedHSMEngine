@@ -38,9 +38,12 @@ This example demonstrates **keyless mTLS** for gRPC using the **Double-Ended Sid
 
 1. **Azure Managed HSM** with an RSA key
 2. **Azure CLI** authenticated (`az login`)
-3. **NGINX** with stream module and SSL support
+3. **NGINX** with stream module and SSL support (1.27+ for OSSL_STORE)
 4. **Rust** toolchain
-5. **Provider built**: `../target/release/libakv_provider.so`
+5. **OpenSSL >= 3.0.7** — Ubuntu 22.04's bundled 3.0.2 has an `OSSL_STORE`
+   callback bug that breaks HSM key loading; use Ubuntu 24.04+ or build
+   OpenSSL from source. See [openssl#18221](https://github.com/openssl/openssl/issues/18221).
+6. **Provider built**: `../target/release/libakv_provider.so`
 
 ## Quick Start
 

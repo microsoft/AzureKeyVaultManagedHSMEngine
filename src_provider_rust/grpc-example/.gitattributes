@@ -1,0 +1,17 @@
+# Ensure consistent line endings for cross-platform compatibility
+
+# Shell scripts must use LF
+*.sh text eol=lf
+
+# Template files must use LF (processed by shell scripts)
+*.template text eol=lf
+
+# Environment files must use LF (sourced by shell scripts)
+.env* text eol=lf
+
+# Markdown files
+*.md text eol=lf
+
+# Config files
+*.conf text eol=lf
+*.cnf text eol=lf

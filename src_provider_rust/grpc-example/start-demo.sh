@@ -14,6 +14,9 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+. "$SCRIPT_DIR/check-openssl.sh"
+require_openssl_minimum 3.0.7 || exit 1
+
 # Load configuration
 ENV_FILE="$SCRIPT_DIR/.env"
 if [ -f "$ENV_FILE" ]; then

@@ -6,6 +6,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROVIDER_PATH="$SCRIPT_DIR/../target/release"
 CERTS_DIR="$SCRIPT_DIR/certs"
 
+. "$SCRIPT_DIR/check-openssl.sh"
+require_openssl_minimum 3.0.7 || exit 1
+
 if [ ! -f "$SCRIPT_DIR/.env" ]; then
     echo "ERROR: .env missing. cp .env.example .env and edit it." >&2; exit 1
 fi

@@ -55,8 +55,18 @@ Server, Client) — exactly as in the sidecar demo.
 
 ## Prerequisites
 
-1. OpenSSL **3.x** development headers (the `openssl-sys` crate links
+1. OpenSSL **>= 3.0.7** development headers (the `openssl-sys` crate links
    against `libssl`/`libcrypto` and the provider lives in the same process).
+
+   > ⚠️ **Linux/WSL note:** Ubuntu **22.04** ships OpenSSL **3.0.2**, which
+   > has a known bug in `OSSL_STORE`'s object callback that causes HSM key
+   > loading to fail with `RSA object callback failed (returned 0)` or
+   > `EC object callback failed`. Fixed upstream in **OpenSSL 3.0.7**
+   > ([openssl#18221](https://github.com/openssl/openssl/issues/18221)).
+   >
+   > **Use Ubuntu 24.04+ (OpenSSL 3.0.13)** or build OpenSSL >= 3.0.7 from
+   > source. The bundled `check-openssl.sh` is sourced by every `*.sh`
+   > script and aborts early on older versions.
 2. The AKV provider built in release mode:
    ```bash
    cd ..        # src_provider_rust/

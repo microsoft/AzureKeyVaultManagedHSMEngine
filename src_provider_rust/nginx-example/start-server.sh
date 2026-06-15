@@ -13,6 +13,12 @@ NGINX_TEMPLATE="$SCRIPT_DIR/nginx.conf.template"
 OPENSSL_CONF_FILE="$SCRIPT_DIR/openssl-provider.cnf"
 OPENSSL_TEMPLATE="$SCRIPT_DIR/openssl-provider.cnf.template"
 
+# Ensure host OpenSSL is >= 3.0.7. OpenSSL 3.0.2 (Ubuntu 22.04 default) has
+# an OSSL_STORE callback bug that breaks HSM key loading. See
+# https://github.com/openssl/openssl/issues/18221.
+. "$SCRIPT_DIR/check-openssl.sh"
+require_openssl_minimum 3.0.7 || exit 1
+
 # Load configuration from .env file
 ENV_FILE="$SCRIPT_DIR/.env"
 if [ -f "$ENV_FILE" ]; then

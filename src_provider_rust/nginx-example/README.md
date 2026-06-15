@@ -45,7 +45,9 @@ The private key never leaves the HSM - all TLS signing operations are performed 
 ## Requirements
 
 - **nginx 1.27+** (for OSSL_STORE support)
-- OpenSSL 3.x
+- **OpenSSL >= 3.0.7** (Ubuntu 24.04+ recommended; **Ubuntu 22.04's 3.0.2
+  has an `OSSL_STORE` callback bug** that breaks HSM key loading —
+  [openssl#18221](https://github.com/openssl/openssl/issues/18221))
 - Azure CLI (for authentication)
 - Azure Managed HSM with RSA and/or EC keys
 

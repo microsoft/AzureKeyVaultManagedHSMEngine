@@ -377,6 +377,22 @@ openssl list -providers -provider akv_provider -provider default
    - The project uses vcpkg (already configured)
    - OpenSSL headers will be found via vcpkg
 
+> ### ⚠️ Linux runtime requirement: OpenSSL >= 3.0.7
+>
+> The provider's `OSSL_STORE` path (used by every example to load HSM keys
+> via `managedhsm:<vault>:<key>` URIs) triggers a bug in **OpenSSL 3.0.2**
+> — the version shipped with **Ubuntu 22.04 / WSL2 default**. Symptom:
+> `RSA object callback failed (returned 0)` or `EC object callback failed`.
+>
+> Fixed upstream in OpenSSL **3.0.7**
+> ([openssl#18221](https://github.com/openssl/openssl/issues/18221)).
+> Use **Ubuntu 24.04+** (ships OpenSSL 3.0.13) or build OpenSSL >= 3.0.7
+> from source. All example `*.sh` scripts source `check-openssl.sh` and
+> abort early if the host OpenSSL is too old.
+>
+> Windows is unaffected — the provider DLL statically links its own
+> bundled OpenSSL via vcpkg.
+
 ### Build Commands
 
 ```powershell
