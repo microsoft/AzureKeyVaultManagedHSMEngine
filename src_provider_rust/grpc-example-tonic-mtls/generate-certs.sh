@@ -7,16 +7,31 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CERTS_DIR="$SCRIPT_DIR/certs"
-PROVIDER_PATH="$SCRIPT_DIR/../target/release"
+PROVIDER_PATH="$(cd "$SCRIPT_DIR/../target/release" 2>/dev/null && pwd)" || {
+    echo "ERROR: provider build dir $SCRIPT_DIR/../target/release not found." >&2
+    echo "       Build first:  (cd ..; cargo build --release)" >&2
+    exit 1
+}
+
+# cargo builds libakv_provider.so; OpenSSL's `-provider akv_provider` flag
+# expects akv_provider.so. Create the symlink once (idempotent).
+if [ -f "$PROVIDER_PATH/libakv_provider.so" ] && [ ! -e "$PROVIDER_PATH/akv_provider.so" ]; then
+    ln -sf libakv_provider.so "$PROVIDER_PATH/akv_provider.so"
+fi
 
 . "$SCRIPT_DIR/check-openssl.sh"
 require_openssl_minimum 3.0.7 || exit 1
 
-ENV_FILE="$SCRIPT_DIR/.env"
+ENV_FILE="${ENV_FILE:-$SCRIPT_DIR/.env}"
+case "$ENV_FILE" in
+    /*) ;;
+    *) ENV_FILE="$SCRIPT_DIR/$ENV_FILE" ;;
+esac
 if [ ! -f "$ENV_FILE" ]; then
-    echo "ERROR: $ENV_FILE missing. cp .env.example .env and edit it." >&2
+    echo "ERROR: $ENV_FILE missing. cp .env.example .env (or .env.rsa.example / .env.ec.example) and edit it." >&2
     exit 1
 fi
+echo "Loading config from $ENV_FILE"
 set -a; . "$ENV_FILE"; set +a
 
 HSM_NAME="${HSM_NAME:?HSM_NAME unset}"

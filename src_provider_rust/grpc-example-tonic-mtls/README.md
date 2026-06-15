@@ -82,40 +82,59 @@ Server, Client) — exactly as in the sidecar demo.
 
 ## Setup
 
+Pick the key type you want to use. Two ready-made templates are provided:
+
+- `.env.rsa.example` — RSA key (`HSM_KEY_NAME=myrsakey`)
+- `.env.ec.example`  — EC P-256 key (`HSM_KEY_NAME=ecckey`)
+
+Copy and edit one (or both) for your HSM, then point each script at the
+file you want via the `ENV_FILE` env var / `-EnvFile` parameter. The default
+is `.env` (which `.env.example` also targets), so the simplest setup is
+still `cp .env.example .env`.
+
 ```bash
 cd src_provider_rust/grpc-example-tonic-mtls
-cp .env.example .env
-$EDITOR .env       # set HSM_NAME, HSM_KEY_NAME, AZURE_TENANT_ID, SERVER_CN
+cp .env.rsa.example .env.rsa     # or cp .env.ec.example .env.ec
+$EDITOR .env.rsa                 # set HSM_NAME, AZURE_TENANT_ID, SERVER_CN
 ```
 
 ## Generate certs (signed by the HSM key)
 
 Linux / bash:
 ```bash
+# RSA:
+ENV_FILE=.env.rsa ./generate-certs.sh
+# EC (P-256):
+ENV_FILE=.env.ec  ./generate-certs.sh
+# Default (.env):
 ./generate-certs.sh
-# certs/ca.crt, certs/server.crt, certs/client.crt
+# Output: certs/ca.crt, certs/server.crt, certs/client.crt
 ```
 
 Windows / PowerShell (7+ recommended):
 ```powershell
-.\generate-certs.ps1
-# uses Git for Windows' openssl.exe + the akv_provider.dll under
-# ..\target\release\
+.\generate-certs.ps1 -EnvFile .env.rsa
+.\generate-certs.ps1 -EnvFile .env.ec
+# or just .\generate-certs.ps1  (uses .env)
 ```
 
 ## Run
 
 Linux, terminal 1 / 2:
 ```bash
-./start-server.sh
-./run-client.sh
+ENV_FILE=.env.ec ./start-server.sh
+ENV_FILE=.env.ec ./run-client.sh
 ```
 
 Windows, PowerShell window 1 / 2:
 ```powershell
-.\start-server.ps1   # add -SkipBuild if already built
-.\run-client.ps1     # add -SkipBuild if already built
+.\start-server.ps1 -EnvFile .env.ec   # add -SkipBuild if already built
+.\run-client.ps1   -EnvFile .env.ec   # add -SkipBuild if already built
 ```
+
+> ⚠️ Server and client must use the **same** env file (and therefore the
+> same cert set under `certs/`). Switching key type? Re-run
+> `generate-certs.*` first so the leaf certs match the HSM key.
 
 Expected client output:
 ```

@@ -1,6 +1,11 @@
 /target
 /certs
 .env
+.env.rsa
+.env.ec
+!.env.example
+!.env.rsa.example
+!.env.ec.example
 openssl-provider.cnf
 *.csr
 *.srl

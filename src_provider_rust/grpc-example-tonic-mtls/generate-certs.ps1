@@ -11,7 +11,9 @@
     carry different identities (CA, server, client).
 #>
 [CmdletBinding()]
-param()
+param(
+    [string]$EnvFile
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -24,14 +26,21 @@ if (-not (Test-Path $ProviderDll)) {
     throw "akv_provider.dll not found at $ProviderDll. Build the provider first: (cd ..; cargo build --release)"
 }
 
-# ---- load .env ----
-$EnvFile = Join-Path $ScriptDir '.env'
-if (-not (Test-Path $EnvFile)) {
-    throw ".env missing. Copy .env.example to .env and edit it."
+# ---- load .env (use -EnvFile param, then $env:ENV_FILE, then default .env) ----
+if (-not $EnvFile) { $EnvFile = $env:ENV_FILE }
+if (-not $EnvFile) { $EnvFile = Join-Path $ScriptDir '.env' }
+if (-not [System.IO.Path]::IsPathRooted($EnvFile)) {
+    $EnvFile = Join-Path $ScriptDir $EnvFile
 }
+if (-not (Test-Path $EnvFile)) {
+    throw "Env file '$EnvFile' missing. Copy .env.example (or .env.rsa.example / .env.ec.example) and edit it."
+}
+Write-Host "Loading config from $EnvFile"
 Get-Content $EnvFile | Where-Object { $_ -match '^\s*[^#].*=' } | ForEach-Object {
     $k, $v = $_ -split '=', 2
-    Set-Item -Path "env:$($k.Trim())" -Value $v.Trim()
+    $v = $v.Trim()
+    if ($v -match '^"(.*)"$' -or $v -match "^'(.*)'$") { $v = $Matches[1] }
+    Set-Item -Path "env:$($k.Trim())" -Value $v
 }
 
 if (-not $env:HSM_NAME)        { throw 'HSM_NAME not set in .env' }
