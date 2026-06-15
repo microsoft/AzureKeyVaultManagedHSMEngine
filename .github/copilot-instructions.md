@@ -6,15 +6,90 @@ This document contains instructions for building, testing, and developing the Az
 
 - **Location**: `src_provider_rust/`
 - **Language**: Rust
-- **Output**: `libakv_provider.so` (OpenSSL 3.x provider)
+- **Output**: `libakv_provider.so` (Linux) / `akv_provider.dll` (Windows)
 - **Purpose**: Enables OpenSSL to use keys stored in Azure Managed HSM for cryptographic operations
+- **URI scheme**: `managedhsm:<vault-name>:<key-name>`
+
+## Critical Gotchas (learned the hard way)
+
+> Read this section before debugging anything provider-related on Linux.
+
+### 1. OpenSSL >= 3.0.7 is required on Linux
+
+OpenSSL 3.0.2 (the Ubuntu 22.04 default) has a bug in the `OSSL_STORE`
+object callback path: `EVP_KEYMGMT_fetch` with a NULL property query string
+returns the wrong provider's keymgmt, so loading HSM keys via
+`managedhsm:` URIs fails with `RSA object callback failed (returned 0)`
+or `EC object callback failed`. Fixed upstream in **3.0.7**
+([openssl#18221](https://github.com/openssl/openssl/issues/18221)).
+
+**Recommendation**: Ubuntu 24.04+ (ships OpenSSL 3.0.13). Every example
+runner script sources `check-openssl.sh` and aborts early if the host
+OpenSSL is too old. Windows is unaffected — the provider DLL statically
+links a bundled vcpkg OpenSSL.
+
+### 2. `-provider akv_provider` needs the `akv_provider.so` symlink on Linux
+
+Cargo builds `libakv_provider.so` (the standard Rust lib-prefix
+convention). OpenSSL's `-provider akv_provider` CLI flag, however, looks
+for `akv_provider.so`. Every example runner creates the symlink once:
+
+```bash
+ln -sf libakv_provider.so "$PROVIDER_PATH/akv_provider.so"
+```
+
+If you load via `OPENSSL_CONF` with an explicit `module = .../libakv_provider.so`
+line, the symlink is not needed.
+
+### 3. Provider order in openssl.cnf matters
+
+`default` and `base` MUST be listed **before** `akv_provider`. If
+`akv_provider` comes first, every RSA/EC operation (including outbound
+HTTPS to Azure) is routed through our keymgmt, which breaks TLS cert
+validation against public CAs (we don't implement classical key parsing).
+
+```ini
+[provider_sect]
+default = default_sect       # MUST come first
+base    = base_sect
+akv_provider = akv_provider_sect
+```
+
+### 4. Line endings (`.gitattributes`)
+
+Shell scripts, OpenSSL config templates, and `.env*` files **must** be LF
+on Linux. The `.gitattributes` files in `nginx-example/`,
+`grpc-example/`, and `grpc-example-tonic-mtls/` enforce this. If you add
+new `*.sh` or `*.cnf` under a directory without one, add a
+`.gitattributes` first or scripts will fail with `$'\r': command not found`
+on WSL.
+
+### 5. `.env` value quoting
+
+Values containing spaces (e.g. `CERT_OU=Azure HSM gRPC Tonic Demo`) **must**
+be quoted in `.env*` files. Bash's `set -a; . .env; set +a` treats
+unquoted spaces as command boundaries. PowerShell's `.env` parsers in
+the `*.ps1` scripts strip surrounding quotes automatically, so quoted
+values work on both shells.
+
+### 6. Provider load order vs. `-provider` flag
+
+When the provider is loaded **only** via `OPENSSL_CONF`, the
+`EVP_KEYMGMT_fetch(libctx, "RSA", NULL)` call inside `OSSL_STORE`'s
+object callback can resolve to the default provider's keymgmt instead
+of ours (this is the 3.0.2 bug). When loaded **also** with
+`-provider akv_provider` on the CLI, the explicit selection wins. This
+is why `runtest.sh` works on all OpenSSL versions but `grpc-example-*`
+needs 3.0.7+.
+
+---
 
 ## Prerequisites
 
 ### System Requirements
 
-- **OS**: Linux (Ubuntu 22.04+ recommended)
-- **OpenSSL**: 3.0+ (verify with `openssl version`)
+- **OS**: Linux (Ubuntu 24.04+ recommended) or Windows
+- **OpenSSL**: **>= 3.0.7** on Linux (Ubuntu 24.04 ships 3.0.13); 3.x on Windows (vcpkg-bundled)
 - **Rust**: Latest stable (install via rustup)
 - **Azure CLI**: For authentication (`az login`)
 
