@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package greeter;
+
+// Same schema as the sidecar-based grpc-example so client/server are wire-compatible.
+service Greeter {
+    rpc SayHello (HelloRequest) returns (HelloReply);
+    rpc SayHelloStream (HelloRequest) returns (stream HelloReply);
+}
+
+message HelloRequest {
+    string name = 1;
+}
+
+message HelloReply {
+    string message = 1;
+}

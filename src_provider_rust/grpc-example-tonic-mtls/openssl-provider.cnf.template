@@ -1,0 +1,26 @@
+# OpenSSL config for the AKV provider — used by the tonic mTLS demo.
+# The provider loader sees this via OPENSSL_CONF (set by the run-*.sh scripts).
+#
+# Provider order: default + base MUST come first so that hash/RNG operations
+# routed via the default provider keep working. akv_provider only activates
+# when a store URI begins with `managedhsm:`.
+
+openssl_conf = openssl_init
+
+[openssl_init]
+providers = provider_sect
+
+[provider_sect]
+default = default_sect
+base = base_sect
+akv_provider = akv_provider_sect
+
+[default_sect]
+activate = 1
+
+[base_sect]
+activate = 1
+
+[akv_provider_sect]
+module = PROVIDER_PATH/libakv_provider.so
+activate = 1

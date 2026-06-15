@@ -1,0 +1,7 @@
+/target
+/certs
+.env
+openssl-provider.cnf
+*.csr
+*.srl
+*.ext

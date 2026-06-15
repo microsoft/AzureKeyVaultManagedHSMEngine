@@ -1,0 +1,29 @@
+[package]
+name = "grpc-example-tonic-mtls"
+version = "0.1.0"
+edition = "2021"
+description = "Tonic gRPC client/server with native mTLS using the OpenSSL AKV provider (no sidecar)"
+
+[[bin]]
+name = "tonic-mtls-server"
+path = "src/server.rs"
+
+[[bin]]
+name = "tonic-mtls-client"
+path = "src/client.rs"
+
+[dependencies]
+tonic = "0.12"
+prost = "0.13"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util", "signal", "sync", "time"] }
+tokio-stream = { version = "0.1", features = ["net"] }
+tokio-openssl = "0.6"
+openssl = "0.10"
+openssl-sys = "0.9"
+hyper-util = "0.1"
+tower = { version = "0.4", features = ["util"] }
+http = "1"
+foreign-types = "0.3"
+
+[build-dependencies]
+tonic-build = "0.12"
